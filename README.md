@@ -1,6 +1,13 @@
 # SMBSeek
 
-A defensive security tool that uses the Shodan API to identify SMB servers with weak authentication for security auditing purposes.
+A defensive security toolkit that uses the Shodan API to identify and analyze SMB servers with weak authentication for security auditing purposes.
+
+## Tool Suite
+
+SMBSeek consists of two complementary tools:
+
+- **`smbscan.py`**: Primary scanner for discovering SMB servers with weak authentication
+- **`failure_analyzer.py`**: Deep analysis tool for understanding authentication failures
 
 ## Overview
 
@@ -78,6 +85,12 @@ python3 smbscan.py -q -o my_results.csv
 # Verbose mode (shows detailed authentication testing)
 python3 smbscan.py -v
 
+# Enable failure logging for later analysis
+python3 smbscan.py -f
+
+# Combined: failure logging with verbose output
+python3 smbscan.py -f -v
+
 # Use custom name for consolidated results file
 python3 smbscan.py -r project_scan_results.csv
 
@@ -99,6 +112,10 @@ python3 smbscan.py --no-default-excludes
 
 # Combine multiple options
 python3 smbscan.py -c GB -q -o uk_scan.csv -x
+
+# Complete workflow: scan with failure logging, then analyze failures
+python3 smbscan.py -f -c US
+python3 failure_analyzer.py failed_record.csv
 ```
 
 ### Command Line Options
@@ -111,6 +128,7 @@ python3 smbscan.py -c GB -q -o uk_scan.csv -x
 | `-a, --additional-country CODES` | Comma-separated list of additional countries |
 | `-t, --terra` | Search globally without country filters |
 | `-x, --nyx` | Disable colored output |
+| `-f, --log-failures` | Log failed connection attempts to separate CSV file (failed_record.csv) |
 | `-o, --output FILE` | Specify output CSV file (overrides default behavior) |
 | `-n, --new-file` | Create new timestamped file instead of appending to default |
 | `-r, --record-name NAME` | Specify name for consolidated results file |
@@ -283,7 +301,146 @@ If `smbclient` is not available, SMBSeek will display a warning and continue sca
 ⚠ smbclient unavailable; scan will continue with less features.
 ```
 
-## Security Considerations
+## Failure Analysis Tool
+
+### Overview
+
+The SMB Failure Analyzer (`failure_analyzer.py`) is a specialized tool designed to investigate why SMB authentication attempts fail. It performs comprehensive analysis of failed connections to identify patterns, technical issues, and potential solutions.
+
+### Purpose
+
+When SMBSeek encounters authentication failures (typically ~25% of targets), the failure analyzer helps determine:
+- Root causes of authentication failures
+- Patterns across geographic regions, SMB implementations, or network configurations
+- Technical details for improving scanning success rates
+- Security configurations that may be blocking authentication
+
+### Usage
+
+```bash
+# Analyze failures from SMBSeek output
+python3 failure_analyzer.py failed_record.csv
+
+# Get help information
+python3 failure_analyzer.py --help
+```
+
+### Analysis Components
+
+#### 1. Shodan Deep Dive
+- **SMB Service Details**: Version, dialect, capabilities, banners
+- **OS Fingerprinting**: Operating system and version detection  
+- **Network Information**: ISP, organization, geographic location
+- **Vulnerability Data**: Known CVEs and security issues
+- **Port Analysis**: Complete service enumeration
+
+#### 2. Network-Level Analysis
+- **Port Accessibility**: TCP connection testing and response timing
+- **SMB Port Scanning**: Tests ports 139, 445, 135 for availability
+- **Connection Behavior**: Network response patterns and timeouts
+
+#### 3. SMB Protocol Analysis
+- **Protocol Negotiation**: SMB dialect support and capabilities
+- **Authentication Requirements**: Signing, encryption, credential requirements
+- **Failure Stage Classification**: Connection → Negotiation → Authentication
+- **Error Detail Extraction**: Specific protocol-level error messages
+
+#### 4. Vulnerability Assessment
+- **Security Risk Evaluation**: High/medium/low risk classification
+- **Configuration Analysis**: SMB security settings and requirements
+- **Known Vulnerability Correlation**: CVE mapping and risk assessment
+
+### Output Format
+
+#### Supervisor Briefing Report
+The tool generates executive-level reports suitable for briefing supervisors:
+
+```
+SMB AUTHENTICATION FAILURE ANALYSIS BRIEFING
+============================================
+Analysis Date: 2025-08-18 17:22:42
+Total Failed Connections Analyzed: 23
+
+EXECUTIVE SUMMARY
+-----------------
+Analysis reveals distinct patterns in failure causes...
+
+FAILURE CLASSIFICATION BREAKDOWN
+--------------------------------
+Primary Failure Reasons:
+  • SMB Connection Rejected: 15 (65.2%)
+  • Authentication Required: 5 (21.7%)
+  • Port Not Accessible: 3 (13.1%)
+
+KEY TECHNICAL FINDINGS
+----------------------
+1. Network Infrastructure Issues: 3 targets have port 445 inaccessible
+2. Protocol Security: 8 targets require enhanced security (signing/encryption)
+3. Authentication Mechanisms: 5 targets require credential-based authentication
+
+RECOMMENDATIONS
+---------------
+1. Focus on targets where port accessibility is not the primary issue
+2. Implement SMB signing and encryption support for security-enhanced targets
+3. Consider credential-based authentication methods for specific target classes
+```
+
+#### Detailed JSON Output
+Complete technical analysis saved to timestamped JSON files:
+```json
+{
+  "analysis_results": [...],
+  "patterns": {...},
+  "briefing_report": "...",
+  "metadata": {...}
+}
+```
+
+### Pattern Detection
+
+The analyzer identifies patterns across multiple dimensions:
+
+- **SMB Implementation Patterns**: Version-specific behaviors (Samba 3.x vs 4.x, Windows versions)
+- **Geographic Patterns**: Regional blocking or configuration differences
+- **ISP/Organization Patterns**: Infrastructure provider security policies
+- **Network Security Patterns**: Firewall configurations and access controls
+- **Protocol Security Patterns**: Signing, encryption, and authentication requirements
+
+### Prerequisites
+
+#### Python Dependencies
+The failure analyzer requires the same dependencies as SMBSeek:
+```bash
+pip install shodan smbprotocol pyspnego
+```
+
+#### Configuration
+Uses the same `config.json` file as SMBSeek for Shodan API access.
+
+### Integration Workflow
+
+1. **Run SMBSeek with failure logging**:
+   ```bash
+   python3 smbscan.py -f -c US
+   ```
+
+2. **Analyze failures**:
+   ```bash
+   python3 failure_analyzer.py failed_record.csv
+   ```
+
+3. **Review briefing report** for actionable insights
+
+4. **Implement targeted improvements** based on failure classifications
+
+### Performance Considerations
+
+- **API Usage**: Respects Shodan API rate limits with built-in delays
+- **Network Testing**: Implements reasonable timeouts for network analysis
+- **Memory Efficiency**: Processes results incrementally for large datasets
+- **Error Handling**: Graceful degradation when individual analysis steps fail
+
+### Security Considerations
 
 ### Intended Use
 
