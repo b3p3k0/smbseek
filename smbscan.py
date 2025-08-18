@@ -373,9 +373,10 @@ class SMBScanner:
         stderr_buffer = StringIO()
         for method_name, cmd in test_commands:
             try:
-                # Suppress both stdout and stderr from smbclient
+                # Suppress both stdout and stderr from smbclient, prevent password prompts
                 with redirect_stderr(stderr_buffer):
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, stderr=subprocess.DEVNULL)
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, 
+                                          stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
                     if result.returncode == 0 or "Sharename" in result.stdout:
                         # Try to parse shares from the output if available
                         shares = self.parse_share_list(result.stdout) if "Sharename" in result.stdout else []
@@ -407,11 +408,21 @@ class SMBScanner:
             else:
                 cmd.extend(["--user", f"{username}%{password}"])
             
-            # Run command with timeout
-            result = subprocess.run(cmd, capture_output=True, text=True, 
-                                  timeout=15, stderr=subprocess.DEVNULL)
+            # Debug output in verbose mode
+            if hasattr(self, 'verbose') and self.verbose and hasattr(self, 'quiet') and not self.quiet:
+                print(f"  {getattr(self, 'CYAN', '')}Debug: Running share enumeration: {' '.join(cmd)}{getattr(self, 'RESET', '')}")
             
-            if result.returncode == 0 and "Sharename" in result.stdout:
+            # Run command with timeout, prevent password prompts
+            result = subprocess.run(cmd, capture_output=True, text=True, 
+                                  timeout=15, stderr=subprocess.DEVNULL, 
+                                  stdin=subprocess.DEVNULL)
+            
+            # Debug output in verbose mode
+            if hasattr(self, 'verbose') and self.verbose and hasattr(self, 'quiet') and not self.quiet:
+                print(f"  {getattr(self, 'CYAN', '')}Debug: Return code: {result.returncode}, Has 'Sharename': {'Sharename' in result.stdout}{getattr(self, 'RESET', '')}")
+            
+            # Use same success logic as test_smb_alternative
+            if result.returncode == 0 or "Sharename" in result.stdout:
                 return self.parse_share_list(result.stdout)
             
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
