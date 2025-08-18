@@ -19,15 +19,9 @@ from smbprotocol.session import Session
 from smbprotocol.exceptions import SMBException
 import socket
 import spnego
+import json
 from contextlib import redirect_stderr
 from io import StringIO
-
-# Configuration
-SHODAN_API_KEY = "***REVOKED_API_KEY***"  # API key for testing
-CONNECTION_TIMEOUT = 30  # seconds
-PORT_CHECK_TIMEOUT = 10  # seconds for port check
-RATE_LIMIT_DELAY = 3  # seconds between connection attempts
-DEFAULT_EXCLUSION_FILE = "exclusion_list.txt"
 
 # ANSI color codes
 GREEN = '\033[92m'
@@ -36,24 +30,64 @@ YELLOW = '\033[93m'
 CYAN = '\033[96m'
 RESET = '\033[0m'
 
-# Default target countries (country codes for Shodan)
-DEFAULT_COUNTRIES = {
-    'US': 'United States',
-    'GB': 'United Kingdom',
-    'CA': 'Canada',
-    'IE': 'Ireland',
-    'AU': 'Australia',
-    'NZ': 'New Zealand',
-    'ZA': 'South Africa'
-}
+def load_configuration(config_file="config.json"):
+    """Load configuration from JSON file with fallback to defaults."""
+    default_config = {
+        "shodan": {
+            "api_key": "YOUR_API_KEY_HERE"
+        },
+        "connection": {
+            "timeout": 30,
+            "port_check_timeout": 10,
+            "rate_limit_delay": 3
+        },
+        "files": {
+            "default_exclusion_file": "exclusion_list.txt"
+        },
+        "countries": {
+            "US": "United States",
+            "GB": "United Kingdom", 
+            "CA": "Canada",
+            "IE": "Ireland",
+            "AU": "Australia",
+            "NZ": "New Zealand",
+            "ZA": "South Africa"
+        }
+    }
+    
+    try:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        # Validate required sections exist
+        required_sections = ["shodan", "connection", "files", "countries"]
+        for section in required_sections:
+            if section not in config:
+                print(f"✗ Warning: Missing '{section}' section in {config_file}, using defaults")
+                config[section] = default_config[section]
+                
+        return config
+        
+    except FileNotFoundError:
+        print(f"✗ Configuration file {config_file} not found, using defaults")
+        return default_config
+    except json.JSONDecodeError as e:
+        print(f"✗ Invalid JSON in {config_file}: {e}")
+        print("✗ Using default configuration")
+        return default_config
+    except Exception as e:
+        print(f"✗ Error loading configuration: {e}")
+        print("✗ Using default configuration")  
+        return default_config
 
 class SMBScanner:
-    def __init__(self, api_key, quiet=False, verbose=False, output_file=None, exclusion_file=None, additional_excludes=None, no_default_excludes=False, no_colors=False):
-        """Initialize the SMB scanner with Shodan API key."""
+    def __init__(self, config, quiet=False, verbose=False, output_file=None, exclusion_file=None, additional_excludes=None, no_default_excludes=False, no_colors=False):
+        """Initialize the SMB scanner with configuration object."""
+        self.config = config
         self.quiet = quiet
         self.verbose = verbose
         self.output_file = output_file or f"smb_scan_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        self.exclusion_file = exclusion_file or DEFAULT_EXCLUSION_FILE
+        self.exclusion_file = exclusion_file or config["files"]["default_exclusion_file"]
         self.additional_excludes = additional_excludes or []
         self.no_default_excludes = no_default_excludes
         self.no_colors = no_colors
@@ -73,7 +107,7 @@ class SMBScanner:
             self.RESET = RESET
 
         try:
-            self.api = shodan.Shodan(api_key)
+            self.api = shodan.Shodan(config["shodan"]["api_key"])
             # Test API key validity
             self.api.info()
             if not self.quiet:
@@ -81,7 +115,7 @@ class SMBScanner:
         except shodan.APIError as e:
             print(f"✗ Shodan API Error: {str(e)}")
             if "Invalid API key" in str(e):
-                print("Please check your API key in the configuration section.")
+                print("Please check your API key in the config.json file.")
             sys.exit(1)
         except Exception as e:
             print(f"✗ Unable to connect to Shodan: Network connection failed")
@@ -223,7 +257,7 @@ class SMBScanner:
 
                     # Create connection with less strict requirements
                     connection = Connection(conn_uuid, ip, 445, require_signing=False)
-                    connection.connect(timeout=CONNECTION_TIMEOUT)
+                    connection.connect(timeout=self.config["connection"]["timeout"])
 
                     # Create session with appropriate auth
                     # For anonymous, use empty strings
@@ -323,7 +357,7 @@ class SMBScanner:
 
         try:
             # First check if port 445 is open
-            if not self.check_port(ip, 445, PORT_CHECK_TIMEOUT):
+            if not self.check_port(ip, 445, self.config["connection"]["port_check_timeout"]):
                 self.print_if_not_quiet(f"  {self.RED}✗ Port 445 not accessible{self.RESET}")
                 return
 
@@ -381,9 +415,9 @@ class SMBScanner:
     def run_scan(self, countries=None, country_names_map=None):
         """Run the complete SMB scanning process."""
         if countries is None:
-            countries = list(DEFAULT_COUNTRIES.keys())
+            countries = list(self.config["countries"].keys())
         if country_names_map is None:
-            country_names_map = DEFAULT_COUNTRIES
+            country_names_map = self.config["countries"]
 
         self.print_if_not_quiet("Starting SMB Scanner...")
         self.print_if_not_quiet("=" * 50)
@@ -405,7 +439,7 @@ class SMBScanner:
 
             # Rate limiting - wait between connection attempts to different servers
             if self.current_target < self.total_targets:
-                time.sleep(RATE_LIMIT_DELAY)
+                time.sleep(self.config["connection"]["rate_limit_delay"])
 
         self.print_if_not_quiet("\n" + "=" * 50)
         self.print_if_not_quiet("Scan completed!")
@@ -505,13 +539,16 @@ def main():
 
     args = parse_arguments()
 
+    # Load configuration
+    config = load_configuration()
+
     if not args.quiet:
         print("SMB Scanner Tool")
         print("Scanning for SMB servers with weak authentication")
 
     # Determine target countries
     countries = []
-    country_names_map = DEFAULT_COUNTRIES.copy()
+    country_names_map = config["countries"].copy()
 
     if args.terra:
         # Global search - no country filter
@@ -522,14 +559,14 @@ def main():
         # Single country specified
         country_code = args.country.upper()
         countries = [country_code]
-        if country_code not in DEFAULT_COUNTRIES:
+        if country_code not in config["countries"]:
             # Add custom country to the map
             country_names_map[country_code] = country_code
         if not args.quiet:
             print(f"Target country: {country_names_map.get(country_code, country_code)}")
     else:
         # Use default countries
-        countries = list(DEFAULT_COUNTRIES.keys())
+        countries = list(config["countries"].keys())
 
     # Add additional countries if specified
     if args.additional_country and not args.terra:
@@ -556,13 +593,13 @@ def main():
         print()
 
     # Check if API key is configured
-    if SHODAN_API_KEY == "YOUR_API_KEY_HERE":
-        print("✗ Please configure your Shodan API key in the SHODAN_API_KEY variable")
+    if config["shodan"]["api_key"] == "YOUR_API_KEY_HERE":
+        print("✗ Please configure your Shodan API key in config.json")
         sys.exit(1)
 
     try:
         scanner = SMBScanner(
-            SHODAN_API_KEY,
+            config,
             quiet=args.quiet,
             verbose=args.vox,
             output_file=args.output,
