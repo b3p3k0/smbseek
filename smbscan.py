@@ -19,6 +19,8 @@ from smbprotocol.session import Session
 from smbprotocol.exceptions import SMBException
 import socket
 import spnego
+from contextlib import redirect_stderr
+from io import StringIO
 
 # Configuration
 SHODAN_API_KEY = "HETpWECrWPwosEfASyHNgQ9hVSmp7VIf"  # API key for testing
@@ -206,69 +208,69 @@ class SMBScanner:
 
             self.print_if_not_quiet(f"    {self.CYAN}Testing {method_name}...{self.RESET}")
 
+            # Suppress stderr output from SMB libraries
+            stderr_buffer = StringIO()
             try:
-                # Create unique connection ID
-                conn_uuid = uuid.uuid4()
+                with redirect_stderr(stderr_buffer):
+                    # Create unique connection ID
+                    conn_uuid = uuid.uuid4()
 
-                # Create connection with less strict requirements
-                connection = Connection(conn_uuid, ip, 445, require_signing=False)
-                connection.connect(timeout=CONNECTION_TIMEOUT)
+                    # Create connection with less strict requirements
+                    connection = Connection(conn_uuid, ip, 445, require_signing=False)
+                    connection.connect(timeout=CONNECTION_TIMEOUT)
 
-                # Create session with appropriate auth
-                # For anonymous, use empty strings
-                # For guest, use NTLM with guest account
-                if username == "" and password == "":
-                    # Anonymous connection
-                    session = Session(connection, username="", password="", require_encryption=False)
-                else:
-                    # Guest connection - use NTLM auth
-                    session = Session(connection, username=username, password=password,
-                                    require_encryption=False, auth_protocol="ntlm")
+                    # Create session with appropriate auth
+                    # For anonymous, use empty strings
+                    # For guest, use NTLM with guest account
+                    if username == "" and password == "":
+                        # Anonymous connection
+                        session = Session(connection, username="", password="", require_encryption=False)
+                    else:
+                        # Guest connection - use NTLM auth
+                        session = Session(connection, username=username, password=password,
+                                        require_encryption=False, auth_protocol="ntlm")
 
-                session.connect()
+                    session.connect()
 
                 # If we get here, authentication succeeded
                 # Clean disconnect
                 try:
-                    session.disconnect()
+                    with redirect_stderr(stderr_buffer):
+                        session.disconnect()
                 except:
                     pass
                 try:
-                    connection.disconnect()
+                    with redirect_stderr(stderr_buffer):
+                        connection.disconnect()
                 except:
                     pass
 
                 return method_name
 
             except spnego.exceptions.SpnegoError as e:
-                # SPNEGO/Auth negotiation failed
-                self.print_if_not_quiet(f"      Auth negotiation failed: {str(e)[:50]}")
+                # SPNEGO/Auth negotiation failed - don't print detailed error
+                pass
             except SMBException as e:
-                # SMB-specific error
-                error_str = str(e)
-                if "STATUS_LOGON_FAILURE" in error_str:
-                    self.print_if_not_quiet(f"      Logon failed (incorrect credentials)")
-                elif "STATUS_ACCESS_DENIED" in error_str:
-                    self.print_if_not_quiet(f"      Access denied")
-                elif "signature" in error_str.lower():
-                    self.print_if_not_quiet(f"      Signature verification failed")
-                else:
-                    self.print_if_not_quiet(f"      SMB error: {error_str[:50]}")
+                # SMB-specific error - don't print detailed error
+                pass
             except (socket.error, socket.timeout) as e:
-                self.print_if_not_quiet(f"      Network error: {str(e)[:50]}")
+                # Network error - don't print detailed error
+                pass
             except Exception as e:
-                # Catch any other unexpected exceptions
-                self.print_if_not_quiet(f"      Unexpected error: {str(e)[:50]}")
+                # Catch any other unexpected exceptions - don't print detailed error
+                pass
             finally:
-                # Ensure cleanup
+                # Ensure cleanup with stderr suppression
                 if session:
                     try:
-                        session.disconnect()
+                        with redirect_stderr(stderr_buffer):
+                            session.disconnect()
                     except:
                         pass
                 if connection:
                     try:
-                        connection.disconnect(close=False)
+                        with redirect_stderr(stderr_buffer):
+                            connection.disconnect(close=False)
                     except:
                         pass
 
@@ -285,11 +287,14 @@ class SMBScanner:
             ("Guest/Guest", ["smbclient", "-L", f"//{ip}", "--user", "guest%guest"])
         ]
 
+        stderr_buffer = StringIO()
         for method_name, cmd in test_commands:
             try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-                if result.returncode == 0 or "Sharename" in result.stdout:
-                    return method_name
+                # Suppress both stdout and stderr from smbclient
+                with redirect_stderr(stderr_buffer):
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, stderr=subprocess.DEVNULL)
+                    if result.returncode == 0 or "Sharename" in result.stdout:
+                        return method_name
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 continue
             except Exception:
