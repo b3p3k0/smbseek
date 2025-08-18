@@ -1,6 +1,6 @@
 {
   "shodan": {
-    "api_key": "HETpWECrWPwosEfASyHNgQ9hVSmp7VIf"
+    "api_key": "YOUR_API_KEY_HERE"
   },
   "connection": {
     "timeout": 30,

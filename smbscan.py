@@ -92,14 +92,14 @@ class SMBScanner:
         self.quiet = quiet
         self.verbose = verbose
         self.new_file = new_file
-        self.record_name = record_name or "smb_scan_results.csv"
+        self.record_name = record_name or "ip_record.csv"
         
         # Determine output file based on flags
         if output_file:
             self.output_file = output_file
             self.append_mode = False
         elif new_file:
-            self.output_file = f"smb_scan_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            self.output_file = f"ip_record_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             self.append_mode = False
         else:
             self.output_file = self.record_name
@@ -231,7 +231,7 @@ class SMBScanner:
         query_parts.extend(other_exclusions)
 
         final_query = ' '.join(query_parts)
-        self.print_if_not_quiet(f"Search query: {final_query}")
+        self.print_if_verbose(f"Search query: {final_query}")
 
         return final_query
 
@@ -508,7 +508,7 @@ class SMBScanner:
                     'country': country_name,
                     'auth_method': successful_method,
                     'shares': shares_text,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now().strftime('%Y-%m-%dT%H:%M')
                 })
             else:
                 self.print_if_not_quiet(f"  {self.RED}✗ All authentication methods failed{self.RESET}")
@@ -531,7 +531,7 @@ class SMBScanner:
                 # Check if existing file has compatible headers
                 if not self.check_csv_compatibility(self.output_file, fieldnames):
                     # Create new file with timestamp
-                    backup_file = f"smb_scan_results_{datetime.now().strftime('%Y%m%d')}.csv"
+                    backup_file = f"ip_record_{datetime.now().strftime('%Y%m%d')}.csv"
                     self.print_if_not_quiet(f"{self.YELLOW}⚠ CSV header mismatch detected. Creating new file: {backup_file}{self.RESET}")
                     self.output_file = backup_file
                     self.append_mode = False
@@ -641,19 +641,47 @@ Organization Exclusions:
         """
     )
 
-    parser.add_argument('-q', '--quiet',
-                       action='store_true',
-                       help='Suppress output to screen (useful for scripting)')
+    parser.add_argument('-a', '--additional-country',
+                       type=str,
+                       metavar='CODES',
+                       help='Comma-separated list of additional country codes to scan (e.g., FR,DE,IT)')
+
+    parser.add_argument('--additional-excludes',
+                       type=str,
+                       metavar='ORGS',
+                       help='Comma-separated list of additional organizations to exclude')
 
     parser.add_argument('-c', '--country',
                        type=str,
                        metavar='CODE',
                        help='Search only the specified country using two-letter country code')
 
-    parser.add_argument('-a', '--additional-country',
+    parser.add_argument('--exclude-file',
                        type=str,
-                       metavar='CODES',
-                       help='Comma-separated list of additional country codes to scan (e.g., FR,DE,IT)')
+                       metavar='FILE',
+                       help=f'Load organization exclusions from file (default: {DEFAULT_EXCLUSION_FILE})')
+
+    parser.add_argument('-n', '--new-file',
+                       action='store_true',
+                       help='Create new timestamped file instead of appending to default')
+
+    parser.add_argument('--no-default-excludes',
+                       action='store_true',
+                       help='Skip loading default organization exclusions')
+
+    parser.add_argument('-o', '--output',
+                       type=str,
+                       metavar='FILE',
+                       help='Specify output CSV file (default: appends to ip_record.csv)')
+
+    parser.add_argument('-q', '--quiet',
+                       action='store_true',
+                       help='Suppress output to screen (useful for scripting)')
+
+    parser.add_argument('-r', '--record-name',
+                       type=str,
+                       metavar='NAME',
+                       help='Specify name for consolidated results file (default: ip_record.csv)')
 
     parser.add_argument('-t', '--terra',
                        action='store_true',
@@ -666,34 +694,6 @@ Organization Exclusions:
     parser.add_argument('-x', '--nyx',
                        action='store_true',
                        help='Disable colored output (nyx = darkness/no colors)')
-
-    parser.add_argument('-o', '--output',
-                       type=str,
-                       metavar='FILE',
-                       help='Specify output CSV file (default: appends to smb_scan_results.csv)')
-
-    parser.add_argument('-n', '--new-file',
-                       action='store_true',
-                       help='Create new timestamped file instead of appending to default')
-
-    parser.add_argument('-r', '--record-name',
-                       type=str,
-                       metavar='NAME',
-                       help='Specify name for consolidated results file (default: smb_scan_results.csv)')
-
-    parser.add_argument('--exclude-file',
-                       type=str,
-                       metavar='FILE',
-                       help=f'Load organization exclusions from file (default: {DEFAULT_EXCLUSION_FILE})')
-
-    parser.add_argument('--additional-excludes',
-                       type=str,
-                       metavar='ORGS',
-                       help='Comma-separated list of additional organizations to exclude')
-
-    parser.add_argument('--no-default-excludes',
-                       action='store_true',
-                       help='Skip loading default organization exclusions')
 
     return parser.parse_args()
 
@@ -708,6 +708,11 @@ def main():
     threading.excepthook = thread_exception_handler
 
     args = parse_arguments()
+    
+    if args.quiet and args.vox:
+        print("🤔 Well, that's... interesting. You want me to be both chatty AND silent?")
+        print("I'll go with quiet mode since silence is golden (unlike this contradiction).")
+        args.vox = False
 
     if not args.quiet:
         print("SMB Scanner Tool")
