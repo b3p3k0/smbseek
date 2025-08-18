@@ -40,10 +40,15 @@ pip install shodan smbprotocol spnego
 
 1. Sign up for a Shodan account at https://shodan.io
 2. Obtain your API key from your account dashboard
-3. Replace the placeholder API key in `smbscan.py`:
+3. Update the API key in `config.json`:
 
-```python
-SHODAN_API_KEY = "your_actual_api_key_here"
+```json
+{
+  "shodan": {
+    "api_key": "your_actual_api_key_here"
+  },
+  ...
+}
 ```
 
 ## Usage
@@ -65,6 +70,9 @@ python3 smbscan.py -t
 
 # Quiet mode with custom output file
 python3 smbscan.py -q -o my_results.csv
+
+# Verbose mode (shows detailed authentication testing)
+python3 smbscan.py -v
 
 # Disable colored output
 python3 smbscan.py -x
@@ -91,6 +99,7 @@ python3 smbscan.py -c GB -q -o uk_scan.csv -x
 | Option | Description |
 |--------|-------------|
 | `-q, --quiet` | Suppress output to screen (useful for scripting) |
+| `-v, --vox` | Enable verbose output showing detailed authentication testing steps |
 | `-c, --country CODE` | Search only the specified country (two-letter code) |
 | `-a, --additional-country CODES` | Comma-separated list of additional countries |
 | `-t, --terra` | Search globally without country filters |
@@ -117,6 +126,52 @@ ip_address,country,auth_method
 
 ## Configuration
 
+SMBSeek uses a JSON configuration file (`config.json`) to manage all settings. The configuration file is automatically loaded on startup with fallback to defaults if not found.
+
+### Configuration File Structure
+
+```json
+{
+  "shodan": {
+    "api_key": "your_shodan_api_key_here"
+  },
+  "connection": {
+    "timeout": 30,
+    "port_check_timeout": 10,
+    "rate_limit_delay": 3
+  },
+  "files": {
+    "default_exclusion_file": "exclusion_list.txt"
+  },
+  "countries": {
+    "US": "United States",
+    "GB": "United Kingdom",
+    "CA": "Canada",
+    "IE": "Ireland",
+    "AU": "Australia",
+    "NZ": "New Zealand",
+    "ZA": "South Africa"
+  }
+}
+```
+
+### Configuration Sections
+
+#### Shodan Settings
+- `api_key`: Your Shodan API key (required)
+
+#### Connection Settings
+- `timeout`: SMB connection timeout in seconds (default: 30)
+- `port_check_timeout`: Port 445 availability check timeout in seconds (default: 10)
+- `rate_limit_delay`: Delay between connection attempts in seconds (default: 3)
+
+#### File Settings
+- `default_exclusion_file`: Path to organization exclusion file (default: "exclusion_list.txt")
+
+#### Default Countries
+- Defines the default set of countries to scan when no specific countries are specified
+- Maps country codes to full country names for display purposes
+
 ### Organization Exclusions
 
 The tool uses `exclusion_list.txt` to exclude known ISPs, hosting providers, and cloud services. This prevents scanning infrastructure that typically has SMB services on routers rather than vulnerable endpoints.
@@ -126,16 +181,6 @@ To customize exclusions:
 2. Add one organization name per line
 3. Use exact names as they appear in Shodan results
 4. Lines starting with `#` are treated as comments
-
-### Timeout Settings
-
-Default timeouts can be modified in the configuration section:
-
-```python
-CONNECTION_TIMEOUT = 30  # seconds
-PORT_CHECK_TIMEOUT = 10  # seconds for port check
-RATE_LIMIT_DELAY = 3     # seconds between connection attempts
-```
 
 ## Authentication Methods
 
