@@ -111,6 +111,11 @@ class SMBScanner:
             self.CYAN = CYAN
             self.RESET = RESET
 
+        # Check smbclient availability for share enumeration
+        self.smbclient_available = self.check_smbclient_availability()
+        if not self.smbclient_available and not self.quiet:
+            print(f"{self.YELLOW}⚠ smbclient unavailable; scan will continue with less features.{self.RESET}")
+
         try:
             self.api = shodan.Shodan(config["shodan"]["api_key"])
             # Test API key validity
@@ -129,6 +134,17 @@ class SMBScanner:
         self.successful_connections = []
         self.total_targets = 0
         self.current_target = 0
+
+    def check_smbclient_availability(self):
+        """Check if smbclient command is available on the system."""
+        try:
+            # Try to run smbclient --help to check if it's available
+            result = subprocess.run(['smbclient', '--help'], 
+                                  capture_output=True, 
+                                  timeout=5)
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            return False
 
         # Load organization exclusions
         self.excluded_orgs = self.load_exclusions()
@@ -331,7 +347,8 @@ class SMBScanner:
 
     def test_smb_alternative(self, ip):
         """Alternative testing method using minimal SMB connection."""
-        import subprocess
+        if not self.smbclient_available:
+            return None, []
 
         # Try using smbclient as a fallback to verify connectivity
         test_commands = [
@@ -359,6 +376,9 @@ class SMBScanner:
 
     def list_smb_shares(self, ip, username="", password=""):
         """List available SMB shares on the target server."""
+        if not self.smbclient_available:
+            return []
+        
         try:
             # Use smbclient command as fallback to list shares
             cmd = ["smbclient", "-L", f"//{ip}"]
