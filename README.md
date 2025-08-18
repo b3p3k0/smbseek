@@ -16,6 +16,7 @@ SMBSeek helps security professionals identify SMB servers that allow anonymous o
 - **Multi-Country Support**: Target specific countries or scan globally
 - **Smart Filtering**: Built-in exclusion lists for ISPs, hosting providers, and cloud services
 - **Multiple Auth Methods**: Tests anonymous and guest authentication methods
+- **SMB Share Enumeration**: Lists available shares on successfully authenticated servers
 - **Fallback Support**: Uses both smbprotocol library and smbclient for compatibility
 - **Rate Limiting**: Built-in delays to prevent aggressive scanning
 - **CSV Output**: Results saved in structured format for analysis
@@ -33,7 +34,7 @@ pip install shodan smbprotocol pyspnego
 ### System Requirements
 
 - Python 3.6+
-- smbclient (optional, for fallback support)
+- smbclient (recommended, for share enumeration and fallback support)
 - Valid Shodan API key
 
 ### Shodan API Key
@@ -116,12 +117,13 @@ Results are saved to timestamped CSV files with the following columns:
 - `ip_address`: Target IP address
 - `country`: Country location
 - `auth_method`: Successful authentication method
+- `shares`: Available SMB shares (first 5 non-administrative shares)
 
 Example output:
 ```csv
-ip_address,country,auth_method
-192.168.1.100,United States,Anonymous
-10.0.0.50,Canada,Guest/Blank
+ip_address,country,auth_method,shares
+192.168.1.100,United States,Anonymous,"Movies, Music, Documents"
+10.0.0.50,Canada,Guest/Blank,"Data, Backup, (and more)"
 ```
 
 ## Configuration
@@ -191,6 +193,66 @@ The tool tests three authentication methods in order:
 3. **Guest/Guest**: Username "guest" with password "guest"
 
 If the primary smbprotocol library fails, the tool falls back to using the system's smbclient command.
+
+## SMB Share Enumeration
+
+### Overview
+
+When SMBSeek successfully authenticates to an SMB server, it automatically attempts to enumerate available shares to provide additional context about the target system. This feature helps security professionals understand what data might be exposed through weak authentication.
+
+### Share Listing Behavior
+
+- **Automatic enumeration**: Shares are listed immediately after successful authentication
+- **Filtered results**: Only the first 5 non-administrative shares are displayed
+- **Administrative share exclusion**: Shares ending with `$` (like `IPC$`, `ADMIN$`, `C$`) are filtered out
+- **Overflow indicator**: Shows "(and more)" when more than 5 shares exist
+- **Graceful degradation**: If share enumeration fails, the scan continues without share data
+
+### Implementation Details
+
+SMBSeek uses the system's `smbclient` command for share enumeration rather than pure Python implementation. This design choice was made for several important reasons:
+
+#### Why smbclient Instead of Pure Python?
+
+1. **Library Limitations**: The `smbprotocol` Python library lacks built-in share enumeration functionality, and this has been a long-standing gap confirmed by GitHub issues from 2021-2024.
+
+2. **Complex Protocol Requirements**: Share listing requires low-level DCE/RPC calls using the `NetShareEnum` function via the `srvsvc` named pipe, which involves:
+   - Manual construction of binary RPC packets
+   - Complex parsing of SMB protocol responses
+   - Handling different SMB dialect negotiations
+
+3. **Reliability and Compatibility**: The `smbclient` tool provides:
+   - Battle-tested share enumeration across diverse SMB implementations
+   - Consistent output format that's reliable to parse
+   - Built-in error handling and timeout management
+   - Proven compatibility with Windows, Samba, and cloud SMB services
+
+4. **Maintainability**: Using `smbclient` keeps the codebase focused on its core purpose rather than implementing a full SMB protocol handler.
+
+5. **Architectural Consistency**: SMBSeek already uses `smbclient` as a fallback authentication method, so this maintains consistency.
+
+### smbclient Installation
+
+Most Linux distributions include `smbclient` in their package repositories:
+
+```bash
+# Ubuntu/Debian
+sudo apt install smbclient
+
+# CentOS/RHEL/Fedora
+sudo yum install samba-client
+# or
+sudo dnf install samba-client
+
+# macOS (via Homebrew)
+brew install samba
+```
+
+If `smbclient` is not available, SMBSeek will display a warning and continue scanning with authentication testing only:
+
+```
+⚠ smbclient unavailable; scan will continue with less features.
+```
 
 ## Security Considerations
 
