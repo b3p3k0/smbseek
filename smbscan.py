@@ -86,12 +86,25 @@ CONFIG = load_configuration()
 DEFAULT_EXCLUSION_FILE = CONFIG["files"]["default_exclusion_file"]
 
 class SMBScanner:
-    def __init__(self, config, quiet=False, verbose=False, output_file=None, exclusion_file=None, additional_excludes=None, no_default_excludes=False, no_colors=False):
+    def __init__(self, config, quiet=False, verbose=False, output_file=None, exclusion_file=None, additional_excludes=None, no_default_excludes=False, no_colors=False, new_file=False, record_name=None):
         """Initialize the SMB scanner with configuration object."""
         self.config = config
         self.quiet = quiet
         self.verbose = verbose
-        self.output_file = output_file or f"smb_scan_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        self.new_file = new_file
+        self.record_name = record_name or "smb_scan_results.csv"
+        
+        # Determine output file based on flags
+        if output_file:
+            self.output_file = output_file
+            self.append_mode = False
+        elif new_file:
+            self.output_file = f"smb_scan_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            self.append_mode = False
+        else:
+            self.output_file = self.record_name
+            self.append_mode = True
+            
         self.exclusion_file = exclusion_file or config["files"]["default_exclusion_file"]
         self.additional_excludes = additional_excludes or []
         self.no_default_excludes = no_default_excludes
@@ -500,25 +513,54 @@ class SMBScanner:
             self.print_if_not_quiet("No successful connections found.")
             return
 
+        fieldnames = ['ip_address', 'country', 'auth_method', 'shares', 'timestamp']
+        
         try:
-            with open(self.output_file, 'w', newline='', encoding='utf-8') as csvfile:
-                fieldnames = ['ip_address', 'country', 'auth_method', 'shares']
+            if self.append_mode and os.path.exists(self.output_file):
+                # Check if existing file has compatible headers
+                if not self.check_csv_compatibility(self.output_file, fieldnames):
+                    # Create new file with timestamp
+                    backup_file = f"smb_scan_results_{datetime.now().strftime('%Y%m%d')}.csv"
+                    self.print_if_not_quiet(f"{self.YELLOW}⚠ CSV header mismatch detected. Creating new file: {backup_file}{self.RESET}")
+                    self.output_file = backup_file
+                    self.append_mode = False
+            
+            mode = 'a' if (self.append_mode and os.path.exists(self.output_file)) else 'w'
+            write_header = mode == 'w' or not os.path.exists(self.output_file)
+            
+            with open(self.output_file, mode, newline='', encoding='utf-8') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
-                writer.writeheader()
+                if write_header:
+                    writer.writeheader()
+                    
                 for conn in self.successful_connections:
                     writer.writerow({
                         'ip_address': conn['ip'],
                         'country': conn['country'],
                         'auth_method': conn['auth_method'],
-                        'shares': conn.get('shares', '')
+                        'shares': conn.get('shares', ''),
+                        'timestamp': conn['timestamp']
                     })
 
-            self.print_if_not_quiet(f"✓ Results saved to {self.output_file}")
+            action = "appended to" if mode == 'a' else "saved to"
+            self.print_if_not_quiet(f"✓ Results {action} {self.output_file}")
             self.print_if_not_quiet(f"✓ Total successful connections: {len(self.successful_connections)}")
 
         except Exception as e:
             print(f"✗ Failed to save results: Unable to write to file")
+
+    def check_csv_compatibility(self, filename, expected_fieldnames):
+        """Check if existing CSV file has compatible headers."""
+        try:
+            with open(filename, 'r', newline='', encoding='utf-8') as csvfile:
+                reader = csv.reader(csvfile)
+                existing_headers = next(reader, None)
+                if existing_headers is None:
+                    return True  # Empty file, compatible
+                return existing_headers == expected_fieldnames
+        except Exception:
+            return True  # If we can't read it, assume it's compatible
 
     def run_scan(self, countries=None, country_names_map=None):
         """Run the complete SMB scanning process."""
@@ -617,7 +659,16 @@ Organization Exclusions:
     parser.add_argument('-o', '--output',
                        type=str,
                        metavar='FILE',
-                       help='Specify output CSV file (default: smb_scan_results_YYYYMMDD_HHMMSS.csv)')
+                       help='Specify output CSV file (default: appends to smb_scan_results.csv)')
+
+    parser.add_argument('-n', '--new-file',
+                       action='store_true',
+                       help='Create new timestamped file instead of appending to default')
+
+    parser.add_argument('-r', '--record-name',
+                       type=str,
+                       metavar='NAME',
+                       help='Specify name for consolidated results file (default: smb_scan_results.csv)')
 
     parser.add_argument('--exclude-file',
                        type=str,
@@ -711,7 +762,9 @@ def main():
             exclusion_file=args.exclude_file,
             additional_excludes=additional_excludes,
             no_default_excludes=args.no_default_excludes,
-            no_colors=args.nyx
+            no_colors=args.nyx,
+            new_file=args.new_file,
+            record_name=args.record_name
         )
         scanner.run_scan(countries=countries, country_names_map=country_names_map)
     except KeyboardInterrupt:

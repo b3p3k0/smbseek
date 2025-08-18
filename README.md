@@ -69,11 +69,17 @@ python3 smbscan.py -a FR,DE,IT
 # Global scan (no country filter)
 python3 smbscan.py -t
 
+# Create new timestamped file instead of appending
+python3 smbscan.py -n
+
 # Quiet mode with custom output file
 python3 smbscan.py -q -o my_results.csv
 
 # Verbose mode (shows detailed authentication testing)
 python3 smbscan.py -v
+
+# Use custom name for consolidated results file
+python3 smbscan.py -r project_scan_results.csv
 
 # Disable colored output
 python3 smbscan.py -x
@@ -105,25 +111,48 @@ python3 smbscan.py -c GB -q -o uk_scan.csv -x
 | `-a, --additional-country CODES` | Comma-separated list of additional countries |
 | `-t, --terra` | Search globally without country filters |
 | `-x, --nyx` | Disable colored output |
-| `-o, --output FILE` | Specify output CSV file |
+| `-o, --output FILE` | Specify output CSV file (overrides default behavior) |
+| `-n, --new-file` | Create new timestamped file instead of appending to default |
+| `-r, --record-name NAME` | Specify name for consolidated results file |
 | `--exclude-file FILE` | Load organization exclusions from file |
 | `--additional-excludes ORGS` | Additional organizations to exclude |
 | `--no-default-excludes` | Skip loading default organization exclusions |
 
 ## Output Format
 
-Results are saved to timestamped CSV files with the following columns:
+### Default Behavior (Consolidated Results)
+
+By default, SMBSeek appends results to a single file (`smb_scan_results.csv`) to consolidate findings from multiple scan sessions. This makes it easier to track discoveries over time.
+
+### CSV Columns
+
+Results include the following columns:
 
 - `ip_address`: Target IP address
 - `country`: Country location
 - `auth_method`: Successful authentication method
 - `shares`: Available SMB shares (first 5 non-administrative shares)
+- `timestamp`: When the connection was discovered (ISO format)
+
+### Output File Options
+
+1. **Default (Append Mode)**: Results appended to `smb_scan_results.csv`
+2. **Custom Consolidated File**: Use `-r filename.csv` to specify different consolidated file
+3. **New Timestamped File**: Use `-n` to create `smb_scan_results_YYYYMMDD_HHMMSS.csv`
+4. **Specific Output File**: Use `-o filename.csv` to override all default behavior
+
+### Header Compatibility
+
+When appending to existing files, SMBSeek checks for header compatibility. If the existing file has different columns (e.g., from an older version), it will:
+- Display a yellow warning message
+- Create a new file with format `smb_scan_results_YYYYMMDD.csv`
+- Inform you of the new file path
 
 Example output:
 ```csv
-ip_address,country,auth_method,shares
-192.168.1.100,United States,Anonymous,"Movies, Music, Documents"
-10.0.0.50,Canada,Guest/Blank,"Data, Backup, (and more)"
+ip_address,country,auth_method,shares,timestamp
+192.168.1.100,United States,Anonymous,"Movies, Music, Documents",2025-01-15T14:30:45
+10.0.0.50,Canada,Guest/Blank,"Data, Backup, (and more)",2025-01-15T14:31:02
 ```
 
 ## Configuration
