@@ -48,9 +48,10 @@ DEFAULT_COUNTRIES = {
 }
 
 class SMBScanner:
-    def __init__(self, api_key, quiet=False, output_file=None, exclusion_file=None, additional_excludes=None, no_default_excludes=False, no_colors=False):
+    def __init__(self, api_key, quiet=False, verbose=False, output_file=None, exclusion_file=None, additional_excludes=None, no_default_excludes=False, no_colors=False):
         """Initialize the SMB scanner with Shodan API key."""
         self.quiet = quiet
+        self.verbose = verbose
         self.output_file = output_file or f"smb_scan_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         self.exclusion_file = exclusion_file or DEFAULT_EXCLUSION_FILE
         self.additional_excludes = additional_excludes or []
@@ -96,6 +97,11 @@ class SMBScanner:
     def print_if_not_quiet(self, message):
         """Print message only if not in quiet mode."""
         if not self.quiet:
+            print(message)
+    
+    def print_if_verbose(self, message):
+        """Print message only if in verbose mode and not quiet."""
+        if self.verbose and not self.quiet:
             print(message)
 
     def load_exclusions(self):
@@ -206,7 +212,7 @@ class SMBScanner:
             connection = None
             session = None
 
-            self.print_if_not_quiet(f"    {self.CYAN}Testing {method_name}...{self.RESET}")
+            self.print_if_verbose(f"    {self.CYAN}Testing {method_name}...{self.RESET}")
 
             # Suppress stderr output from SMB libraries
             stderr_buffer = StringIO()
@@ -326,7 +332,7 @@ class SMBScanner:
 
             # If smbprotocol fails, try smbclient as fallback
             if not successful_method:
-                self.print_if_not_quiet(f"    {self.CYAN}Trying smbclient fallback...{self.RESET}")
+                self.print_if_verbose(f"    {self.CYAN}Trying smbclient fallback...{self.RESET}")
                 successful_method = self.test_smb_alternative(ip)
                 if successful_method:
                     successful_method = f"{successful_method} (smbclient)"
@@ -418,6 +424,7 @@ Examples:
   python smb_scanner.py -t                 # Scan globally (no country filter)
   python smb_scanner.py -q -o results.csv  # Quiet mode with custom output file
   python smb_scanner.py -c GB -q           # Scan UK in quiet mode
+  python smb_scanner.py -v                 # Enable verbose authentication testing output
   python smb_scanner.py -x                 # Disable colored output
   python smb_scanner.py --exclude-file custom_exclusions.txt  # Use custom exclusion file
   python smb_scanner.py --additional-excludes "My ISP,Another Org"  # Add more exclusions
@@ -456,6 +463,10 @@ Organization Exclusions:
     parser.add_argument('-t', '--terra',
                        action='store_true',
                        help='Search globally without country filters (terra = Earth)')
+
+    parser.add_argument('-v', '--vox',
+                       action='store_true',
+                       help='Enable verbose output showing detailed authentication testing steps')
 
     parser.add_argument('-x', '--nyx',
                        action='store_true',
@@ -553,6 +564,7 @@ def main():
         scanner = SMBScanner(
             SHODAN_API_KEY,
             quiet=args.quiet,
+            verbose=args.vox,
             output_file=args.output,
             exclusion_file=args.exclude_file,
             additional_excludes=additional_excludes,
