@@ -86,7 +86,7 @@ CONFIG = load_configuration()
 DEFAULT_EXCLUSION_FILE = CONFIG["files"]["default_exclusion_file"]
 
 class SMBScanner:
-    def __init__(self, config, quiet=False, verbose=False, output_file=None, exclusion_file=None, additional_excludes=None, no_default_excludes=False, no_colors=False, new_file=False, record_name=None):
+    def __init__(self, config, quiet=False, verbose=False, output_file=None, exclusion_file=None, additional_excludes=None, no_default_excludes=False, no_colors=False, new_file=False, record_name=None, log_failures=False):
         """Initialize the SMB scanner with configuration object."""
         self.config = config
         self.quiet = quiet
@@ -147,6 +147,24 @@ class SMBScanner:
         self.successful_connections = []
         self.total_targets = 0
         self.current_target = 0
+        
+        # Failure logging setup
+        self.log_failures = log_failures
+        self.failed_connections = []
+        if log_failures:
+            # Determine failure output file based on flags (mirror success logic)
+            if output_file:
+                # If custom output specified, use similar naming for failures
+                base_name = output_file.rsplit('.', 1)[0] if '.' in output_file else output_file
+                self.failure_output_file = f"{base_name}_failures.csv"
+                self.failure_append_mode = False
+            elif new_file:
+                self.failure_output_file = f"failed_record_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                self.failure_append_mode = False
+            else:
+                failure_record_name = record_name.replace('ip_record', 'failed_record') if record_name else "failed_record.csv"
+                self.failure_output_file = failure_record_name
+                self.failure_append_mode = True
         
         # Load organization exclusions
         self.excluded_orgs = self.load_exclusions()
@@ -517,6 +535,20 @@ class SMBScanner:
                 })
             else:
                 self.print_if_not_quiet(f"  {self.RED}✗ All authentication methods failed{self.RESET}")
+                
+                # Log failure if failure logging is enabled
+                if self.log_failures:
+                    # Create list of attempted authentication methods
+                    attempted_methods = [method_name for method_name, _, _ in auth_methods]
+                    attempted_methods_text = ", ".join(attempted_methods)
+                    
+                    self.failed_connections.append({
+                        'ip': ip,
+                        'country': country_name,
+                        'auth_method': 'All authentication methods failed',
+                        'shares': attempted_methods_text,  # Use shares field to store attempted methods
+                        'timestamp': datetime.now().strftime('%Y-%m-%dT%H:%M')
+                    })
 
         except KeyboardInterrupt:
             raise  # Re-raise to allow script interruption
@@ -628,6 +660,82 @@ class SMBScanner:
             pass
         return existing_records
 
+    def save_failed_results(self):
+        """Save failed connections to CSV file with deduplication."""
+        if not self.log_failures or not self.failed_connections:
+            return
+
+        fieldnames = ['ip_address', 'country', 'auth_method', 'shares', 'timestamp']
+        
+        try:
+            # Load existing failure records for deduplication
+            existing_records = {}
+            if self.failure_append_mode and os.path.exists(self.failure_output_file):
+                # Check if existing file has compatible headers
+                if not self.check_csv_compatibility(self.failure_output_file, fieldnames):
+                    # Create new file with timestamp
+                    backup_file = f"failed_record_{datetime.now().strftime('%Y%m%d')}.csv"
+                    self.print_if_not_quiet(f"{self.YELLOW}⚠ Failure CSV header mismatch detected. Creating new file: {backup_file}{self.RESET}")
+                    self.failure_output_file = backup_file
+                    self.failure_append_mode = False
+                else:
+                    # Load existing records for deduplication
+                    existing_records = self.load_existing_records(self.failure_output_file)
+            
+            # Process new failed connections and merge with existing records
+            updated_count = 0
+            new_count = 0
+            
+            for conn in self.failed_connections:
+                ip = conn['ip']
+                new_record = {
+                    'ip_address': ip,
+                    'country': conn['country'],
+                    'auth_method': conn['auth_method'],
+                    'shares': conn.get('shares', ''),
+                    'timestamp': conn['timestamp']
+                }
+                
+                if ip in existing_records:
+                    # Check if any fields have changed
+                    existing = existing_records[ip]
+                    fields_changed = False
+                    
+                    for field in ['country', 'auth_method', 'shares']:
+                        if existing.get(field, '') != new_record[field]:
+                            fields_changed = True
+                            break
+                    
+                    if fields_changed:
+                        # Update existing record with new data and timestamp
+                        existing_records[ip] = new_record
+                        updated_count += 1
+                    else:
+                        # Just update timestamp if no other changes
+                        existing_records[ip]['timestamp'] = new_record['timestamp']
+                        updated_count += 1
+                else:
+                    # New IP address
+                    existing_records[ip] = new_record
+                    new_count += 1
+            
+            # Write all records back to file
+            with open(self.failure_output_file, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                # Sort by IP address for consistent output
+                for ip in sorted(existing_records.keys()):
+                    writer.writerow(existing_records[ip])
+
+            # Report results
+            total_records = len(existing_records)
+            self.print_if_not_quiet(f"✓ Failed connections saved to {self.failure_output_file}")
+            self.print_if_not_quiet(f"✓ New failures: {new_count}, Updated: {updated_count}, Total failure records: {total_records}")
+
+        except Exception as e:
+            print(f"✗ Failed to save failure results: Unable to write to file")
+
     def run_scan(self, countries=None, country_names_map=None):
         """Run the complete SMB scanning process."""
         if countries is None:
@@ -660,6 +768,10 @@ class SMBScanner:
         self.print_if_not_quiet("\n" + "=" * 50)
         self.print_if_not_quiet("Scan completed!")
         self.save_results()
+        
+        # Save failed results if failure logging is enabled
+        if self.log_failures:
+            self.save_failed_results()
 
 def parse_arguments():
     """Parse command line arguments."""
@@ -675,6 +787,8 @@ Examples:
   python smb_scanner.py -q -o results.csv  # Quiet mode with custom output file
   python smb_scanner.py -c GB -q           # Scan UK in quiet mode
   python smb_scanner.py -v                 # Enable verbose authentication testing output
+  python smb_scanner.py -f                 # Log failed connections to failed_record.csv
+  python smb_scanner.py -f -v              # Verbose mode with failure logging
   python smb_scanner.py -x                 # Disable colored output
   python smb_scanner.py --exclude-file custom_exclusions.txt  # Use custom exclusion file
   python smb_scanner.py --additional-excludes "My ISP,Another Org"  # Add more exclusions
@@ -715,6 +829,10 @@ Organization Exclusions:
                        type=str,
                        metavar='FILE',
                        help=f'Load organization exclusions from file (default: {DEFAULT_EXCLUSION_FILE})')
+
+    parser.add_argument('-f', '--log-failures',
+                       action='store_true',
+                       help='Log failed connection attempts to separate CSV file (failed_record.csv)')
 
     parser.add_argument('-n', '--new-file',
                        action='store_true',
@@ -835,7 +953,8 @@ def main():
             no_default_excludes=args.no_default_excludes,
             no_colors=args.nyx,
             new_file=args.new_file,
-            record_name=args.record_name
+            record_name=args.record_name,
+            log_failures=args.log_failures
         )
         scanner.run_scan(countries=countries, country_names_map=country_names_map)
     except KeyboardInterrupt:
