@@ -306,6 +306,14 @@ This tool is designed for legitimate security purposes:
 - Follow all applicable laws and regulations
 - Use findings responsibly for defensive purposes
 
+## Development
+
+SMBSeek was "vibe coded" by Claude (Anthropic's AI assistant) in close collaboration with human direction and testing. This project represents an interesting example of human-AI pair programming, where complex cybersecurity tooling was iteratively designed, implemented, and refined through natural language conversations. 
+
+The development process involved real-world testing, debugging sessions, security considerations, and feature enhancements - all guided through conversational programming. From initial concept to production-ready tool, every line of code, documentation, and architectural decision emerged from this collaborative approach.
+
+Special thanks to Claude for the meticulous attention to code quality, security best practices, error handling, and comprehensive documentation throughout the development process.
+
 ## Contributing
 
 1. Fork the repository
