@@ -541,6 +541,7 @@ def main():
 
     # Load configuration
     config = load_configuration()
+    DEFAULT_EXCLUSION_FILE = config["files"]["default_exclusion_file"]
 
     if not args.quiet:
         print("SMB Scanner Tool")
