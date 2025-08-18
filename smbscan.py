@@ -519,7 +519,7 @@ class SMBScanner:
             self.print_if_not_quiet(f"  {self.RED}✗ Unexpected error during scan: {str(e)[:50]}{self.RESET}")
 
     def save_results(self):
-        """Save successful connections to CSV file."""
+        """Save successful connections to CSV file with deduplication."""
         if not self.successful_connections:
             self.print_if_not_quiet("No successful connections found.")
             return
@@ -527,6 +527,8 @@ class SMBScanner:
         fieldnames = ['ip_address', 'country', 'auth_method', 'shares', 'timestamp']
         
         try:
+            # Load existing records for deduplication
+            existing_records = {}
             if self.append_mode and os.path.exists(self.output_file):
                 # Check if existing file has compatible headers
                 if not self.check_csv_compatibility(self.output_file, fieldnames):
@@ -535,28 +537,60 @@ class SMBScanner:
                     self.print_if_not_quiet(f"{self.YELLOW}⚠ CSV header mismatch detected. Creating new file: {backup_file}{self.RESET}")
                     self.output_file = backup_file
                     self.append_mode = False
+                else:
+                    # Load existing records for deduplication
+                    existing_records = self.load_existing_records(self.output_file)
             
-            mode = 'a' if (self.append_mode and os.path.exists(self.output_file)) else 'w'
-            write_header = mode == 'w' or not os.path.exists(self.output_file)
+            # Process new connections and merge with existing records
+            updated_count = 0
+            new_count = 0
             
-            with open(self.output_file, mode, newline='', encoding='utf-8') as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-
-                if write_header:
-                    writer.writeheader()
+            for conn in self.successful_connections:
+                ip = conn['ip']
+                new_record = {
+                    'ip_address': ip,
+                    'country': conn['country'],
+                    'auth_method': conn['auth_method'],
+                    'shares': conn.get('shares', ''),
+                    'timestamp': conn['timestamp']
+                }
+                
+                if ip in existing_records:
+                    # Check if any fields have changed
+                    existing = existing_records[ip]
+                    fields_changed = False
                     
-                for conn in self.successful_connections:
-                    writer.writerow({
-                        'ip_address': conn['ip'],
-                        'country': conn['country'],
-                        'auth_method': conn['auth_method'],
-                        'shares': conn.get('shares', ''),
-                        'timestamp': conn['timestamp']
-                    })
+                    for field in ['country', 'auth_method', 'shares']:
+                        if existing.get(field, '') != new_record[field]:
+                            fields_changed = True
+                            break
+                    
+                    if fields_changed:
+                        # Update existing record with new data and timestamp
+                        existing_records[ip] = new_record
+                        updated_count += 1
+                    else:
+                        # Just update timestamp if no other changes
+                        existing_records[ip]['timestamp'] = new_record['timestamp']
+                        updated_count += 1
+                else:
+                    # New IP address
+                    existing_records[ip] = new_record
+                    new_count += 1
+            
+            # Write all records back to file
+            with open(self.output_file, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                # Sort by IP address for consistent output
+                for ip in sorted(existing_records.keys()):
+                    writer.writerow(existing_records[ip])
 
-            action = "appended to" if mode == 'a' else "saved to"
-            self.print_if_not_quiet(f"✓ Results {action} {self.output_file}")
-            self.print_if_not_quiet(f"✓ Total successful connections: {len(self.successful_connections)}")
+            # Report results
+            total_records = len(existing_records)
+            self.print_if_not_quiet(f"✓ Results saved to {self.output_file}")
+            self.print_if_not_quiet(f"✓ New IPs: {new_count}, Updated: {updated_count}, Total records: {total_records}")
 
         except Exception as e:
             print(f"✗ Failed to save results: Unable to write to file")
@@ -572,6 +606,22 @@ class SMBScanner:
                 return existing_headers == expected_fieldnames
         except Exception:
             return True  # If we can't read it, assume it's compatible
+
+    def load_existing_records(self, filename):
+        """Load existing CSV records into a dictionary keyed by IP address."""
+        existing_records = {}
+        try:
+            if os.path.exists(filename):
+                with open(filename, 'r', newline='', encoding='utf-8') as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    for row in reader:
+                        ip = row.get('ip_address')
+                        if ip:
+                            existing_records[ip] = row
+        except Exception:
+            # If we can't read existing file, start fresh
+            pass
+        return existing_records
 
     def run_scan(self, countries=None, country_names_map=None):
         """Run the complete SMB scanning process."""
