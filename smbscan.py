@@ -21,7 +21,7 @@ import socket
 import spnego
 
 # Configuration
-SHODAN_API_KEY = "p4Lxq5cJrVMQHVBMQf26XEZUva4LI38r"  # API key for testing
+SHODAN_API_KEY = "HETpWECrWPwosEfASyHNgQ9hVSmp7VIf"  # API key for testing
 CONNECTION_TIMEOUT = 30  # seconds
 PORT_CHECK_TIMEOUT = 10  # seconds for port check
 RATE_LIMIT_DELAY = 3  # seconds between connection attempts
