@@ -80,6 +80,10 @@ def load_configuration(config_file="config.json"):
         print("✗ Using default configuration")  
         return default_config
 
+# Load configuration at module level
+CONFIG = load_configuration()
+DEFAULT_EXCLUSION_FILE = CONFIG["files"]["default_exclusion_file"]
+
 class SMBScanner:
     def __init__(self, config, quiet=False, verbose=False, output_file=None, exclusion_file=None, additional_excludes=None, no_default_excludes=False, no_colors=False):
         """Initialize the SMB scanner with configuration object."""
@@ -539,17 +543,13 @@ def main():
 
     args = parse_arguments()
 
-    # Load configuration
-    config = load_configuration()
-    DEFAULT_EXCLUSION_FILE = config["files"]["default_exclusion_file"]
-
     if not args.quiet:
         print("SMB Scanner Tool")
         print("Scanning for SMB servers with weak authentication")
 
     # Determine target countries
     countries = []
-    country_names_map = config["countries"].copy()
+    country_names_map = CONFIG["countries"].copy()
 
     if args.terra:
         # Global search - no country filter
@@ -560,14 +560,14 @@ def main():
         # Single country specified
         country_code = args.country.upper()
         countries = [country_code]
-        if country_code not in config["countries"]:
+        if country_code not in CONFIG["countries"]:
             # Add custom country to the map
             country_names_map[country_code] = country_code
         if not args.quiet:
             print(f"Target country: {country_names_map.get(country_code, country_code)}")
     else:
         # Use default countries
-        countries = list(config["countries"].keys())
+        countries = list(CONFIG["countries"].keys())
 
     # Add additional countries if specified
     if args.additional_country and not args.terra:
@@ -594,13 +594,13 @@ def main():
         print()
 
     # Check if API key is configured
-    if config["shodan"]["api_key"] == "YOUR_API_KEY_HERE":
+    if CONFIG["shodan"]["api_key"] == "YOUR_API_KEY_HERE":
         print("✗ Please configure your Shodan API key in config.json")
         sys.exit(1)
 
     try:
         scanner = SMBScanner(
-            config,
+            CONFIG,
             quiet=args.quiet,
             verbose=args.vox,
             output_file=args.output,
