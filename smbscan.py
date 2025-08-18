@@ -20,6 +20,7 @@ from smbprotocol.exceptions import SMBException
 import socket
 import spnego
 import json
+import subprocess
 from contextlib import redirect_stderr
 from io import StringIO
 
@@ -277,6 +278,14 @@ class SMBScanner:
                     session.connect()
 
                 # If we get here, authentication succeeded
+                # Try to list shares after successful authentication
+                shares = []
+                try:
+                    shares = self.list_smb_shares(ip, username, password)
+                except:
+                    # If share listing fails, continue with empty list
+                    pass
+                
                 # Clean disconnect
                 try:
                     with redirect_stderr(stderr_buffer):
@@ -289,7 +298,7 @@ class SMBScanner:
                 except:
                     pass
 
-                return method_name
+                return method_name, shares
 
             except spnego.exceptions.SpnegoError as e:
                 # SPNEGO/Auth negotiation failed - don't print detailed error
@@ -318,7 +327,7 @@ class SMBScanner:
                     except:
                         pass
 
-        return None
+        return None, []
 
     def test_smb_alternative(self, ip):
         """Alternative testing method using minimal SMB connection."""
@@ -338,13 +347,82 @@ class SMBScanner:
                 with redirect_stderr(stderr_buffer):
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, stderr=subprocess.DEVNULL)
                     if result.returncode == 0 or "Sharename" in result.stdout:
-                        return method_name
+                        # Try to parse shares from the output if available
+                        shares = self.parse_share_list(result.stdout) if "Sharename" in result.stdout else []
+                        return method_name, shares
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 continue
             except Exception:
                 continue
 
-        return None
+        return None, []
+
+    def list_smb_shares(self, ip, username="", password=""):
+        """List available SMB shares on the target server."""
+        try:
+            # Use smbclient command as fallback to list shares
+            cmd = ["smbclient", "-L", f"//{ip}"]
+            
+            # Add authentication based on successful method
+            if username == "" and password == "":
+                cmd.append("-N")  # No password (anonymous)
+            elif username == "guest":
+                if password == "":
+                    cmd.extend(["--user", "guest%"])
+                else:
+                    cmd.extend(["--user", f"guest%{password}"])
+            else:
+                cmd.extend(["--user", f"{username}%{password}"])
+            
+            # Run command with timeout
+            result = subprocess.run(cmd, capture_output=True, text=True, 
+                                  timeout=15, stderr=subprocess.DEVNULL)
+            
+            if result.returncode == 0 and "Sharename" in result.stdout:
+                return self.parse_share_list(result.stdout)
+            
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            pass
+        
+        return []
+
+    def parse_share_list(self, smbclient_output):
+        """Parse smbclient -L output to extract share names."""
+        shares = []
+        lines = smbclient_output.split('\n')
+        in_share_section = False
+        
+        for line in lines:
+            line = line.strip()
+            
+            # Look for the start of the shares section
+            if "Sharename" in line and "Type" in line:
+                in_share_section = True
+                continue
+            
+            # Stop when we hit the end of shares section
+            if in_share_section and (line.startswith("Server") or line.startswith("Workgroup") or line == ""):
+                if not line or line.startswith("-"):
+                    continue
+                if line.startswith("Server") or line.startswith("Workgroup"):
+                    break
+            
+            # Parse share lines
+            if in_share_section and line and not line.startswith("-"):
+                parts = line.split()
+                if len(parts) >= 2:
+                    share_name = parts[0]
+                    share_type = parts[1]
+                    
+                    # Skip default/administrative shares (ending with $)
+                    if not share_name.endswith('$') and share_type == "Disk":
+                        shares.append(share_name)
+        
+        # Return first 5 shares, add "(and more)" if there are more
+        if len(shares) > 5:
+            return shares[:5] + ["(and more)"]
+        
+        return shares
 
     def scan_target(self, ip, country_code, country_names_map):
         """Scan a single target with multiple authentication methods."""
@@ -366,21 +444,26 @@ class SMBScanner:
                 return
 
             # Test with smbprotocol library
-            successful_method = self.test_smb_connection(ip, auth_methods)
+            successful_method, shares = self.test_smb_connection(ip, auth_methods)
 
             # If smbprotocol fails, try smbclient as fallback
             if not successful_method:
                 self.print_if_verbose(f"    {self.CYAN}Trying smbclient fallback...{self.RESET}")
-                successful_method = self.test_smb_alternative(ip)
-                if successful_method:
-                    successful_method = f"{successful_method} (smbclient)"
+                fallback_method, fallback_shares = self.test_smb_alternative(ip)
+                if fallback_method:
+                    successful_method = f"{fallback_method} (smbclient)"
+                    shares = fallback_shares
 
             if successful_method:
                 self.print_if_not_quiet(f"  {self.GREEN}✓ Success! Authentication: {successful_method}{self.RESET}")
+                # Format shares for display
+                shares_text = ", ".join(shares) if shares else ""
+                
                 self.successful_connections.append({
                     'ip': ip,
                     'country': country_name,
                     'auth_method': successful_method,
+                    'shares': shares_text,
                     'timestamp': datetime.now().isoformat()
                 })
             else:
@@ -399,7 +482,7 @@ class SMBScanner:
 
         try:
             with open(self.output_file, 'w', newline='', encoding='utf-8') as csvfile:
-                fieldnames = ['ip_address', 'country', 'auth_method']
+                fieldnames = ['ip_address', 'country', 'auth_method', 'shares']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
                 writer.writeheader()
@@ -407,7 +490,8 @@ class SMBScanner:
                     writer.writerow({
                         'ip_address': conn['ip'],
                         'country': conn['country'],
-                        'auth_method': conn['auth_method']
+                        'auth_method': conn['auth_method'],
+                        'shares': conn.get('shares', '')
                     })
 
             self.print_if_not_quiet(f"✓ Results saved to {self.output_file}")
