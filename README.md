@@ -27,7 +27,7 @@ SMBSeek helps security professionals identify SMB servers that allow anonymous o
 Install required Python packages:
 
 ```bash
-pip install shodan smbprotocol spnego
+pip install shodan smbprotocol pyspnego
 ```
 
 ### System Requirements
