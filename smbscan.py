@@ -134,6 +134,9 @@ class SMBScanner:
         self.successful_connections = []
         self.total_targets = 0
         self.current_target = 0
+        
+        # Load organization exclusions
+        self.excluded_orgs = self.load_exclusions()
 
     def check_smbclient_availability(self):
         """Check if smbclient command is available on the system."""
@@ -145,9 +148,6 @@ class SMBScanner:
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
             return False
-
-        # Load organization exclusions
-        self.excluded_orgs = self.load_exclusions()
 
     def print_if_not_quiet(self, message):
         """Print message only if not in quiet mode."""
