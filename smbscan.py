@@ -311,7 +311,11 @@ class SMBScanner:
                 shares = []
                 try:
                     shares = self.list_smb_shares(ip, username, password)
-                except:
+                    if hasattr(self, 'verbose') and self.verbose and hasattr(self, 'quiet') and not self.quiet:
+                        print(f"  {getattr(self, 'CYAN', '')}Debug: Found {len(shares)} shares via smbprotocol: {shares}{getattr(self, 'RESET', '')}")
+                except Exception as e:
+                    if hasattr(self, 'verbose') and self.verbose and hasattr(self, 'quiet') and not self.quiet:
+                        print(f"  {getattr(self, 'CYAN', '')}Debug: Share listing failed: {str(e)}{getattr(self, 'RESET', '')}")
                     # If share listing fails, continue with empty list
                     pass
                 
@@ -380,6 +384,8 @@ class SMBScanner:
                     if result.returncode == 0 or "Sharename" in result.stdout:
                         # Try to parse shares from the output if available
                         shares = self.parse_share_list(result.stdout) if "Sharename" in result.stdout else []
+                        if hasattr(self, 'verbose') and self.verbose and hasattr(self, 'quiet') and not self.quiet:
+                            print(f"  {getattr(self, 'CYAN', '')}Debug: smbclient fallback found {len(shares)} shares: {shares}{getattr(self, 'RESET', '')}")
                         return method_name, shares
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 continue
@@ -420,10 +426,14 @@ class SMBScanner:
             # Debug output in verbose mode
             if hasattr(self, 'verbose') and self.verbose and hasattr(self, 'quiet') and not self.quiet:
                 print(f"  {getattr(self, 'CYAN', '')}Debug: Return code: {result.returncode}, Has 'Sharename': {'Sharename' in result.stdout}{getattr(self, 'RESET', '')}")
+                print(f"  {getattr(self, 'CYAN', '')}Debug: smbclient stdout: {result.stdout[:200]}...{getattr(self, 'RESET', '')}")
             
             # Use same success logic as test_smb_alternative
             if result.returncode == 0 or "Sharename" in result.stdout:
-                return self.parse_share_list(result.stdout)
+                parsed_shares = self.parse_share_list(result.stdout)
+                if hasattr(self, 'verbose') and self.verbose and hasattr(self, 'quiet') and not self.quiet:
+                    print(f"  {getattr(self, 'CYAN', '')}Debug: Parsed {len(parsed_shares)} shares from output: {parsed_shares}{getattr(self, 'RESET', '')}")
+                return parsed_shares
             
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
             pass
@@ -500,8 +510,14 @@ class SMBScanner:
 
             if successful_method:
                 self.print_if_not_quiet(f"  {self.GREEN}✓ Success! Authentication: {successful_method}{self.RESET}")
+                # Debug: Show what shares we received
+                if hasattr(self, 'verbose') and self.verbose and hasattr(self, 'quiet') and not self.quiet:
+                    print(f"  {getattr(self, 'CYAN', '')}Debug: Received shares list: {shares} (type: {type(shares)}){getattr(self, 'RESET', '')}")
+                
                 # Format shares for display
                 shares_text = ", ".join(shares) if shares else ""
+                if hasattr(self, 'verbose') and self.verbose and hasattr(self, 'quiet') and not self.quiet:
+                    print(f"  {getattr(self, 'CYAN', '')}Debug: Formatted shares text: '{shares_text}'{getattr(self, 'RESET', '')}")
                 
                 self.successful_connections.append({
                     'ip': ip,
