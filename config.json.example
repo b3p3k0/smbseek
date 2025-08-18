@@ -1,0 +1,22 @@
+{
+  "shodan": {
+    "api_key": "YOUR_API_KEY_HERE"
+  },
+  "connection": {
+    "timeout": 30,
+    "port_check_timeout": 10,
+    "rate_limit_delay": 3
+  },
+  "files": {
+    "default_exclusion_file": "exclusion_list.txt"
+  },
+  "countries": {
+    "US": "United States",
+    "GB": "United Kingdom", 
+    "CA": "Canada",
+    "IE": "Ireland",
+    "AU": "Australia",
+    "NZ": "New Zealand",
+    "ZA": "South Africa"
+  }
+}
