@@ -4,11 +4,12 @@ A defensive security toolkit that uses the Shodan API to identify and analyze SM
 
 ## Tool Suite
 
-SMBSeek consists of three complementary tools:
+SMBSeek consists of four complementary tools:
 
 - **`smbscan.py`**: Primary scanner for discovering SMB servers with weak authentication
 - **`failure_analyzer.py`**: Deep analysis tool for understanding authentication failures  
 - **`smb_peep.py`**: Share access verification tool for testing read accessibility
+- **`smb_snag.py`**: File collection tool for downloading samples from accessible shares
 
 ## Overview
 
@@ -114,10 +115,11 @@ python3 smbscan.py --no-default-excludes
 # Combine multiple options
 python3 smbscan.py -c GB -q -o uk_scan.csv -x
 
-# Complete workflow: scan, analyze failures, test share access
+# Complete workflow: scan, analyze failures, test share access, collect files
 python3 smbscan.py -f -c US
 python3 failure_analyzer.py failed_record.csv
 python3 smb_peep.py ip_record.csv
+python3 smb_snag.py share_access_*.json
 ```
 
 ### Command Line Options
@@ -567,6 +569,9 @@ python3 smb_peep.py ip_record.csv
 
 # 3. Analyze JSON results for accessible shares
 cat share_access_*.json | jq '.results[] | select(.accessible_shares | length > 0)'
+
+# 4. Collect files from accessible shares
+python3 smb_snag.py share_access_*.json
 ```
 
 ### Command Line Options
@@ -584,6 +589,187 @@ cat share_access_*.json | jq '.results[] | select(.accessible_shares | length > 
 - **READ ONLY OPERATIONS**: No write operations are ever attempted
 - **Original Authentication**: Uses only the credentials that originally succeeded
 - **Rate Limited**: Respects target systems with configurable delays
+- **Authorized Testing Only**: Designed for networks you own or have permission to test
+
+## File Collection Tool
+
+### Overview
+
+SMB Snag (`smb_snag.py`) is a specialized tool that downloads file samples from SMB shares with verified read access. It takes the results from SMB Peep and selectively collects files for security research and data exposure analysis.
+
+### Purpose
+
+After identifying accessible SMB shares, SMB Snag helps security professionals:
+- Collect file samples to understand the scope of data exposure
+- Download evidence for security audit reports and compliance assessments
+- Analyze file types and content patterns on exposed shares
+- Generate comprehensive collection manifests for investigation documentation
+
+### Usage
+
+```bash
+# Basic file collection from smb_peep results
+python3 smb_snag.py share_access_20250818_195333.json
+
+# Quiet mode with automatic download (no confirmation prompt)
+python3 smb_snag.py -a -q share_access_results.json
+
+# Verbose collection with detailed progress output
+python3 smb_snag.py -v share_access_results.json
+
+# Disable colored output for logging
+python3 smb_snag.py -x share_access_results.json
+
+# Get help information
+python3 smb_snag.py --help
+```
+
+### Collection Process
+
+#### 1. Input Processing
+- Reads JSON results from SMB Peep containing accessible share information
+- Extracts IP addresses, authentication methods, and accessible share lists
+- Filters targets to only those with verified read access
+
+#### 2. File Discovery Phase
+- Re-enumerates files on each accessible share using original authentication
+- Applies configurable file extension filters (included/excluded lists)
+- Scans directories recursively to build comprehensive file listings
+- **READ ONLY**: No write operations or file modifications ever attempted
+
+#### 3. Collection Planning
+- Sorts files by modification date (most recent first)
+- Applies per-target limits for file count and total download size
+- Provides collection summary with confirmation prompt
+- Shows total files, size estimates, and target directory structure
+
+#### 4. File Download Execution
+- Creates organized directory structure: `YYYYMMDD-IP_ADDRESS/`
+- Downloads files with rate limiting between operations
+- Handles filename conflicts with automatic renaming
+- Prefixes downloaded files with share name for organization
+
+#### 5. Documentation Generation
+- Creates detailed collection manifest in JSON format
+- Records all download operations with timestamps and file paths
+- Provides audit trail for compliance and documentation needs
+
+### Configuration
+
+SMB Snag uses the same `config.json` file as other SMBSeek tools, with additional file collection settings:
+
+```json
+{
+  "file_collection": {
+    "max_files_per_target": 3,
+    "max_total_size_mb": 500,
+    "download_delay_seconds": 2,
+    "included_extensions": [
+      ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".csv",
+      ".eml", ".msg", ".mbox", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff",
+      ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".mp3", ".wav", ".zip", ".rar"
+    ],
+    "excluded_extensions": [
+      ".exe", ".dll", ".sys", ".bat", ".cmd", ".scr", ".com", ".pif", ".msi", 
+      ".bin", ".log", ".tmp", ".temp", ".bak", ".old", ".swp", ".lock"
+    ]
+  }
+}
+```
+
+#### Collection Settings
+- `max_files_per_target`: Maximum files to download per IP address (default: 3)
+- `max_total_size_mb`: Total download size limit in megabytes (default: 500)
+- `download_delay_seconds`: Delay between file downloads in seconds (default: 2)
+- `included_extensions`: File types to include in collection (documents, media, archives)
+- `excluded_extensions`: File types to exclude (executables, system files, temporary files)
+
+### Output Format
+
+#### Directory Structure
+```
+20250818-192.168.1.100/
+├── Documents_report.pdf
+├── Documents_presentation.pptx
+├── Public_readme.txt
+└── Backup_data.xlsx
+
+20250818-10.0.0.50/
+├── Share1_file1.doc
+├── Share1_file2.csv
+└── Share2_archive.zip
+```
+
+#### Collection Manifest
+SMB Snag generates timestamped JSON manifests documenting all collection activities:
+
+```json
+{
+  "metadata": {
+    "tool": "smb_snag",
+    "collection_date": "2025-08-18T14:30:45",
+    "total_files": 8,
+    "total_size_bytes": 15728640,
+    "directories_created": ["20250818-192.168.1.100", "20250818-10.0.0.50"]
+  },
+  "downloads": [
+    {
+      "ip": "192.168.1.100",
+      "share": "Documents",
+      "remote_path": "report.pdf",
+      "local_path": "/home/user/20250818-192.168.1.100/Documents_report.pdf",
+      "size": 2048576,
+      "timestamp": "2025-08-18T14:31:02"
+    }
+  ]
+}
+```
+
+### Command Line Options
+
+| Option | Description |
+|--------|-------------|
+| `-h, --help` | Show comprehensive help message |
+| `-q, --quiet` | Suppress output to screen (useful for scripting) |
+| `-v, --verbose` | Enable verbose output showing detailed collection progress |
+| `-a, --auto-download` | Skip confirmation prompt and download automatically |
+| `-x, --no-colors` | Disable colored output |
+
+### Prerequisites
+
+Same dependencies as other SMBSeek tools:
+```bash
+pip install smbprotocol pyspnego
+```
+
+System requirements:
+- smbclient (for file enumeration and download operations)
+- Same `config.json` configuration as other SMBSeek tools
+
+### Integration Workflow
+
+```bash
+# 1. Discover vulnerable SMB servers
+python3 smbscan.py -c US
+
+# 2. Test share accessibility
+python3 smb_peep.py ip_record.csv
+
+# 3. Collect file samples from accessible shares
+python3 smb_snag.py share_access_*.json
+
+# 4. Review collection manifest and downloaded files
+cat collection_manifest_*.json | jq '.metadata'
+ls -la 20*-*/
+```
+
+### Security Considerations
+
+- **READ ONLY OPERATIONS**: Never attempts write operations or file modifications
+- **Rate Limited**: Respects target systems with configurable delays between downloads
+- **Size Limited**: Enforces reasonable download limits to prevent excessive collection
+- **Extension Filtered**: Avoids downloading executable or system files by default
+- **Audit Trail**: Comprehensive logging of all collection activities
 - **Authorized Testing Only**: Designed for networks you own or have permission to test
 
 ## Security Considerations
