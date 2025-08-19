@@ -5,7 +5,8 @@
   "connection": {
     "timeout": 30,
     "port_check_timeout": 10,
-    "rate_limit_delay": 3
+    "rate_limit_delay": 3,
+    "share_access_delay": 7
   },
   "files": {
     "default_exclusion_file": "exclusion_list.txt"
@@ -18,5 +19,19 @@
     "AU": "Australia",
     "NZ": "New Zealand",
     "ZA": "South Africa"
+  },
+  "file_collection": {
+    "max_files_per_target": 3,
+    "max_total_size_mb": 500,
+    "download_delay_seconds": 2,
+    "included_extensions": [
+      ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".csv",
+      ".eml", ".msg", ".mbox", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff",
+      ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".mp3", ".wav", ".zip", ".rar"
+    ],
+    "excluded_extensions": [
+      ".exe", ".dll", ".sys", ".bat", ".cmd", ".scr", ".com", ".pif", ".msi", 
+      ".bin", ".log", ".tmp", ".temp", ".bak", ".old", ".swp", ".lock"
+    ]
   }
 }

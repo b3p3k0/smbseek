@@ -4,10 +4,11 @@ A defensive security toolkit that uses the Shodan API to identify and analyze SM
 
 ## Tool Suite
 
-SMBSeek consists of two complementary tools:
+SMBSeek consists of three complementary tools:
 
 - **`smbscan.py`**: Primary scanner for discovering SMB servers with weak authentication
-- **`failure_analyzer.py`**: Deep analysis tool for understanding authentication failures
+- **`failure_analyzer.py`**: Deep analysis tool for understanding authentication failures  
+- **`smb_peep.py`**: Share access verification tool for testing read accessibility
 
 ## Overview
 
@@ -113,9 +114,10 @@ python3 smbscan.py --no-default-excludes
 # Combine multiple options
 python3 smbscan.py -c GB -q -o uk_scan.csv -x
 
-# Complete workflow: scan with failure logging, then analyze failures
+# Complete workflow: scan, analyze failures, test share access
 python3 smbscan.py -f -c US
 python3 failure_analyzer.py failed_record.csv
+python3 smb_peep.py ip_record.csv
 ```
 
 ### Command Line Options
@@ -213,6 +215,7 @@ SMBSeek uses a JSON configuration file (`config.json`) to manage all settings. T
 - `timeout`: SMB connection timeout in seconds (default: 30)
 - `port_check_timeout`: Port 445 availability check timeout in seconds (default: 10)
 - `rate_limit_delay`: Delay between connection attempts in seconds (default: 3)
+- `share_access_delay`: Delay between share access tests in seconds (default: 7)
 
 #### File Settings
 - `default_exclusion_file`: Path to organization exclusion file (default: "exclusion_list.txt")
@@ -440,7 +443,150 @@ Uses the same `config.json` file as SMBSeek for Shodan API access.
 - **Memory Efficiency**: Processes results incrementally for large datasets
 - **Error Handling**: Graceful degradation when individual analysis steps fail
 
+## Share Access Verification Tool
+
+### Overview
+
+SMB Peep (`smb_peep.py`) is a specialized tool that validates read accessibility of SMB shares from servers with successful authentication. It takes the results from SMBSeek and determines which shares actually allow data access, providing crucial intelligence about exposed information.
+
+### Purpose
+
+After identifying SMB servers with weak authentication, SMB Peep answers the critical question: "What data is actually accessible?" It helps security professionals:
+- Validate which shares allow read access beyond just enumeration
+- Understand the scope of data exposure through weak authentication
+- Prioritize remediation efforts based on accessible content
+- Generate detailed access reports for compliance and security auditing
+
+### Usage
+
+```bash
+# Basic share access testing
+python3 smb_peep.py ip_record.csv
+
+# Quiet mode with custom output
+python3 smb_peep.py -q -o share_analysis.json ip_record.csv
+
+# Verbose testing with detailed output
+python3 smb_peep.py -v ip_record.csv
+
+# Get help information
+python3 smb_peep.py --help
+```
+
+### Analysis Process
+
+#### 1. Input Processing
+- Reads CSV results from SMBSeek (`ip_record.csv`)
+- Extracts IP addresses and successful authentication methods
+- Parses authentication credentials for each target
+
+#### 2. Fresh Share Enumeration
+- Re-enumerates shares using the original successful authentication method
+- Ignores shares listed in CSV (gets current state)
+- Filters to non-administrative shares only (excludes shares ending with `$`)
+
+#### 3. Read Access Testing
+- Tests actual SMB share accessibility using smbprotocol
+- Attempts to open and read the root directory of each share
+- **READ ONLY**: No write operations are ever attempted
+- Provides detailed error information for inaccessible shares
+
+#### 4. Rate Limiting
+- Implements configurable delays between share tests (default: 7 seconds)
+- Respects target systems to avoid aggressive testing behavior
+- No delays between different IP addresses
+
+### Output Format
+
+SMB Peep generates structured JSON output containing:
+
+```json
+{
+  "metadata": {
+    "tool": "smb_peep",
+    "scan_date": "2025-08-18T19:53:33",
+    "total_targets": 5,
+    "config": {
+      "share_access_delay": 7,
+      "timeout": 30
+    }
+  },
+  "results": [
+    {
+      "ip_address": "192.168.1.100",
+      "country": "United States", 
+      "auth_method": "Guest/Blank",
+      "shares_found": ["Documents", "Public", "Backup"],
+      "accessible_shares": ["Documents", "Public"],
+      "share_details": [
+        {
+          "share_name": "Documents",
+          "accessible": true
+        },
+        {
+          "share_name": "Public", 
+          "accessible": true
+        },
+        {
+          "share_name": "Backup",
+          "accessible": false,
+          "error": "Read access denied: STATUS_ACCESS_DENIED"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Authentication Methods
+
+SMB Peep uses the original authentication method that succeeded during SMBSeek scanning:
+- **Anonymous**: Empty username and password
+- **Guest/Blank**: Username "guest" with empty password  
+- **Guest/Guest**: Username "guest" with password "guest"
+
+### Prerequisites
+
+Same dependencies as SMBSeek:
+```bash
+pip install smbprotocol pyspnego
+```
+
+System requirements:
+- smbclient (recommended for share enumeration)
+- Same `config.json` configuration as other SMBSeek tools
+
+### Integration Workflow
+
+```bash
+# 1. Discover vulnerable SMB servers
+python3 smbscan.py -c US
+
+# 2. Test share accessibility 
+python3 smb_peep.py ip_record.csv
+
+# 3. Analyze JSON results for accessible shares
+cat share_access_*.json | jq '.results[] | select(.accessible_shares | length > 0)'
+```
+
+### Command Line Options
+
+| Option | Description |
+|--------|-------------|
+| `-h, --help` | Show comprehensive help message |
+| `-q, --quiet` | Suppress output to screen (useful for scripting) |
+| `-v, --verbose` | Enable verbose output showing detailed share testing |
+| `-o, --output FILE` | Specify output JSON file (default: timestamped) |
+| `-x, --no-colors` | Disable colored output |
+
 ### Security Considerations
+
+- **READ ONLY OPERATIONS**: No write operations are ever attempted
+- **Original Authentication**: Uses only the credentials that originally succeeded
+- **Rate Limited**: Respects target systems with configurable delays
+- **Authorized Testing Only**: Designed for networks you own or have permission to test
+
+## Security Considerations
 
 ### Intended Use
 
