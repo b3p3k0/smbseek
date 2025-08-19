@@ -45,7 +45,7 @@ SMBSeek is a defensive security toolkit designed to identify, analyze, and valid
 
 **Data Flow Architecture**:
 ```
-smbscan.py → ip_record.csv → smb_peep.py → share_access_*.json → smb_snag.py
+smb_scan.py → ip_record.csv → smb_peep.py → share_access_*.json → smb_snag.py
            ↓                                                   ↓
     failed_record.csv → failure_analyzer.py → failure_analysis_*.json
                                                    ↓
@@ -232,7 +232,7 @@ Validates read accessibility of SMB shares from servers with successful authenti
 #### Functional Overview
 
 **Validation Process**:
-1. **Input Processing**: Parse successful connections from smbscan.py output
+1. **Input Processing**: Parse successful connections from smb_scan.py output
 2. **Authentication Replication**: Use original successful auth method for each IP
 3. **Fresh Share Discovery**: Re-enumerate shares (ignore CSV data for current state)
 4. **Access Testing**: Attempt actual read operations on each share
@@ -282,7 +282,7 @@ def test_share_access(self, ip, share_name, username, password):
 **Authentication Method Parsing**:
 ```python
 def parse_auth_method(self, auth_method_str):
-    # Handle variations in auth method strings from smbscan.py
+    # Handle variations in auth method strings from smb_scan.py
     auth_lower = auth_method_str.lower()
     if 'anonymous' in auth_lower:
         return "", ""
@@ -293,7 +293,7 @@ def parse_auth_method(self, auth_method_str):
 ```
 
 **Share Filtering Logic**:
-- Reuses `parse_share_list` method from smbscan.py
+- Reuses `parse_share_list` method from smb_scan.py
 - Filters administrative shares (ending with '$')
 - Focuses on 'Disk' type shares only
 - Maintains consistency with main scanner
@@ -564,8 +564,8 @@ ip_address,country,auth_method,shares,timestamp
 - Easy integration with analysis tools
 
 #### File Naming Conventions
-- `ip_record.csv`: Successful connections (smbscan.py)
-- `failed_record.csv`: Failed connections (smbscan.py with -f flag)
+- `ip_record.csv`: Successful connections (smb_scan.py)
+- `failed_record.csv`: Failed connections (smb_scan.py with -f flag)
 - `share_access_YYYYMMDD_HHMMSS.json`: Access verification (smb_peep.py)
 - `failure_analysis_YYYYMMDD_HHMMSS.json`: Failure analysis (failure_analyzer.py)
 - `collection_manifest_YYYYMMDD_HHMMSS.json`: File collection audit trail (smb_snag.py)
@@ -690,7 +690,7 @@ def parse_share_list(self, smbclient_output):
 
 ### CSV Deduplication Strategy
 
-#### Implementation in smbscan.py
+#### Implementation in smb_scan.py
 ```python
 def save_results(self):
     # Load existing records
@@ -1065,7 +1065,7 @@ assert shares == ["Documents"]  # Admin$ and IPC$ filtered out
 #### End-to-End Workflow
 ```bash
 # Test complete workflow with sample data
-python3 smbscan.py -c US --test-mode
+python3 smb_scan.py -c US --test-mode
 python3 failure_analyzer.py failed_record.csv
 python3 smb_peep.py ip_record.csv
 
@@ -1319,6 +1319,207 @@ Human: [Requirement/Problem] → AI: [Complete Implementation] → Human: [Real-
 - Working software solving real problems
 
 This methodology demonstrates that AI agents can handle production-ready, complex software development when supported by effective human partnership and proper collaborative patterns.
+
+---
+
+## Recent Enhancements and Lessons Learned (August 2025)
+
+### Enhancement Overview
+
+During the August 2025 maintenance cycle, several significant improvements were implemented across the SMBSeek toolkit to enhance usability, consistency, and functionality. These changes demonstrate continued evolution of the codebase based on user feedback and operational experience.
+
+### File Naming Consistency Enhancement
+
+#### Problem Identified
+The primary scanner tool was named `smbscan.py` while other tools followed the pattern `smb_peep.py` and `smb_snag.py`, creating inconsistency in the toolkit's naming convention.
+
+#### Solution Implemented
+- Renamed `smbscan.py` to `smb_scan.py` for consistency
+- Updated all references across documentation, help text, and cross-tool references
+- Maintained backward compatibility in functionality while improving naming clarity
+
+#### Development Process Insights
+- **Systematic Reference Updates**: Used comprehensive search and replace across all files
+- **Documentation Consistency**: Updated README.md, DEVNOTES.md, and all help dialogs
+- **Cross-Tool Dependencies**: Verified all Python files for internal references
+- **Zero Functionality Impact**: Pure naming change with no behavioral modifications
+
+#### Lessons for Future Development
+1. **Establish Naming Conventions Early**: Consistent naming patterns improve user experience and maintainability
+2. **Comprehensive Change Management**: File renames require systematic updates across all documentation and references
+3. **Automated Verification**: Use grep/search tools to ensure complete reference updates
+
+### SMB Snag Workflow Enhancement
+
+#### Problem Identified
+Original SMB Snag workflow was download-centric, requiring users to confirm file downloads even when they only wanted to understand what files were available. This created unnecessary friction for reconnaissance workflows.
+
+#### Solution Implemented
+**Manifest-First Architecture**:
+- Default behavior now generates comprehensive file manifests without downloading
+- Added `-d`/`--download-files` flag to enable actual file downloads
+- Enhanced file enumeration with configurable depth limits and timeouts
+- Separated file manifest (`file_manifest_*.json`) from download manifest (`download_manifest_*.json`)
+
+**New Configuration Parameters**:
+```json
+"file_collection": {
+    "max_directory_depth": 3,
+    "enumeration_timeout_seconds": 120,
+    // ... existing parameters
+}
+```
+
+**Enhanced Directory Enumeration**:
+- Configurable depth limiting prevents excessive recursion
+- Timeout management prevents hanging operations on large shares
+- Skip mechanism for directories exceeding depth limits
+
+#### Development Process Insights
+- **Workflow Separation**: Cleanly separated discovery (manifest) from collection (download) phases
+- **Backward Compatibility**: Existing functionality preserved with opt-in flag
+- **User Experience Design**: Default behavior now low-impact reconnaissance
+- **Configuration Extensibility**: Added new config parameters without breaking existing setups
+
+#### Technical Implementation Details
+```python
+def get_directory_listing(self, ip, share_name, username, password, max_files, max_size):
+    # Depth limiting implementation
+    if current_dir:
+        depth = current_dir.count('/') + current_dir.count('\\')
+        if depth >= self.max_depth:
+            current_dir = "__SKIP__"  # Mark to skip files in this directory
+    
+    # Skip files if we're in a directory that exceeds depth limit
+    if current_dir == "__SKIP__":
+        continue
+```
+
+#### Lessons for Future Development
+1. **User Workflow Analysis**: Understand how tools are actually used vs. original design assumptions
+2. **Progressive Enhancement**: Make destructive/intensive operations opt-in rather than default
+3. **Configuration-Driven Limits**: Allow users to control resource-intensive operations
+4. **Separation of Concerns**: Distinguish between reconnaissance and collection phases
+
+### SMB Peep Usability Enhancement
+
+#### Problem Identified
+SMB Peep required explicit CSV file specification, even though the default output from SMB Scan is always `ip_record.csv` in the current directory. This created unnecessary command-line friction in the common workflow.
+
+#### Solution Implemented
+**Intelligent Default File Detection**:
+- Checks for `ip_record.csv` in current directory when no file specified
+- Provides clear feedback when using default file
+- Maintains explicit file specification capability
+- Enhanced error messages guide users when default file not found
+
+**Enhanced User Experience**:
+```bash
+# Old workflow (still supported)
+python3 smb_peep.py ip_record.csv
+
+# New simplified workflow
+python3 smb_peep.py  # Auto-detects ip_record.csv
+```
+
+#### Technical Implementation
+```python
+if not args.csv_file:
+    default_file = "ip_record.csv"
+    if os.path.exists(default_file):
+        args.csv_file = default_file
+        print(f"ℹ Using default input file: {default_file}")
+    else:
+        print(f"✗ No input file specified and default file '{default_file}' not found")
+        # ... helpful error guidance
+```
+
+#### Development Process Insights
+- **Workflow Friction Analysis**: Identified repetitive command-line patterns
+- **Sensible Defaults**: Implemented intelligent behavior based on common usage
+- **Graceful Degradation**: Clear error messages when defaults don't work
+- **Backward Compatibility**: Existing explicit file specification unchanged
+
+#### Lessons for Future Development
+1. **Common Usage Patterns**: Observe how tools are typically invoked and optimize for common cases
+2. **Intelligent Defaults**: Reduce command-line friction without sacrificing flexibility
+3. **Clear User Feedback**: Always inform users when automatic behavior is triggered
+4. **Maintain Flexibility**: Don't remove explicit options when adding automatic behavior
+
+### Architectural Evolution Observations
+
+#### Manifest-Driven Security Analysis
+The separation of file discovery (manifest generation) from file collection (downloads) represents an evolution toward manifest-driven security analysis:
+
+**Benefits**:
+- **Non-Intrusive Reconnaissance**: Generate intelligence without downloading files
+- **Audit Trail**: Complete documentation of what files exist before any collection
+- **Decision Support**: Inform download decisions with comprehensive file listings
+- **Compliance**: Separate audit trail for discovery vs. collection activities
+
+**Pattern for Future Tools**:
+```
+Discovery Phase (Always) → Analysis Phase (Optional) → Action Phase (Opt-in)
+```
+
+#### Configuration-Driven Operational Controls
+The addition of depth and timeout controls demonstrates the importance of operational constraints in security tools:
+
+**Resource Management**:
+- Prevent runaway operations on large/deep directory structures
+- Protect against hanging operations on unresponsive shares
+- Allow user control over scanning intensity
+
+**Scalability Considerations**:
+- Tools must handle edge cases (huge directories, slow networks)
+- Configuration should allow tuning for different environments
+- Timeouts and limits should be reasonable defaults but user-configurable
+
+#### User Experience Design Patterns
+These enhancements reinforce several UX design patterns for security tools:
+
+1. **Progressive Disclosure**: Start with low-impact operations, progress to higher-impact
+2. **Intelligent Defaults**: Reduce friction for common workflows
+3. **Explicit Opt-in**: Make potentially intrusive operations require explicit user intent
+4. **Clear Feedback**: Always inform users about automatic behaviors and tool actions
+
+### Future Development Implications
+
+#### For Security Tool Design
+1. **Reconnaissance vs. Collection**: Always separate discovery from data collection phases
+2. **Manifest-First**: Generate comprehensive metadata before any file operations
+3. **Configurable Limits**: Implement resource controls for all intensive operations
+4. **User Intent Clarity**: Distinguish between passive analysis and active collection
+
+#### For AI-Assisted Development
+1. **Workflow Analysis**: Study how existing tools are actually used to identify enhancement opportunities
+2. **Backward Compatibility**: Preserve existing functionality while adding new capabilities
+3. **Configuration Evolution**: Design config structures that can grow without breaking changes
+4. **User Experience Focus**: Consider command-line friction and common usage patterns
+
+#### For Toolkit Evolution
+1. **Naming Consistency**: Establish and maintain consistent naming patterns across all components
+2. **Default Behavior Optimization**: Make default behavior match most common usage patterns
+3. **Resource Management**: Build operational controls into all network and file system operations
+4. **Audit Trail Design**: Separate manifests for different phases of security analysis
+
+### Code Quality and Maintainability
+
+#### Pattern Consistency Across Tools
+The enhancements maintained consistent patterns across the toolkit:
+
+- Configuration loading and validation
+- Color management and output control
+- Error handling and graceful degradation
+- Help text formatting and documentation style
+
+#### Future Maintenance Considerations
+1. **Configuration Schema Evolution**: New parameters added without breaking existing configs
+2. **Documentation Synchronization**: README, DEVNOTES, and help text all updated consistently
+3. **Cross-Tool Integration**: Changes considered impact on tool chain workflows
+4. **Testing Implications**: New features tested against real SMB targets for validation
+
+This enhancement cycle demonstrates the ongoing evolution of the SMBSeek toolkit based on operational experience and user feedback, while maintaining the high code quality and architectural consistency established during initial development.
 
 ---
 
