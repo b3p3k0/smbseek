@@ -6,7 +6,7 @@ A defensive security toolkit that uses the Shodan API to identify and analyze SM
 
 SMBSeek consists of four complementary tools:
 
-- **`smbscan.py`**: Primary scanner for discovering SMB servers with weak authentication
+- **`smb_scan.py`**: Primary scanner for discovering SMB servers with weak authentication
 - **`failure_analyzer.py`**: Deep analysis tool for understanding authentication failures  
 - **`smb_peep.py`**: Share access verification tool for testing read accessibility
 - **`smb_snag.py`**: File collection tool for downloading samples from accessible shares
@@ -67,56 +67,56 @@ pip install shodan smbprotocol pyspnego
 
 ```bash
 # Scan all default countries (US, GB, CA, IE, AU, NZ, ZA)
-python3 smbscan.py
+python3 smb_scan.py
 
 # Scan only United States
-python3 smbscan.py -c US
+python3 smb_scan.py -c US
 
 # Scan multiple specific countries
-python3 smbscan.py -a FR,DE,IT
+python3 smb_scan.py -a FR,DE,IT
 
 # Global scan (no country filter)
-python3 smbscan.py -t
+python3 smb_scan.py -t
 
 # Create new timestamped file instead of appending
-python3 smbscan.py -n
+python3 smb_scan.py -n
 
 # Quiet mode with custom output file
-python3 smbscan.py -q -o my_results.csv
+python3 smb_scan.py -q -o my_results.csv
 
 # Verbose mode (shows detailed authentication testing)
-python3 smbscan.py -v
+python3 smb_scan.py -v
 
 # Enable failure logging for later analysis
-python3 smbscan.py -f
+python3 smb_scan.py -f
 
 # Combined: failure logging with verbose output
-python3 smbscan.py -f -v
+python3 smb_scan.py -f -v
 
 # Use custom name for consolidated results file
-python3 smbscan.py -r project_scan_results.csv
+python3 smb_scan.py -r project_scan_results.csv
 
 # Disable colored output
-python3 smbscan.py -x
+python3 smb_scan.py -x
 ```
 
 ### Advanced Options
 
 ```bash
 # Use custom exclusion file
-python3 smbscan.py --exclude-file custom_exclusions.txt
+python3 smb_scan.py --exclude-file custom_exclusions.txt
 
 # Add additional organizations to exclude
-python3 smbscan.py --additional-excludes "My ISP,Another Org"
+python3 smb_scan.py --additional-excludes "My ISP,Another Org"
 
 # Skip default exclusions entirely
-python3 smbscan.py --no-default-excludes
+python3 smb_scan.py --no-default-excludes
 
 # Combine multiple options
-python3 smbscan.py -c GB -q -o uk_scan.csv -x
+python3 smb_scan.py -c GB -q -o uk_scan.csv -x
 
 # Complete workflow: scan, analyze failures, test share access, collect files
-python3 smbscan.py -f -c US
+python3 smb_scan.py -f -c US
 python3 failure_analyzer.py failed_record.csv
 python3 smb_peep.py ip_record.csv
 python3 smb_snag.py share_access_*.json
@@ -426,7 +426,7 @@ Uses the same `config.json` file as SMBSeek for Shodan API access.
 
 1. **Run SMBSeek with failure logging**:
    ```bash
-   python3 smbscan.py -f -c US
+   python3 smb_scan.py -f -c US
    ```
 
 2. **Analyze failures**:
@@ -462,14 +462,17 @@ After identifying SMB servers with weak authentication, SMB Peep answers the cri
 ### Usage
 
 ```bash
-# Basic share access testing
+# Basic share access testing (auto-detects ip_record.csv)
+python3 smb_peep.py
+
+# Basic share access testing with specific file
 python3 smb_peep.py ip_record.csv
 
 # Quiet mode with custom output
 python3 smb_peep.py -q -o share_analysis.json ip_record.csv
 
 # Verbose testing with detailed output
-python3 smb_peep.py -v ip_record.csv
+python3 smb_peep.py -v
 
 # Get help information
 python3 smb_peep.py --help
@@ -562,7 +565,7 @@ System requirements:
 
 ```bash
 # 1. Discover vulnerable SMB servers
-python3 smbscan.py -c US
+python3 smb_scan.py -c US
 
 # 2. Test share accessibility 
 python3 smb_peep.py ip_record.csv
@@ -608,13 +611,16 @@ After identifying accessible SMB shares, SMB Snag helps security professionals:
 ### Usage
 
 ```bash
-# Basic file collection from smb_peep results
+# Generate file manifest only (default behavior)
 python3 smb_snag.py share_access_20250818_195333.json
 
-# Quiet mode with automatic download (no confirmation prompt)
-python3 smb_snag.py -a -q share_access_results.json
+# Generate manifest and download files with confirmation
+python3 smb_snag.py -d share_access_results.json
 
-# Verbose collection with detailed progress output
+# Generate manifest and auto-download files (no confirmation)
+python3 smb_snag.py -d -a share_access_results.json
+
+# Verbose manifest generation
 python3 smb_snag.py -v share_access_results.json
 
 # Disable colored output for logging
@@ -634,25 +640,30 @@ python3 smb_snag.py --help
 #### 2. File Discovery Phase
 - Re-enumerates files on each accessible share using original authentication
 - Applies configurable file extension filters (included/excluded lists)
-- Scans directories recursively to build comprehensive file listings
+- Scans directories recursively with configurable depth limits (default: 3 levels)
+- Uses configurable enumeration timeout (default: 120 seconds)
 - **READ ONLY**: No write operations or file modifications ever attempted
 
-#### 3. Collection Planning
+#### 3. Manifest Generation (Always)
+- Creates comprehensive file manifest in JSON format
+- Documents all discovered files with metadata (size, path, share)
+- Groups files by server and share for organized analysis
+- Saves manifest as `file_manifest_YYYYMMDD_HHMMSS.json`
+
+#### 4. File Download Execution (Optional with `-d` flag)
 - Sorts files by modification date (most recent first)
 - Applies per-target limits for file count and total download size
-- Provides collection summary with confirmation prompt
-- Shows total files, size estimates, and target directory structure
-
-#### 4. File Download Execution
+- Provides download summary with confirmation prompt (unless `-a` used)
 - Creates organized directory structure: `YYYYMMDD-IP_ADDRESS/`
 - Downloads files with rate limiting between operations
 - Handles filename conflicts with automatic renaming
 - Prefixes downloaded files with share name for organization
 
-#### 5. Documentation Generation
-- Creates detailed collection manifest in JSON format
+#### 5. Download Documentation (When downloads occur)
+- Creates separate download manifest in JSON format
 - Records all download operations with timestamps and file paths
-- Provides audit trail for compliance and documentation needs
+- Saves as `download_manifest_YYYYMMDD_HHMMSS.json`
+- Provides complete audit trail for compliance and documentation needs
 
 ### Configuration
 
@@ -664,6 +675,8 @@ SMB Snag uses the same `config.json` file as other SMBSeek tools, with additiona
     "max_files_per_target": 3,
     "max_total_size_mb": 500,
     "download_delay_seconds": 2,
+    "max_directory_depth": 3,
+    "enumeration_timeout_seconds": 120,
     "included_extensions": [
       ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".csv",
       ".eml", ".msg", ".mbox", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff",
@@ -681,6 +694,8 @@ SMB Snag uses the same `config.json` file as other SMBSeek tools, with additiona
 - `max_files_per_target`: Maximum files to download per IP address (default: 3)
 - `max_total_size_mb`: Total download size limit in megabytes (default: 500)
 - `download_delay_seconds`: Delay between file downloads in seconds (default: 2)
+- `max_directory_depth`: Maximum directory depth to enumerate (default: 3 levels)
+- `enumeration_timeout_seconds`: Timeout for file enumeration operations (default: 120 seconds)
 - `included_extensions`: File types to include in collection (documents, media, archives)
 - `excluded_extensions`: File types to exclude (executables, system files, temporary files)
 
@@ -731,8 +746,9 @@ SMB Snag generates timestamped JSON manifests documenting all collection activit
 |--------|-------------|
 | `-h, --help` | Show comprehensive help message |
 | `-q, --quiet` | Suppress output to screen (useful for scripting) |
-| `-v, --verbose` | Enable verbose output showing detailed collection progress |
-| `-a, --auto-download` | Skip confirmation prompt and download automatically |
+| `-v, --verbose` | Enable verbose output showing detailed enumeration progress |
+| `-d, --download-files` | Download files (generates manifest only by default) |
+| `-a, --auto-download` | Skip confirmation prompt when downloading files |
 | `-x, --no-colors` | Disable colored output |
 
 ### Prerequisites
@@ -750,16 +766,22 @@ System requirements:
 
 ```bash
 # 1. Discover vulnerable SMB servers
-python3 smbscan.py -c US
+python3 smb_scan.py -c US
 
-# 2. Test share accessibility
-python3 smb_peep.py ip_record.csv
+# 2. Test share accessibility (auto-detects ip_record.csv)
+python3 smb_peep.py
 
-# 3. Collect file samples from accessible shares
+# 3. Generate file manifest from accessible shares
 python3 smb_snag.py share_access_*.json
 
-# 4. Review collection manifest and downloaded files
-cat collection_manifest_*.json | jq '.metadata'
+# 4. Review file manifest
+cat file_manifest_*.json | jq '.metadata'
+
+# 5. Download files if needed (optional)
+python3 smb_snag.py -d share_access_*.json
+
+# 6. Review download manifest and files
+cat download_manifest_*.json | jq '.metadata'
 ls -la 20*-*/
 ```
 

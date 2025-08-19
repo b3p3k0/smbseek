@@ -59,6 +59,8 @@ def load_configuration(config_file="config.json"):
             "max_files_per_target": 3,
             "max_total_size_mb": 500,
             "download_delay_seconds": 2,
+            "max_directory_depth": 3,
+            "enumeration_timeout_seconds": 120,
             "included_extensions": [
                 ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".csv",
                 ".eml", ".msg", ".mbox", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff",
@@ -97,12 +99,13 @@ def load_configuration(config_file="config.json"):
         return default_config
 
 class SMBSnag:
-    def __init__(self, config, quiet=False, verbose=False, auto_download=False, no_colors=False):
+    def __init__(self, config, quiet=False, verbose=False, auto_download=False, no_colors=False, download_files=False):
         """Initialize the SMB file collection tool."""
         self.config = config
         self.quiet = quiet
         self.verbose = verbose
         self.auto_download = auto_download
+        self.download_files = download_files
         
         # Color management
         if no_colors:
@@ -131,6 +134,10 @@ class SMBSnag:
         # File extension filters
         self.included_extensions = [ext.lower() for ext in self.config["file_collection"]["included_extensions"]]
         self.excluded_extensions = [ext.lower() for ext in self.config["file_collection"]["excluded_extensions"]]
+        
+        # Configuration for enumeration
+        self.max_depth = self.config["file_collection"].get("max_directory_depth", 3)
+        self.enum_timeout = self.config["file_collection"].get("enumeration_timeout_seconds", 120)
         
     def print_if_not_quiet(self, message):
         """Print message unless in quiet mode."""
@@ -172,7 +179,7 @@ class SMBSnag:
         return True
         
     def get_directory_listing(self, ip, share_name, username, password, max_files, max_size):
-        """Get recursive directory listing from SMB share using smbclient."""
+        """Get recursive directory listing from SMB share using smbclient with depth limiting."""
         files = []
         
         try:
@@ -195,15 +202,15 @@ class SMBSnag:
             
             self.print_if_verbose(f"    {self.CYAN}Listing files on {share_name}{self.RESET}")
             
-            # Run command with timeout
+            # Run command with configurable timeout
             result = subprocess.run(cmd, capture_output=True, text=True, 
-                                  timeout=30, stdin=subprocess.DEVNULL)
+                                  timeout=self.enum_timeout, stdin=subprocess.DEVNULL)
             
             if result.returncode != 0:
                 self.print_if_verbose(f"    {self.YELLOW}⚠{self.RESET} smbclient error: {result.stderr.strip()}")
                 return files
             
-            # Parse smbclient output to extract file information
+            # Parse smbclient output to extract file information with depth limiting
             current_dir = ""
             for line in result.stdout.split('\n'):
                 line = line.strip()
@@ -211,10 +218,21 @@ class SMBSnag:
                 # Track current directory
                 if line.startswith('./'):
                     current_dir = line[2:].rstrip(':')
+                    
+                    # Check depth limit
+                    if current_dir:
+                        depth = current_dir.count('/') + current_dir.count('\\')
+                        if depth >= self.max_depth:
+                            self.print_if_verbose(f"      {self.YELLOW}⚠{self.RESET} Skipping depth {depth} directory: {current_dir}")
+                            current_dir = "__SKIP__"  # Mark to skip files in this directory
                     continue
                     
                 # Skip empty lines and headers
                 if not line or 'blocks available' in line or line.startswith('Domain='):
+                    continue
+                    
+                # Skip files if we're in a directory that exceeds depth limit
+                if current_dir == "__SKIP__":
                     continue
                     
                 # Parse file entries (format varies, but generally: name size date time)
@@ -403,6 +421,8 @@ class SMBSnag:
         """Main collection process."""
         self.print_if_not_quiet(f"{self.CYAN}🔍{self.RESET} SMB Snag - File Collection Tool")
         self.print_if_not_quiet(f"{self.CYAN}📂{self.RESET} Processing: {json_file}")
+        self.print_if_not_quiet(f"{self.BLUE}ℹ{self.RESET} Max directory depth: {self.max_depth} levels")
+        self.print_if_not_quiet(f"{self.BLUE}ℹ{self.RESET} Enumeration timeout: {self.enum_timeout}s")
         
         # Load targets from JSON
         targets = self.process_json_input(json_file)
@@ -412,8 +432,8 @@ class SMBSnag:
         self.total_servers = len(targets)
         self.print_if_not_quiet(f"{self.BLUE}ℹ{self.RESET} Found {self.total_servers} targets with accessible shares")
         
-        # Dry run phase - collect file information
-        self.print_if_not_quiet(f"{self.YELLOW}🔍{self.RESET} Scanning for eligible files...")
+        # Phase 1: Generate file manifest
+        self.print_if_not_quiet(f"{self.YELLOW}🔍{self.RESET} Generating file manifest...")
         
         collection_plan = []
         total_files_planned = 0
@@ -443,26 +463,40 @@ class SMBSnag:
             else:
                 self.print_if_not_quiet(f"  {self.YELLOW}⚠{self.RESET} No eligible files found")
                 
-        # Summary and confirmation
+        # Generate and save manifest
+        self.save_manifest(collection_plan, total_files_planned, total_size_planned)
+        
+        # Stop here if downloads not requested
+        if not self.download_files:
+            total_size_mb = total_size_planned / (1024 * 1024) if total_size_planned > 0 else 0
+            self.print_if_not_quiet(f"\n{self.GREEN}📋{self.RESET} File manifest generated successfully")
+            self.print_if_not_quiet(f"  Servers: {len(collection_plan)}")
+            self.print_if_not_quiet(f"  Files: {total_files_planned}")
+            self.print_if_not_quiet(f"  Total Size: {total_size_mb:.1f}MB")
+            self.print_if_not_quiet(f"\n{self.YELLOW}💡{self.RESET} Use -d/--download-files flag to download files")
+            return
+            
+        # Summary and confirmation for downloads
         if not collection_plan:
             self.print_if_not_quiet(f"{self.YELLOW}⚠{self.RESET} No files available for collection")
             return
             
         total_size_mb = total_size_planned / (1024 * 1024)
-        self.print_if_not_quiet(f"\n{self.BLUE}📊 Collection Summary:{self.RESET}")
+        self.print_if_not_quiet(f"\n{self.BLUE}📊 Download Summary:{self.RESET}")
         self.print_if_not_quiet(f"  Servers: {len(collection_plan)}")
         self.print_if_not_quiet(f"  Files: {total_files_planned}")
         self.print_if_not_quiet(f"  Total Size: {total_size_mb:.1f}MB")
         
+        # Phase 2: File Downloads (if requested)
         # Confirmation prompt (unless auto-download is enabled)
         if not self.auto_download:
             response = input(f"\n{self.YELLOW}Will download {total_files_planned} files ({total_size_mb:.1f}MB total). Continue? [Y/n]: {self.RESET}")
             if response.lower().strip() in ['n', 'no']:
-                self.print_if_not_quiet(f"{self.YELLOW}Collection cancelled by user{self.RESET}")
+                self.print_if_not_quiet(f"{self.YELLOW}Download cancelled by user{self.RESET}")
                 return
                 
         # Execute downloads
-        self.print_if_not_quiet(f"\n{self.GREEN}⬇{self.RESET} Starting file collection...")
+        self.print_if_not_quiet(f"\n{self.GREEN}⬇{self.RESET} Starting file downloads...")
         
         server_count = 0
         for plan in collection_plan:
@@ -547,13 +581,73 @@ class SMBSnag:
             self.print_if_not_quiet(f"  {self.GREEN}✓{self.RESET} Downloaded {downloaded_count}/{len(files_to_download)} files from {ip}")
             
         # Final summary
-        self.print_summary()
+        self.print_download_summary()
         
-    def print_summary(self):
-        """Print final collection summary."""
+    def save_manifest(self, collection_plan, total_files, total_size):
+        """Save file manifest to JSON file."""
+        manifest_file = f"file_manifest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        
+        # Build manifest structure
+        manifest_data = {
+            'metadata': {
+                'tool': 'smb_snag',
+                'manifest_date': datetime.now().isoformat(),
+                'total_servers': len(collection_plan),
+                'total_files': total_files,
+                'total_size_bytes': total_size,
+                'config': {
+                    'max_directory_depth': self.max_depth,
+                    'enumeration_timeout_seconds': self.enum_timeout,
+                    'max_files_per_target': self.config["file_collection"]["max_files_per_target"],
+                    'max_total_size_mb': self.config["file_collection"]["max_total_size_mb"]
+                }
+            },
+            'servers': []
+        }
+        
+        for plan in collection_plan:
+            target = plan['target']
+            server_info = {
+                'ip_address': target['ip_address'],
+                'country': target.get('country', 'Unknown'),
+                'auth_method': target['auth_method'],
+                'shares': []
+            }
+            
+            # Group files by share
+            shares_dict = {}
+            for file_info in plan['files']:
+                share_name = file_info['share_name']
+                if share_name not in shares_dict:
+                    shares_dict[share_name] = []
+                shares_dict[share_name].append({
+                    'name': file_info['name'],
+                    'path': file_info['path'],
+                    'size': file_info['size']
+                })
+            
+            for share_name, files in shares_dict.items():
+                server_info['shares'].append({
+                    'share_name': share_name,
+                    'file_count': len(files),
+                    'total_size': sum(f['size'] for f in files),
+                    'files': files
+                })
+            
+            manifest_data['servers'].append(server_info)
+        
+        try:
+            with open(manifest_file, 'w', encoding='utf-8') as f:
+                json.dump(manifest_data, f, indent=2)
+            self.print_if_not_quiet(f"  {self.GREEN}✓{self.RESET} Manifest saved: {manifest_file}")
+        except Exception as e:
+            self.print_if_not_quiet(f"  {self.RED}✗{self.RESET} Error saving manifest: {e}")
+        
+    def print_download_summary(self):
+        """Print final download summary."""
         total_size_mb = self.total_bytes_downloaded / (1024 * 1024)
         
-        self.print_if_not_quiet(f"\n{self.GREEN}🎯 Collection Complete{self.RESET}")
+        self.print_if_not_quiet(f"\n{self.GREEN}🎯 Download Complete{self.RESET}")
         self.print_if_not_quiet(f"  Files Downloaded: {self.total_files_downloaded}")
         self.print_if_not_quiet(f"  Total Size: {total_size_mb:.1f}MB")
         self.print_if_not_quiet(f"  Directories Created: {len(self.collection_directories)}")
@@ -565,12 +659,12 @@ class SMBSnag:
                 
         # Save manifest
         if self.download_manifest:
-            manifest_file = f"collection_manifest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            manifest_file = f"download_manifest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             
             manifest_data = {
                 'metadata': {
                     'tool': 'smb_snag',
-                    'collection_date': datetime.now().isoformat(),
+                    'download_date': datetime.now().isoformat(),
                     'total_files': self.total_files_downloaded,
                     'total_size_bytes': self.total_bytes_downloaded,
                     'directories_created': self.collection_directories
@@ -582,10 +676,10 @@ class SMBSnag:
                 with open(manifest_file, 'w', encoding='utf-8') as f:
                     json.dump(manifest_data, f, indent=2)
                     
-                self.print_if_not_quiet(f"\n{self.BLUE}📋{self.RESET} Manifest saved: {manifest_file}")
+                self.print_if_not_quiet(f"\n{self.BLUE}📋{self.RESET} Download manifest saved: {manifest_file}")
                 
             except Exception as e:
-                self.print_if_not_quiet(f"{self.RED}✗{self.RESET} Error saving manifest: {e}")
+                self.print_if_not_quiet(f"{self.RED}✗{self.RESET} Error saving download manifest: {e}")
 
 def main():
     """Main entry point."""
@@ -594,19 +688,28 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Generate file manifest only (default behavior)
   python3 smb_snag.py share_access_20250818_195333.json
-  python3 smb_snag.py -a -q share_access_results.json
+  
+  # Generate manifest and download files with confirmation
+  python3 smb_snag.py -d share_access_results.json
+  
+  # Generate manifest and auto-download files (no confirmation)
+  python3 smb_snag.py -d -a share_access_results.json
+  
+  # Verbose manifest generation
   python3 smb_snag.py -v share_access_results.json
 
-This tool reads JSON output from smb_peep.py and downloads files from
-accessible SMB shares for security research purposes.
+This tool reads JSON output from smb_peep.py and generates a comprehensive
+file manifest. Use -d flag to also download files from accessible shares.
         """
     )
     
     parser.add_argument('json_file', help='JSON file from smb_peep.py containing share access results')
     parser.add_argument('-q', '--quiet', action='store_true', help='Suppress output to screen')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output')
-    parser.add_argument('-a', '--auto-download', action='store_true', help='Skip confirmation prompt and download automatically')
+    parser.add_argument('-d', '--download-files', action='store_true', help='Download files (generates manifest only by default)')
+    parser.add_argument('-a', '--auto-download', action='store_true', help='Skip confirmation prompt when downloading files')
     parser.add_argument('-x', '--no-colors', action='store_true', help='Disable colored output')
     
     args = parser.parse_args()
@@ -624,7 +727,8 @@ accessible SMB shares for security research purposes.
                    quiet=args.quiet, 
                    verbose=args.verbose,
                    auto_download=args.auto_download,
-                   no_colors=args.no_colors)
+                   no_colors=args.no_colors,
+                   download_files=args.download_files)
     
     try:
         snag.run_collection(args.json_file)
