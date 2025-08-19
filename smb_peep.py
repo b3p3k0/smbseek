@@ -16,7 +16,7 @@ from datetime import datetime
 from smbprotocol.connection import Connection
 from smbprotocol.session import Session
 from smbprotocol.tree import TreeConnect
-from smbprotocol.open import Open, CreateDisposition, ImpersonationLevel, FileAttributes
+from smbprotocol.open import Open, CreateDisposition, ImpersonationLevel, FileAttributes, ShareAccess
 from smbprotocol.exceptions import SMBException
 import socket
 from contextlib import redirect_stderr
@@ -243,84 +243,64 @@ class SMBPeep:
         return shares
 
     def test_share_access(self, ip, share_name, username, password):
-        """Test read access to a specific SMB share."""
+        """Test read access to a specific SMB share using smbclient."""
         access_result = {
             'share_name': share_name,
             'accessible': False,
             'error': None
         }
         
-        connection = None
-        session = None
-        tree = None
-        
-        stderr_buffer = StringIO()
-        
         try:
-            with redirect_stderr(stderr_buffer):
-                # Create SMB connection
-                conn_uuid = uuid.uuid4()
-                connection = Connection(conn_uuid, ip, 445, require_signing=False)
-                connection.connect(timeout=self.config["connection"]["timeout"])
-                
-                # Create session with appropriate auth
-                if username == "" and password == "":
-                    session = Session(connection, username="", password="", require_encryption=False)
+            # Use smbclient to test if we can list the share contents
+            cmd = ["smbclient", f"//{ip}/{share_name}"]
+            
+            # Add authentication based on credentials
+            if username == "" and password == "":
+                cmd.append("-N")  # No password (anonymous)
+            elif username == "guest":
+                if password == "":
+                    cmd.extend(["--user", "guest%"])
                 else:
-                    session = Session(connection, username=username, password=password,
-                                    require_encryption=False, auth_protocol="ntlm")
-                session.connect()
-                
-                # Connect to the specific share
-                tree = TreeConnect(session, f"\\\\{ip}\\{share_name}")
-                tree.connect()
-                
-                # Try to perform a basic read operation (open root directory)
-                # This tests if we have read access to the share
-                try:
-                    # Try to open the root directory for reading
-                    open_file = Open(tree, "")
-                    open_file.create(
-                        ImpersonationLevel.Impersonation,
-                        FileAttributes.FILE_ATTRIBUTE_DIRECTORY,
-                        0,  # no share access
-                        CreateDisposition.FILE_OPEN,
-                        0   # no create options
-                    )
-                    
-                    # If we can open it, we have read access
-                    open_file.close()
+                    cmd.extend(["--user", f"guest%{password}"])
+            else:
+                cmd.extend(["--user", f"{username}%{password}"])
+            
+            # Add command to list directory (test read access)
+            cmd.extend(["-c", "ls"])
+            
+            self.print_if_verbose(f"      {self.CYAN}Testing access: {' '.join(cmd[:3])} ... -c ls{self.RESET}")
+            
+            # Run command with timeout
+            result = subprocess.run(cmd, capture_output=True, text=True, 
+                                  timeout=15, stdin=subprocess.DEVNULL)
+            
+            # Check if listing was successful
+            if result.returncode == 0:
+                # Additional check: ensure we got actual file listing output
+                if "NT_STATUS" not in result.stderr and len(result.stdout.strip()) > 0:
                     access_result['accessible'] = True
-                    self.print_if_verbose(f"      {self.GREEN}✓ Share '{share_name}' is readable{self.RESET}")
-                    
-                except SMBException as e:
-                    # Share exists but we can't read it
-                    access_result['error'] = f"Read access denied: {str(e)}"
-                    self.print_if_verbose(f"      {self.RED}✗ Share '{share_name}' access denied{self.RESET}")
+                    self.print_if_verbose(f"      {self.GREEN}✓ Share '{share_name}' is accessible{self.RESET}")
+                else:
+                    access_result['error'] = f"Access denied or empty share"
+                    self.print_if_verbose(f"      {self.YELLOW}⚠ Share '{share_name}' - no readable content{self.RESET}")
+            else:
+                # Parse error from stderr
+                error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+                if "NT_STATUS_ACCESS_DENIED" in error_msg:
+                    access_result['error'] = "Access denied"
+                elif "NT_STATUS_BAD_NETWORK_NAME" in error_msg:
+                    access_result['error'] = "Share not found"
+                else:
+                    access_result['error'] = f"smbclient error: {error_msg[:50]}"
                 
-        except SMBException as e:
-            access_result['error'] = f"SMB error: {str(e)}"
-            self.print_if_verbose(f"      {self.RED}✗ Share '{share_name}' SMB error: {str(e)[:50]}{self.RESET}")
+                self.print_if_verbose(f"      {self.RED}✗ Share '{share_name}' - {access_result['error']}{self.RESET}")
+                
+        except subprocess.TimeoutExpired:
+            access_result['error'] = "Connection timeout"
+            self.print_if_verbose(f"      {self.RED}✗ Share '{share_name}' - timeout{self.RESET}")
         except Exception as e:
-            access_result['error'] = f"Connection error: {str(e)}"
-            self.print_if_verbose(f"      {self.RED}✗ Share '{share_name}' connection error{self.RESET}")
-        finally:
-            # Clean up connections
-            try:
-                if tree:
-                    tree.disconnect()
-            except:
-                pass
-            try:
-                if session:
-                    session.disconnect()
-            except:
-                pass
-            try:
-                if connection:
-                    connection.disconnect()
-            except:
-                pass
+            access_result['error'] = f"Test error: {str(e)}"
+            self.print_if_verbose(f"      {self.RED}✗ Share '{share_name}' - test error{self.RESET}")
         
         return access_result
 
