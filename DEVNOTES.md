@@ -2,7 +2,7 @@
 
 **Document Purpose**: Technical reference for AI code agents and developers working on SMBSeek toolkit
 **Target Audience**: AI assistants with equivalent technical knowledge and development capabilities
-**Last Updated**: August 18, 2025
+**Last Updated**: August 19, 2025
 
 ---
 
@@ -44,9 +44,11 @@ SMBSeek is a defensive security toolkit designed to identify, analyze, and valid
 
 **Data Flow Architecture**:
 ```
-smbscan.py → ip_record.csv → smb_peep.py → share_access_*.json
-           ↓
+smbscan.py → ip_record.csv → smb_peep.py → share_access_*.json → smb_snag.py
+           ↓                                                   ↓
     failed_record.csv → failure_analyzer.py → failure_analysis_*.json
+                                                   ↓
+                                          collection_manifest_*.json
 ```
 
 ---
@@ -320,6 +322,167 @@ def parse_auth_method(self, auth_method_str):
 }
 ```
 
+### 4. SMB_snag.py - File Collection Tool
+
+#### Purpose
+Specialized file collection tool that downloads file samples from SMB shares with verified read access for security research and data exposure analysis.
+
+#### Functional Overview
+
+**Input Sources**:
+- JSON results from SMB Peep containing accessible share information
+- Extracted IP addresses, authentication methods, and accessible share lists
+- Configuration-driven file extension filters and collection limits
+
+**Processing Pipeline**:
+1. **Input Processing Phase**: Parse SMB Peep JSON output and extract target data
+2. **File Discovery Phase**: Re-enumerate files on accessible shares with recursive directory scanning
+3. **Collection Planning Phase**: Apply filters, limits, and generate collection summary
+4. **Download Execution Phase**: Perform rate-limited file downloads with organized storage
+5. **Documentation Phase**: Generate comprehensive collection manifests and audit trails
+
+**File Collection Strategy**:
+The tool implements a multi-phase approach for safe, controlled file collection:
+1. Recursive directory enumeration using smbclient
+2. Extension-based filtering (included/excluded lists)
+3. Size and count limits per target
+4. Most-recent-first prioritization
+5. Confirmation prompt for user oversight
+
+#### Technical Implementation Rationale
+
+**File Discovery Strategy**:
+- Uses `smbclient -c "recurse ON; ls"` for comprehensive directory listing
+- Parsing logic extracts filename, size, and path information
+- Filters applied during discovery phase to optimize performance
+- Directory structure preserved in output paths
+
+**Download Implementation**:
+- Primary: `smbclient` command for file download operations
+- Uses same authentication method that succeeded in original SMB Peep scan
+- Rate limiting between downloads to respect target systems
+- Organized local directory structure with IP-based naming
+
+**Security Constraints**:
+- **READ ONLY**: Absolutely no write operations on remote systems
+- **Size Limited**: Configurable per-target and total download limits
+- **Extension Filtered**: Avoids executables and system files by default
+- **Rate Limited**: Respectful download behavior with configurable delays
+
+#### Critical Code Sections
+
+**File Discovery Logic (`get_directory_listing` method)**:
+```python
+# Recursive directory enumeration with smbclient
+cmd = ["smbclient", f"//{ip}/{share_name}"]
+cmd.extend(["-c", "recurse ON; ls"])
+
+# Parse smbclient output to extract file information
+for line in result.stdout.split('\n'):
+    # Track current directory context
+    if line.startswith('./'):
+        current_dir = line[2:].rstrip(':')
+        continue
+    
+    # Parse file entries and extract name, size, path
+    if not line.endswith('.') and not line.startswith('D'):
+        # Build full path and apply extension filters
+        if self.should_include_file(filename):
+            file_info = {
+                'name': filename,
+                'path': full_path,
+                'size': size,
+                'modified': time.time()
+            }
+            files.append(file_info)
+```
+
+**Download Execution Logic (`download_file` method)**:
+```python
+# Build authenticated smbclient download command
+cmd = ["smbclient", f"//{ip}/{share_name}"]
+# Add authentication (anonymous, guest/blank, guest/guest)
+
+# Convert Windows path format for smbclient
+smb_path = remote_path.replace('\\', '/')
+download_cmd = f'get "{smb_path}" "{local_path}"'
+cmd.extend(["-c", download_cmd])
+
+# Execute with timeout and error handling
+result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+```
+
+**Collection Planning and Limits**:
+```python
+# Apply per-target limits during file selection
+for file_info in all_files:
+    if len(selected_files) >= max_files:
+        break
+    if total_size + file_info['size'] > max_size_bytes:
+        break
+    
+    selected_files.append(file_info)
+    total_size += file_info['size']
+```
+
+#### Configuration Dependencies
+
+**File Collection Settings**:
+```json
+"file_collection": {
+    "max_files_per_target": 3,
+    "max_total_size_mb": 500,
+    "download_delay_seconds": 2,
+    "included_extensions": [".pdf", ".doc", ".txt", ...],
+    "excluded_extensions": [".exe", ".dll", ".sys", ...]
+}
+```
+
+**Design Rationale**:
+- Conservative defaults prevent excessive collection
+- Included extensions focus on documents and media
+- Excluded extensions avoid executables and system files
+- Rate limiting ensures respectful behavior
+
+#### Output Format Design
+
+**Directory Structure**:
+```
+YYYYMMDD-IP_ADDRESS/
+├── ShareName_filename1.ext
+├── ShareName_filename2.ext
+└── ShareName_filename3.ext
+```
+
+**Collection Manifest Structure**:
+```json
+{
+  "metadata": {
+    "tool": "smb_snag",
+    "collection_date": "...",
+    "total_files": 8,
+    "total_size_bytes": 15728640,
+    "directories_created": [...]
+  },
+  "downloads": [
+    {
+      "ip": "...",
+      "share": "...",
+      "remote_path": "...",
+      "local_path": "...",
+      "size": 123456,
+      "timestamp": "..."
+    }
+  ]
+}
+```
+
+**Benefits**:
+- Organized storage prevents file conflicts
+- Share prefixing maintains context
+- Comprehensive audit trail for compliance
+- Machine-readable manifest for further analysis
+
 ---
 
 ## Architecture and Design Patterns
@@ -397,6 +560,8 @@ ip_address,country,auth_method,shares,timestamp
 - `failed_record.csv`: Failed connections (smbscan.py with -f flag)
 - `share_access_YYYYMMDD_HHMMSS.json`: Access verification (smb_peep.py)
 - `failure_analysis_YYYYMMDD_HHMMSS.json`: Failure analysis (failure_analyzer.py)
+- `collection_manifest_YYYYMMDD_HHMMSS.json`: File collection audit trail (smb_snag.py)
+- `YYYYMMDD-IP_ADDRESS/`: Downloaded file directories (smb_snag.py)
 
 ### Dependencies and Library Choices
 
