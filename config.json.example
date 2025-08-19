@@ -24,6 +24,8 @@
     "max_files_per_target": 3,
     "max_total_size_mb": 500,
     "download_delay_seconds": 2,
+    "max_directory_depth": 3,
+    "enumeration_timeout_seconds": 120,
     "included_extensions": [
       ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".csv",
       ".eml", ".msg", ".mbox", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff",
