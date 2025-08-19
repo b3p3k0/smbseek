@@ -99,13 +99,15 @@ def load_configuration(config_file="config.json"):
         return default_config
 
 class SMBSnag:
-    def __init__(self, config, quiet=False, verbose=False, auto_download=False, no_colors=False, download_files=False):
+    def __init__(self, config, quiet=False, verbose=False, auto_download=False, no_colors=False, download_files=False, manager_friendly=False, plain_output=False):
         """Initialize the SMB file collection tool."""
         self.config = config
         self.quiet = quiet
         self.verbose = verbose
         self.auto_download = auto_download
         self.download_files = download_files
+        self.manager_friendly = manager_friendly
+        self.plain_output = plain_output
         
         # Color management
         if no_colors:
@@ -466,6 +468,9 @@ class SMBSnag:
         # Generate and save manifest
         self.save_manifest(collection_plan, total_files_planned, total_size_planned)
         
+        # Generate human-readable report if requested
+        self.generate_human_readable_report(collection_plan, total_files_planned, total_size_planned)
+        
         # Stop here if downloads not requested
         if not self.download_files:
             total_size_mb = total_size_planned / (1024 * 1024) if total_size_planned > 0 else 0
@@ -681,6 +686,158 @@ class SMBSnag:
             except Exception as e:
                 self.print_if_not_quiet(f"{self.RED}✗{self.RESET} Error saving download manifest: {e}")
 
+    def format_file_size(self, size_bytes):
+        """Convert bytes to human-readable size format."""
+        if size_bytes == 0:
+            return "0B"
+        
+        size_names = ["B", "KB", "MB", "GB", "TB"]
+        i = 0
+        while size_bytes >= 1024 and i < len(size_names) - 1:
+            size_bytes /= 1024.0
+            i += 1
+        
+        if i == 0:
+            return f"{int(size_bytes)}{size_names[i]}"
+        else:
+            return f"{size_bytes:.1f}{size_names[i]}"
+
+    def get_file_emoji(self, filename):
+        """Get emoji based on file extension (only if plain_output is False)."""
+        if self.plain_output:
+            return ""
+        
+        ext = os.path.splitext(filename)[1].lower()
+        
+        # Document files
+        if ext in ['.pdf']:
+            return "📄 "
+        elif ext in ['.doc', '.docx', '.txt', '.rtf']:
+            return "📝 "
+        elif ext in ['.xls', '.xlsx', '.csv']:
+            return "📊 "
+        elif ext in ['.ppt', '.pptx']:
+            return "📽️ "
+        # Image files
+        elif ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff']:
+            return "🖼️ "
+        # Archive files
+        elif ext in ['.zip', '.rar', '.7z']:
+            return "📦 "
+        # Video files
+        elif ext in ['.mp4', '.mov', '.avi', '.mkv', '.wmv']:
+            return "🎬 "
+        # Audio files
+        elif ext in ['.mp3', '.wav', '.flac']:
+            return "🎵 "
+        # Email files
+        elif ext in ['.eml', '.msg', '.mbox']:
+            return "📧 "
+        else:
+            return "📄 "
+
+    def generate_human_readable_report(self, collection_plan, total_files, total_size):
+        """Generate human-readable collection report."""
+        if not self.manager_friendly:
+            return
+        
+        report_file = f"collection_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        
+        try:
+            with open(report_file, 'w', encoding='utf-8') as f:
+                # Header
+                if not self.plain_output:
+                    f.write("📊 SMB File Collection Report\n")
+                    f.write("═" * 50 + "\n")
+                else:
+                    f.write("SMB File Collection Report\n")
+                    f.write("=" * 50 + "\n")
+                
+                f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Tool: smb_snag v1.0\n\n")
+                
+                # Summary
+                if not self.plain_output:
+                    f.write("📋 Collection Summary\n")
+                    f.write("─" * 20 + "\n")
+                else:
+                    f.write("Collection Summary\n")
+                    f.write("-" * 20 + "\n")
+                
+                f.write(f"Servers: {len(collection_plan)}\n")
+                f.write(f"Files: {total_files}\n")
+                f.write(f"Total Size: {self.format_file_size(total_size)}\n\n")
+                
+                if not collection_plan:
+                    f.write("No files available for collection.\n")
+                    return
+                
+                # Server details
+                if not self.plain_output:
+                    f.write("🖥️  Server Details\n")
+                    f.write("─" * 16 + "\n\n")
+                else:
+                    f.write("Server Details\n")
+                    f.write("-" * 16 + "\n\n")
+                
+                for i, plan in enumerate(collection_plan, 1):
+                    target = plan['target']
+                    
+                    # Server header
+                    server_icon = "🖥️  " if not self.plain_output else ""
+                    f.write(f"{server_icon}SERVER {i}/{len(collection_plan)}: {target['ip_address']}\n")
+                    f.write(f"    Country: {target.get('country', 'Unknown')}\n")
+                    f.write(f"    Authentication: {target['auth_method']}\n")
+                    f.write(f"    Shares: {len(plan['files'])}\n")
+                    f.write(f"    Total Size: {self.format_file_size(plan['total_size'])}\n\n")
+                    
+                    # Group files by share
+                    shares_data = {}
+                    for file_info in plan['files']:
+                        share = file_info['share']
+                        if share not in shares_data:
+                            shares_data[share] = []
+                        shares_data[share].append(file_info)
+                    
+                    # Display shares and files
+                    share_names = list(shares_data.keys())
+                    for j, share_name in enumerate(share_names):
+                        files_in_share = shares_data[share_name]
+                        share_size = sum(f['size'] for f in files_in_share)
+                        
+                        # Share line
+                        is_last_share = (j == len(share_names) - 1)
+                        share_prefix = "└── " if is_last_share else "├── "
+                        folder_icon = "📁 " if not self.plain_output else ""
+                        
+                        f.write(f"    {share_prefix}{folder_icon}{share_name} ({len(files_in_share)} files, {self.format_file_size(share_size)})\n")
+                        
+                        # Files in share
+                        for k, file_info in enumerate(files_in_share):
+                            is_last_file = (k == len(files_in_share) - 1)
+                            
+                            if is_last_share:
+                                file_prefix = "    └── " if is_last_file else "    ├── "
+                            else:
+                                file_prefix = "│   └── " if is_last_file else "│   ├── "
+                            
+                            file_emoji = self.get_file_emoji(file_info['name'])
+                            f.write(f"    {file_prefix}{file_emoji}{file_info['name']} ({self.format_file_size(file_info['size'])})\n")
+                    
+                    # Add spacing between servers
+                    if i < len(collection_plan):
+                        f.write("\n")
+                
+                # Footer
+                f.write(f"\n{'─' * 50}\n")
+                f.write("Report generated by SMBSeek Toolkit\n")
+                f.write("For security research and authorized testing only\n")
+            
+            self.print_if_not_quiet(f"  {self.GREEN}✓{self.RESET} Human-readable report saved: {report_file}")
+            
+        except Exception as e:
+            self.print_if_not_quiet(f"  {self.RED}✗{self.RESET} Error generating human-readable report: {e}")
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -691,17 +848,26 @@ Examples:
   # Generate file manifest only (default behavior)
   python3 smb_snag.py share_access_20250818_195333.json
   
+  # Generate manifest and human-readable report
+  python3 smb_snag.py -m share_access_results.json
+  
+  # Generate manifest, human-readable report with plain formatting
+  python3 smb_snag.py -m -p share_access_results.json
+  
   # Generate manifest and download files with confirmation
   python3 smb_snag.py -d share_access_results.json
+  
+  # Generate manifest, human-readable report, and download files
+  python3 smb_snag.py -m -d share_access_results.json
   
   # Generate manifest and auto-download files (no confirmation)
   python3 smb_snag.py -d -a share_access_results.json
   
-  # Verbose manifest generation
-  python3 smb_snag.py -v share_access_results.json
+  # Verbose manifest generation with human-readable report
+  python3 smb_snag.py -v -m share_access_results.json
 
 This tool reads JSON output from smb_peep.py and generates a comprehensive
-file manifest. Use -d flag to also download files from accessible shares.
+file manifest. Use -m flag for human-readable reports, -d flag to download files.
         """
     )
     
@@ -711,6 +877,8 @@ file manifest. Use -d flag to also download files from accessible shares.
     parser.add_argument('-d', '--download-files', action='store_true', help='Download files (generates manifest only by default)')
     parser.add_argument('-a', '--auto-download', action='store_true', help='Skip confirmation prompt when downloading files')
     parser.add_argument('-x', '--no-colors', action='store_true', help='Disable colored output')
+    parser.add_argument('-m', '--manager-friendly', action='store_true', help='Generate human-readable report (off by default)')
+    parser.add_argument('-p', '--plain-output', action='store_true', help='Disable emojis and formatting in human-readable output (for piping)')
     
     args = parser.parse_args()
     
@@ -728,7 +896,9 @@ file manifest. Use -d flag to also download files from accessible shares.
                    verbose=args.verbose,
                    auto_download=args.auto_download,
                    no_colors=args.no_colors,
-                   download_files=args.download_files)
+                   download_files=args.download_files,
+                   manager_friendly=args.manager_friendly,
+                   plain_output=args.plain_output)
     
     try:
         snag.run_collection(args.json_file)
