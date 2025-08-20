@@ -1,6 +1,0 @@
-{
-  "backup_timestamp": "2025-08-20T09:17:44.040406",
-  "source_database": "/home/kevin/git/smbseek/smbseek.db",
-  "backup_size": 356352,
-  "backup_tool": "db_maintenance.py"
-}
