@@ -180,15 +180,15 @@ class SMBScanner:
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
             return False
 
-    def print_if_not_quiet(self, message):
+    def print_if_not_quiet(self, *args, **kwargs):
         """Print message only if not in quiet mode."""
         if not self.quiet:
-            print(message)
+            print(*args, **kwargs)
     
-    def print_if_verbose(self, message):
+    def print_if_verbose(self, *args, **kwargs):
         """Print message only if in verbose mode and not quiet."""
         if self.verbose and not self.quiet:
-            print(message)
+            print(*args, **kwargs)
 
     def load_exclusions(self):
         """Load organization exclusions from file."""

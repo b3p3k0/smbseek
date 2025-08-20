@@ -150,15 +150,15 @@ class SMBSnag:
         # Security configuration for ransomware detection
         self.ransomware_indicators = [indicator.lower() for indicator in self.config["security"]["ransomware_indicators"]]
         
-    def print_if_not_quiet(self, message):
+    def print_if_not_quiet(self, *args, **kwargs):
         """Print message unless in quiet mode."""
         if not self.quiet:
-            print(message)
+            print(*args, **kwargs)
             
-    def print_if_verbose(self, message):
+    def print_if_verbose(self, *args, **kwargs):
         """Print message only in verbose mode."""
         if self.verbose and not self.quiet:
-            print(message)
+            print(*args, **kwargs)
             
     def parse_auth_method(self, auth_method_str):
         """Parse authentication method string into username/password tuple."""
@@ -220,7 +220,7 @@ class SMBSnag:
             
             if result.returncode != 0:
                 self.print_if_verbose(f"    {self.YELLOW}⚠{self.RESET} smbclient error: {result.stderr.strip()}")
-                return files
+                return files, compromised
             
             # Parse smbclient output to extract file information with depth limiting
             current_dir = ""
@@ -843,7 +843,11 @@ class SMBSnag:
                         # Group files by share
                         shares_data = {}
                         for file_info in plan['files']:
-                            share = file_info['share_name']
+                            # Defensive programming: ensure file_info has expected structure
+                            if not isinstance(file_info, dict):
+                                continue
+                            
+                            share = file_info.get('share_name', 'Unknown')
                             if share not in shares_data:
                                 shares_data[share] = []
                             shares_data[share].append(file_info)
@@ -852,7 +856,7 @@ class SMBSnag:
                         share_names = list(shares_data.keys())
                         for j, share_name in enumerate(share_names):
                             files_in_share = shares_data[share_name]
-                            share_size = sum(f['size'] for f in files_in_share)
+                            share_size = sum(f.get('size', 0) for f in files_in_share)
                             
                             # Share line
                             is_last_share = (j == len(share_names) - 1)
@@ -870,8 +874,12 @@ class SMBSnag:
                                 else:
                                     file_prefix = "│   └── " if is_last_file else "│   ├── "
                                 
-                                file_emoji = self.get_file_emoji(file_info['name'])
-                                f.write(f"    {file_prefix}{file_emoji}{file_info['name']} ({self.format_file_size(file_info['size'])})\n")
+                                # Defensive programming: ensure file has required keys
+                                file_name = file_info.get('name', 'Unknown')
+                                file_size = file_info.get('size', 0)
+                                
+                                file_emoji = self.get_file_emoji(file_name)
+                                f.write(f"    {file_prefix}{file_emoji}{file_name} ({self.format_file_size(file_size)})\n")
                     elif compromised:
                         # Show compromise warning instead of file details
                         warning_icon = "⚠️  " if not self.plain_output else "[WARNING] "
