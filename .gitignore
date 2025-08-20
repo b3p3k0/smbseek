@@ -1,0 +1,76 @@
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.bak
+
+# Logs
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Coverage / testing
+.coverage
+*.cover
+*.py,cover
+htmlcov/
+coverage.xml
+
+# IDE project settings
+.vscode/
+.idea/
+*.iml
+
+# SMBSeek specific files
+.claude
+CLAUDE.md
+
+# Configuration files with sensitive data
+conf/config.json
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+db_backups/
+
+# Generated output files
+*.csv
+*.json
+exports/
+failure_analysis*.json
+vulnerability_report*.json
+share_access_*.json
+file_manifest_*.json
+collection_report_*.txt
+
+# Experimental and development workspace
+experimental/
+MIGRATION_CHECKLIST.md
+
+# Test files
+*test*.json
+*test*.csv
