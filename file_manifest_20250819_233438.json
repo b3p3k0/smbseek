@@ -1,0 +1,1091 @@
+{
+  "metadata": {
+    "tool": "smb_snag",
+    "manifest_date": "2025-08-19T23:34:38.239058",
+    "total_servers": 35,
+    "total_files": 69,
+    "total_size_bytes": 62559656,
+    "config": {
+      "max_directory_depth": 3,
+      "enumeration_timeout_seconds": 120,
+      "max_files_per_target": 3,
+      "max_total_size_mb": 500
+    }
+  },
+  "servers": [
+    {
+      "ip_address": "104.34.9.46",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "PORN",
+          "file_count": 3,
+          "total_size": 1164713,
+          "files": [
+            {
+              "name": "babycage1936.jpg",
+              "path": "babycage1936.jpg",
+              "size": 226432
+            },
+            {
+              "name": "Arnold_Schwarzenegger_Mitch_McConnell_looking_like_90s_gang_members_bandana_gold_necklace_2792363052.png",
+              "path": "Arnold_Schwarzenegger_Mitch_McConnell_looking_like_90s_gang_members_bandana_gold_necklace_2792363052.png",
+              "size": 801331
+            },
+            {
+              "name": "npp4017050-630x948.jpg",
+              "path": "npp4017050-630x948.jpg",
+              "size": 136950
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "138.43.213.238",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "info",
+          "file_count": 1,
+          "total_size": 170268,
+          "files": [
+            {
+              "name": "\u88fd\u54c1\u60c5\u5831.pdf",
+              "path": "\u88fd\u54c1\u60c5\u5831.pdf",
+              "size": 170268
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "142.165.145.250",
+      "country": "Canada",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "Internal",
+          "file_count": 2,
+          "total_size": 181,
+          "files": [
+            {
+              "name": "files.zip",
+              "path": "files.zip",
+              "size": 22
+            },
+            {
+              "name": "gmsnet2.jpg",
+              "path": "gmsnet2.jpg",
+              "size": 159
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "142.171.58.228",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "share",
+          "file_count": 1,
+          "total_size": 31,
+          "files": [
+            {
+              "name": "RARBG.txt",
+              "path": "RARBG.txt",
+              "size": 31
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "144.172.126.2",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "liujia_windows-10",
+          "file_count": 3,
+          "total_size": 751896,
+          "files": [
+            {
+              "name": "hwcompatPE.txt",
+              "path": "hwcompatPE.txt",
+              "size": 257
+            },
+            {
+              "name": "hwcompat.txt",
+              "path": "hwcompat.txt",
+              "size": 751624
+            },
+            {
+              "name": "hwexcludePE.txt",
+              "path": "hwexcludePE.txt",
+              "size": 15
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "151.2.219.31",
+      "country": "United Kingdom",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "share",
+          "file_count": 3,
+          "total_size": 24,
+          "files": [
+            {
+              "name": "xyXFu.txt",
+              "path": "xyXFu.txt",
+              "size": 8
+            },
+            {
+              "name": "UGuHq.txt",
+              "path": "UGuHq.txt",
+              "size": 8
+            },
+            {
+              "name": "rMZCT.txt",
+              "path": "rMZCT.txt",
+              "size": 8
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "159.196.235.158",
+      "country": "Australia",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "Entertainment",
+          "file_count": 3,
+          "total_size": 14205547,
+          "files": [
+            {
+              "name": "Beyonc\u00c3\u00a9_-_Love_On_Top.mp3",
+              "path": "Beyonc\u00c3\u00a9_-_Love_On_Top.mp3",
+              "size": 3144756
+            },
+            {
+              "name": "09_-_Tyga_&_Chris_Brown_(ft._Bow_Wow)_-_Ain't_Thinkin_Bout_You[1].mp3",
+              "path": "09_-_Tyga_&_Chris_Brown_(ft._Bow_Wow)_-_Ain't_Thinkin_Bout_You[1].mp3",
+              "size": 7521934
+            },
+            {
+              "name": "09_Lil_Jon_Feat._R._Kelly_and_Claude_Kelly_-_Miss_Chocolate-DjLeak.com.mp3",
+              "path": "09_Lil_Jon_Feat._R._Kelly_and_Claude_Kelly_-_Miss_Chocolate-DjLeak.com.mp3",
+              "size": 3538857
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "159.65.171.48",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "etiquetas",
+          "file_count": 3,
+          "total_size": 1957,
+          "files": [
+            {
+              "name": "15sep.txt",
+              "path": "15sep.txt",
+              "size": 467
+            },
+            {
+              "name": "3.txt",
+              "path": "3.txt",
+              "size": 1003
+            },
+            {
+              "name": "3sep.txt",
+              "path": "3sep.txt",
+              "size": 487
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "162.220.82.199",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": true,
+      "shares": []
+    },
+    {
+      "ip_address": "172.103.129.201",
+      "country": "Canada",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "usbshare1",
+          "file_count": 3,
+          "total_size": 31697571,
+          "files": [
+            {
+              "name": "\u7d55\u4e16\u98db\u5200\uff0c\u8449\u5e95\u85cf\u82b1\uff0c\u5c08\u6cbb\u4e2d\u70ae\u96f7\u516c\u70ae\u3002#\u8c61\u68cb#\u4e2d\u570b\u8c61\u68cb.mp4",
+              "path": "\u7d55\u4e16\u98db\u5200\uff0c\u8449\u5e95\u85cf\u82b1\uff0c\u5c08\u6cbb\u4e2d\u70ae\u96f7\u516c\u70ae\u3002#\u8c61\u68cb#\u4e2d\u570b\u8c61\u68cb.mp4",
+              "size": 11807133
+            },
+            {
+              "name": "\u4eba\u8166\u5dd4\u5cf0\uff0c\u904b\u5b50\u6975\u81f4#\u8c61\u68cb#\u4e2d\u570b\u8c61\u68cb#\u80e1\u69ae\u83ef.mp4",
+              "path": "\u4eba\u8166\u5dd4\u5cf0\uff0c\u904b\u5b50\u6975\u81f4#\u8c61\u68cb#\u4e2d\u570b\u8c61\u68cb#\u80e1\u69ae\u83ef.mp4",
+              "size": 11571543
+            },
+            {
+              "name": "\u53f2\u4e0a\u6700\u5f37\u4ed9\u4eba\u6307\u8def\uff0c\u8c61\u68cb\u9ad8\u624b\u5fc5\u5099\u6280\u80fd#\u8c61\u68cb#\u4e2d\u570b\u8c61\u68cb.mp4",
+              "path": "\u53f2\u4e0a\u6700\u5f37\u4ed9\u4eba\u6307\u8def\uff0c\u8c61\u68cb\u9ad8\u624b\u5fc5\u5099\u6280\u80fd#\u8c61\u68cb#\u4e2d\u570b\u8c61\u68cb.mp4",
+              "size": 8318895
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "184.170.106.60",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": true,
+      "shares": []
+    },
+    {
+      "ip_address": "185.247.206.184",
+      "country": "United Kingdom",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "share",
+          "file_count": 1,
+          "total_size": 9239235,
+          "files": [
+            {
+              "name": "fw-ConnectX7-rel-28_41_1000-MCX755106AS-HEA_Ax-UEFI-14.34.12-FlexBoot-3.7.400.signed.bin.zip",
+              "path": "fw-ConnectX7-rel-28_41_1000-MCX755106AS-HEA_Ax-UEFI-14.34.12-FlexBoot-3.7.400.signed.bin.zip",
+              "size": 9239235
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "205.220.225.246",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "Windows_Server_2022__ISPsystem__87_srv23",
+          "file_count": 3,
+          "total_size": 263,
+          "files": [
+            {
+              "name": "appraisersdblatestoshash.txt",
+              "path": "appraisersdblatestoshash.txt",
+              "size": 90
+            },
+            {
+              "name": "hwexclude.txt",
+              "path": "hwexclude.txt",
+              "size": 51
+            },
+            {
+              "name": "idwbinfo.txt",
+              "path": "idwbinfo.txt",
+              "size": 122
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "206.198.176.117",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "TimeMachineBackup",
+          "file_count": 3,
+          "total_size": 1824,
+          "files": [
+            {
+              "name": "!KUPIDON_DECRYPT.TXT",
+              "path": "!KUPIDON_DECRYPT.TXT",
+              "size": 608
+            },
+            {
+              "name": "!KUPIDON_DECRYPT.TXT",
+              "path": "!KUPIDON_DECRYPT.TXT",
+              "size": 608
+            },
+            {
+              "name": "!KUPIDON_DECRYPT.TXT",
+              "path": "!KUPIDON_DECRYPT.TXT",
+              "size": 608
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "207.244.228.220",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "prt",
+          "file_count": 3,
+          "total_size": 562,
+          "files": [
+            {
+              "name": "GKKJmcEDdEUy.txt",
+              "path": "GKKJmcEDdEUy.txt",
+              "size": 226
+            },
+            {
+              "name": "ww3ww.txt",
+              "path": "ww3ww.txt",
+              "size": 168
+            },
+            {
+              "name": "ww11ww.txt",
+              "path": "ww11ww.txt",
+              "size": 168
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "208.104.124.208",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "info",
+          "file_count": 3,
+          "total_size": 1148190,
+          "files": [
+            {
+              "name": "Readme_TS5010.pdf",
+              "path": "Readme_TS5010.pdf",
+              "size": 393241
+            },
+            {
+              "name": "Readme_TS3010.pdf",
+              "path": "Readme_TS3010.pdf",
+              "size": 394743
+            },
+            {
+              "name": "Readme_TS3020.pdf",
+              "path": "Readme_TS3020.pdf",
+              "size": 360206
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "212.24.92.181",
+      "country": "United Kingdom",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "sai",
+          "file_count": 3,
+          "total_size": 480,
+          "files": [
+            {
+              "name": "ww6ww.txt",
+              "path": "ww6ww.txt",
+              "size": 160
+            },
+            {
+              "name": "ww5ww.txt",
+              "path": "ww5ww.txt",
+              "size": 160
+            },
+            {
+              "name": "ww4ww.txt",
+              "path": "ww4ww.txt",
+              "size": 160
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "216.229.53.36",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "SMB",
+          "file_count": 3,
+          "total_size": 447,
+          "files": [
+            {
+              "name": "ww1ww.txt",
+              "path": "ww1ww.txt",
+              "size": 149
+            },
+            {
+              "name": "ww45ww.txt",
+              "path": "ww45ww.txt",
+              "size": 149
+            },
+            {
+              "name": "ww49ww.txt",
+              "path": "ww49ww.txt",
+              "size": 149
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "23.169.120.60",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "iso-share",
+          "file_count": 1,
+          "total_size": 84,
+          "files": [
+            {
+              "name": "links.txt",
+              "path": "links.txt",
+              "size": 84
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "24.90.79.178",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": true,
+      "shares": []
+    },
+    {
+      "ip_address": "45.13.6.37",
+      "country": "United Kingdom",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "info",
+          "file_count": 1,
+          "total_size": 170268,
+          "files": [
+            {
+              "name": "\u88fd\u54c1\u60c5\u5831.pdf",
+              "path": "\u88fd\u54c1\u60c5\u5831.pdf",
+              "size": 170268
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "47.187.120.12",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "info",
+          "file_count": 1,
+          "total_size": 170268,
+          "files": [
+            {
+              "name": "\u88fd\u54c1\u60c5\u5831.pdf",
+              "path": "\u88fd\u54c1\u60c5\u5831.pdf",
+              "size": 170268
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "47.188.56.104",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": true,
+      "shares": [
+        {
+          "share_name": "Update",
+          "file_count": 6,
+          "total_size": 1020,
+          "files": [
+            {
+              "name": "ww45ww.txt",
+              "path": "ww45ww.txt",
+              "size": 170
+            },
+            {
+              "name": "ww6ww.txt",
+              "path": "ww6ww.txt",
+              "size": 170
+            },
+            {
+              "name": "ww49ww.txt",
+              "path": "ww49ww.txt",
+              "size": 170
+            },
+            {
+              "name": "ww29ww.txt",
+              "path": "ww29ww.txt",
+              "size": 170
+            },
+            {
+              "name": "ww46ww.txt",
+              "path": "ww46ww.txt",
+              "size": 170
+            },
+            {
+              "name": "ww35ww.txt",
+              "path": "ww35ww.txt",
+              "size": 170
+            }
+          ]
+        },
+        {
+          "share_name": "Videos",
+          "file_count": 6,
+          "total_size": 960,
+          "files": [
+            {
+              "name": "ww45ww.txt",
+              "path": "ww45ww.txt",
+              "size": 160
+            },
+            {
+              "name": "ww6ww.txt",
+              "path": "ww6ww.txt",
+              "size": 160
+            },
+            {
+              "name": "ww49ww.txt",
+              "path": "ww49ww.txt",
+              "size": 160
+            },
+            {
+              "name": "ww29ww.txt",
+              "path": "ww29ww.txt",
+              "size": 160
+            },
+            {
+              "name": "ww46ww.txt",
+              "path": "ww46ww.txt",
+              "size": 160
+            },
+            {
+              "name": "ww35ww.txt",
+              "path": "ww35ww.txt",
+              "size": 160
+            }
+          ]
+        },
+        {
+          "share_name": "Music",
+          "file_count": 6,
+          "total_size": 972,
+          "files": [
+            {
+              "name": "ww45ww.txt",
+              "path": "ww45ww.txt",
+              "size": 162
+            },
+            {
+              "name": "ww6ww.txt",
+              "path": "ww6ww.txt",
+              "size": 162
+            },
+            {
+              "name": "ww49ww.txt",
+              "path": "ww49ww.txt",
+              "size": 162
+            },
+            {
+              "name": "ww29ww.txt",
+              "path": "ww29ww.txt",
+              "size": 162
+            },
+            {
+              "name": "ww46ww.txt",
+              "path": "ww46ww.txt",
+              "size": 162
+            },
+            {
+              "name": "ww35ww.txt",
+              "path": "ww35ww.txt",
+              "size": 162
+            }
+          ]
+        },
+        {
+          "share_name": "Recordings",
+          "file_count": 6,
+          "total_size": 960,
+          "files": [
+            {
+              "name": "ww45ww.txt",
+              "path": "ww45ww.txt",
+              "size": 160
+            },
+            {
+              "name": "ww6ww.txt",
+              "path": "ww6ww.txt",
+              "size": 160
+            },
+            {
+              "name": "ww49ww.txt",
+              "path": "ww49ww.txt",
+              "size": 160
+            },
+            {
+              "name": "ww29ww.txt",
+              "path": "ww29ww.txt",
+              "size": 160
+            },
+            {
+              "name": "ww46ww.txt",
+              "path": "ww46ww.txt",
+              "size": 160
+            },
+            {
+              "name": "ww35ww.txt",
+              "path": "ww35ww.txt",
+              "size": 160
+            }
+          ]
+        },
+        {
+          "share_name": "Downloads",
+          "file_count": 6,
+          "total_size": 930,
+          "files": [
+            {
+              "name": "ww45ww.txt",
+              "path": "ww45ww.txt",
+              "size": 155
+            },
+            {
+              "name": "ww6ww.txt",
+              "path": "ww6ww.txt",
+              "size": 155
+            },
+            {
+              "name": "ww49ww.txt",
+              "path": "ww49ww.txt",
+              "size": 155
+            },
+            {
+              "name": "ww29ww.txt",
+              "path": "ww29ww.txt",
+              "size": 155
+            },
+            {
+              "name": "ww46ww.txt",
+              "path": "ww46ww.txt",
+              "size": 155
+            },
+            {
+              "name": "ww35ww.txt",
+              "path": "ww35ww.txt",
+              "size": 155
+            }
+          ]
+        },
+        {
+          "share_name": "Pictures",
+          "file_count": 6,
+          "total_size": 1002,
+          "files": [
+            {
+              "name": "ww45ww.txt",
+              "path": "ww45ww.txt",
+              "size": 167
+            },
+            {
+              "name": "ww6ww.txt",
+              "path": "ww6ww.txt",
+              "size": 167
+            },
+            {
+              "name": "ww49ww.txt",
+              "path": "ww49ww.txt",
+              "size": 167
+            },
+            {
+              "name": "ww29ww.txt",
+              "path": "ww29ww.txt",
+              "size": 167
+            },
+            {
+              "name": "ww46ww.txt",
+              "path": "ww46ww.txt",
+              "size": 167
+            },
+            {
+              "name": "ww35ww.txt",
+              "path": "ww35ww.txt",
+              "size": 167
+            }
+          ]
+        },
+        {
+          "share_name": "Emulators",
+          "file_count": 6,
+          "total_size": 1014,
+          "files": [
+            {
+              "name": "ww45ww.txt",
+              "path": "ww45ww.txt",
+              "size": 169
+            },
+            {
+              "name": "ww6ww.txt",
+              "path": "ww6ww.txt",
+              "size": 169
+            },
+            {
+              "name": "ww49ww.txt",
+              "path": "ww49ww.txt",
+              "size": 169
+            },
+            {
+              "name": "ww29ww.txt",
+              "path": "ww29ww.txt",
+              "size": 169
+            },
+            {
+              "name": "ww46ww.txt",
+              "path": "ww46ww.txt",
+              "size": 169
+            },
+            {
+              "name": "ww35ww.txt",
+              "path": "ww35ww.txt",
+              "size": 169
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "51.191.182.112",
+      "country": "United Kingdom",
+      "auth_method": "Guest/Blank",
+      "compromised": true,
+      "shares": []
+    },
+    {
+      "ip_address": "64.74.201.103",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "deploy",
+          "file_count": 3,
+          "total_size": 386935,
+          "files": [
+            {
+              "name": "License.pdf",
+              "path": "License.pdf",
+              "size": 201590
+            },
+            {
+              "name": "ReadMe.pdf",
+              "path": "ReadMe.pdf",
+              "size": 173260
+            },
+            {
+              "name": "release.txt",
+              "path": "release.txt",
+              "size": 12085
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "66.103.6.40",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": true,
+      "shares": []
+    },
+    {
+      "ip_address": "67.8.212.33",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "usb1",
+          "file_count": 3,
+          "total_size": 6388,
+          "files": [
+            {
+              "name": "ww24ww.txt",
+              "path": "ww24ww.txt",
+              "size": 174
+            },
+            {
+              "name": "notes.txt",
+              "path": "notes.txt",
+              "size": 152
+            },
+            {
+              "name": "webform.txt",
+              "path": "webform.txt",
+              "size": 6062
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "71.47.1.148",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "Public",
+          "file_count": 3,
+          "total_size": 235881,
+          "files": [
+            {
+              "name": "s-l500.jpg",
+              "path": "s-l500.jpg",
+              "size": 17963
+            },
+            {
+              "name": "img20230228_12153984.png",
+              "path": "img20230228_12153984.png",
+              "size": 67941
+            },
+            {
+              "name": "WIN_20211230_13_50_43_Pro.jpg",
+              "path": "WIN_20211230_13_50_43_Pro.jpg",
+              "size": 149977
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "71.47.233.12",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "webaxs",
+          "file_count": 3,
+          "total_size": 528,
+          "files": [
+            {
+              "name": "ww44ww.txt",
+              "path": "ww44ww.txt",
+              "size": 176
+            },
+            {
+              "name": "ww42ww.txt",
+              "path": "ww42ww.txt",
+              "size": 176
+            },
+            {
+              "name": "ww40ww.txt",
+              "path": "ww40ww.txt",
+              "size": 176
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "75.83.102.13",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "info",
+          "file_count": 1,
+          "total_size": 170268,
+          "files": [
+            {
+              "name": "\u88fd\u54c1\u60c5\u5831.pdf",
+              "path": "\u88fd\u54c1\u60c5\u5831.pdf",
+              "size": 170268
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "78.33.156.98",
+      "country": "United Kingdom",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "TimeMachineBackup",
+          "file_count": 3,
+          "total_size": 674180,
+          "files": [
+            {
+              "name": "README_FOR_DECRYPT_YOUR_FILES.txt",
+              "path": "README_FOR_DECRYPT_YOUR_FILES.txt",
+              "size": 44807
+            },
+            {
+              "name": "LOCKME_8u6cls-wDsCrE-TxZ7fT-drjdQJ-oqw0GI.jpg",
+              "path": "LOCKME_8u6cls-wDsCrE-TxZ7fT-drjdQJ-oqw0GI.jpg",
+              "size": 584566
+            },
+            {
+              "name": "README_FOR_DECRYPT_YOUR_FILES.txt",
+              "path": "README_FOR_DECRYPT_YOUR_FILES.txt",
+              "size": 44807
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "83.147.55.254",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "Windows_10__ISPsystem__56_srv302",
+          "file_count": 3,
+          "total_size": 2360447,
+          "files": [
+            {
+              "name": "alert.gif",
+              "path": "alert.gif",
+              "size": 1046
+            },
+            {
+              "name": "background_cli.bmp",
+              "path": "background_cli.bmp",
+              "size": 2359350
+            },
+            {
+              "name": "hwexclude.txt",
+              "path": "hwexclude.txt",
+              "size": 51
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "86.186.153.63",
+      "country": "United Kingdom",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "Public",
+          "file_count": 3,
+          "total_size": 0,
+          "files": [
+            {
+              "name": "xHACqYRBve.txt",
+              "path": "xHACqYRBve.txt",
+              "size": 0
+            },
+            {
+              "name": "SQPOAUBENW.txt",
+              "path": "SQPOAUBENW.txt",
+              "size": 0
+            },
+            {
+              "name": "PKbyOlxjLa.txt",
+              "path": "PKbyOlxjLa.txt",
+              "size": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ip_address": "90.249.206.37",
+      "country": "United Kingdom",
+      "auth_method": "Guest/Blank",
+      "compromised": true,
+      "shares": []
+    },
+    {
+      "ip_address": "92.38.148.4",
+      "country": "United States",
+      "auth_method": "Guest/Blank",
+      "compromised": false,
+      "shares": [
+        {
+          "share_name": "ISPsystem__Windows_Server_2019",
+          "file_count": 3,
+          "total_size": 1220,
+          "files": [
+            {
+              "name": "idwbinfo.txt",
+              "path": "idwbinfo.txt",
+              "size": 123
+            },
+            {
+              "name": "hwexclude.txt",
+              "path": "hwexclude.txt",
+              "size": 51
+            },
+            {
+              "name": "alert.gif",
+              "path": "alert.gif",
+              "size": 1046
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
