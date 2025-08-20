@@ -18,7 +18,7 @@ SMBSeek helps security professionals identify SMB servers that allow anonymous o
 - Querying Shodan's database for SMB servers with disabled authentication
 - Testing multiple authentication methods (anonymous, guest/blank, guest/guest)
 - Filtering results by country and excluding known infrastructure providers
-- Outputting findings to CSV format for further analysis
+- Storing findings in SQLite database for advanced analysis and querying
 
 ## Features
 
@@ -31,7 +31,7 @@ SMBSeek helps security professionals identify SMB servers that allow anonymous o
 - **Rate Limiting**: Built-in delays to prevent aggressive scanning
 - **Ransomware Detection**: Automatic detection of compromised hosts during file scanning
 - **Progress Indicators**: Real-time feedback during network operations
-- **CSV Output**: Results saved in structured format for analysis
+- **Database Storage**: Results stored in SQLite database with advanced querying capabilities
 
 ## Prerequisites
 
@@ -40,7 +40,7 @@ SMBSeek helps security professionals identify SMB servers that allow anonymous o
 Install required Python packages:
 
 ```bash
-pip install shodan smbprotocol pyspnego
+pip install -r requirements.txt
 ```
 
 ### System Requirements
@@ -77,33 +77,33 @@ python3 smb_scan.py -c US
 # Scan multiple countries
 python3 smb_scan.py -a FR,DE,IT
 
-# Quiet mode with custom output file
-python3 smb_scan.py -q -o my_results.csv
+# Quiet mode
+python3 smb_scan.py -q
 
 # Verbose mode (shows detailed authentication testing)
 python3 smb_scan.py -v
 
-# Enable failure logging for later analysis
+# Enable failure logging (stored in database)
 python3 smb_scan.py -f
 ```
 
 ### Complete Workflow
 
 ```bash
-# 1. Discover vulnerable SMB servers with failure logging
-python3 smb_scan.py -f -c US
+# 1. Discover vulnerable SMB servers
+python3 smb_scan.py -c US
 
-# 2. Analyze failures (optional)
-python3 failure_analyzer.py failed_record.csv
+# 2. Query your results
+python3 db_query.py --summary
 
-# 3. Test share accessibility
-python3 smb_peep.py ip_record.csv
+# 3. View detailed statistics
+python3 db_query.py --all
 
-# 4. Generate file manifest from accessible shares
-python3 smb_snag.py share_access_*.json
+# 4. Generate reports
+python3 db_maintenance.py --export
 
-# 5. Download files if needed (optional)
-python3 smb_snag.py -d share_access_*.json
+# 5. Backup your data
+python3 db_maintenance.py --backup
 ```
 
 ## Command Line Options
@@ -118,51 +118,57 @@ python3 smb_snag.py -d share_access_*.json
 | `-a, --additional-country CODES` | Comma-separated list of additional countries |
 | `-t, --terra` | Search globally without country filters |
 | `-x, --nyx` | Disable colored output |
-| `-f, --log-failures` | Log failed connection attempts to separate CSV file |
-| `-o, --output FILE` | Specify output CSV file (overrides default behavior) |
-| `-n, --new-file` | Create new timestamped file instead of appending to default |
+| `-f, --log-failures` | Log failed connection attempts to database |
+| `--db-path PATH` | Specify database file path (default: smbseek.db) |
+| `-x, --nyx` | Disable colored output |
 
-### Share Access Tool (smb_peep.py)
-
-| Option | Description |
-|--------|-------------|
-| `-q, --quiet` | Suppress output to screen |
-| `-v, --verbose` | Enable verbose output showing detailed share testing |
-| `-o, --output FILE` | Specify output JSON file (default: timestamped) |
-| `-x, --no-colors` | Disable colored output |
-
-### File Collection Tool (smb_snag.py)
+### Database Query Tool (db_query.py)
 
 | Option | Description |
 |--------|-------------|
-| `-q, --quiet` | Suppress output to screen |
-| `-v, --verbose` | Enable verbose output showing detailed enumeration progress |
-| `-d, --download-files` | Download files (generates manifest only by default) |
-| `-a, --auto-download` | Skip confirmation prompt when downloading files |
-| `-m, --manager-friendly` | Generate human-readable report |
-| `-x, --no-colors` | Disable colored output |
+| `--summary` | Show server summary with statistics |
+| `--vulnerabilities` | Display vulnerability breakdown |
+| `--countries` | Show country distribution of servers |
+| `--shares` | Display most common share names |
+| `--all` | Show all available reports |
 
-## Output Format
+### Database Maintenance Tool (db_maintenance.py)
+
+| Option | Description |
+|--------|-------------|
+| `--backup` | Create database backup |
+| `--maintenance` | Run routine database maintenance |
+| `--export` | Export database tables to CSV files |
+| `--info` | Display database information and statistics |
+| `--cleanup DAYS` | Remove data older than specified days |
+
+## Database Storage
 
 ### Default Behavior
 
-By default, SMBSeek appends results to a single file (`smb_scan_results.csv`) to consolidate findings from multiple scan sessions.
+SMBSeek stores all scan results in a SQLite database (`smbseek.db`) that grows with each scan. This enables powerful querying across multiple scans and historical analysis.
 
-### CSV Columns
+### Database Schema
 
-Results include the following columns:
+Results are stored in structured tables:
 
-- `ip_address`: Target IP address
-- `country`: Country location
-- `auth_method`: Successful authentication method
-- `shares`: Available SMB shares (first 5 non-administrative shares)
-- `timestamp`: When the connection was discovered (ISO format)
+- **`smb_servers`**: Core server information (IP, country, authentication method)
+- **`scan_sessions`**: Track individual scanning operations
+- **`share_access`**: Details about accessible SMB shares
+- **`vulnerabilities`**: Security findings and assessments
+- **`failure_logs`**: Connection failures for analysis
 
-Example output:
-```csv
-ip_address,country,auth_method,shares,timestamp
-192.168.1.100,United States,Anonymous,"Movies, Music, Documents",2025-01-15T14:30:45
-10.0.0.50,Canada,Guest/Blank,"Data, Backup, (and more)",2025-01-15T14:31:02
+### Querying Your Data
+
+```bash
+# View recent discoveries
+python3 db_query.py --summary
+
+# See geographic distribution
+python3 db_query.py --countries
+
+# Export to CSV for external analysis
+python3 db_maintenance.py --export
 ```
 
 ## Configuration
@@ -190,6 +196,13 @@ SMBSeek uses a JSON configuration file (`config.json`) to manage all settings. T
       "!want_to_cry.txt",
       "0XXX_DECRYPTION_README.TXT"
     ]
+  },
+  "database": {
+    "enabled": true,
+    "path": "smbseek.db",
+    "backup_enabled": true,
+    "backup_interval_hours": 24,
+    "max_backup_files": 30
   }
 }
 ```
@@ -204,6 +217,13 @@ SMBSeek uses a JSON configuration file (`config.json`) to manage all settings. T
 
 #### Security Settings
 - `ransomware_indicators`: List of filename patterns that indicate ransomware/malware infection (case-insensitive matching)
+
+#### Database Settings
+- `enabled`: Enable database storage (default: true)
+- `path`: Database file location (default: smbseek.db)
+- `backup_enabled`: Automatic backup creation (default: true)
+- `backup_interval_hours`: Hours between automatic backups (default: 24)
+- `max_backup_files`: Maximum number of backup files to retain (default: 30)
 
 ### Organization Exclusions
 
@@ -221,54 +241,53 @@ If the primary smbprotocol library fails, the tool falls back to using the syste
 
 ## Tool Details
 
-### SMB Failure Analyzer
+### Database Query System
 
-The failure analyzer (`failure_analyzer.py`) investigates why SMB authentication attempts fail and provides comprehensive analysis including:
+The database query tool (`db_query.py`) provides comprehensive analysis of your scan data:
 
-- Shodan deep dive with SMB service details and OS fingerprinting
-- Network-level analysis with port accessibility testing
-- SMB protocol analysis with authentication requirements
-- Vulnerability assessment with risk classification
+- Server summaries with accessibility statistics
+- Geographic distribution analysis
+- Vulnerability assessment reports
+- Historical scanning trends
 
 Usage:
 ```bash
-python3 failure_analyzer.py failed_record.csv
+python3 db_query.py --all
 ```
 
-### SMB Share Access Verifier
+### Database Maintenance System
 
-SMB Peep (`smb_peep.py`) validates read accessibility of SMB shares from servers with successful authentication:
+The maintenance tool (`db_maintenance.py`) manages your SQLite database:
 
-- Re-enumerates shares using original successful authentication method
-- Tests actual SMB share accessibility using smbprotocol
-- Provides detailed error information for inaccessible shares
-- **READ ONLY**: No write operations are ever attempted
+- Automated backup creation with configurable retention
+- Database optimization and cleanup operations
+- Data export capabilities for external analysis
+- Health monitoring and integrity checking
 
 Usage:
 ```bash
-python3 smb_peep.py ip_record.csv
+python3 db_maintenance.py --maintenance
 ```
 
-### SMB File Collection Tool
+### Data Import System
 
-SMB Snag (`smb_snag.py`) downloads file samples from SMB shares with verified read access:
+The import tool (`db_import.py`) migrates existing data files to the database:
 
-- **Ransomware Detection**: Automatically scans for malware indicators during enumeration
-- **Security Stop**: Immediately halts scanning if ransomware/malware indicators detected
-- Applies configurable file extension filters
-- Scans directories recursively with configurable depth limits
-- **READ ONLY**: No write operations or file modifications ever attempted
+- **Legacy Support**: Imports existing CSV and JSON scan results
+- **Batch Processing**: Handles multiple files from different scan sessions
+- **Data Validation**: Ensures data integrity during import process
+- **Progress Tracking**: Provides detailed import statistics
 
 Usage:
 ```bash
-# Generate file manifest only (default)
-python3 smb_snag.py share_access_results.json
+# Import all supported files from current directory
+python3 db_import.py --all
 
-# Generate manifest and download files
-python3 smb_snag.py -d share_access_results.json
+# Import specific legacy files
+python3 db_import.py --csv legacy_results.csv
 
-# Generate human-readable report
-python3 smb_snag.py -m share_access_results.json
+# Import from specific directory
+python3 db_import.py --directory /path/to/old/data
 ```
 
 #### Ransomware Detection Features
