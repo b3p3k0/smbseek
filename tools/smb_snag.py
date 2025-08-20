@@ -31,8 +31,15 @@ CYAN = '\033[96m'
 BLUE = '\033[94m'
 RESET = '\033[0m'
 
-def load_configuration(config_file="config.json"):
+def load_configuration(config_file=None):
     """Load configuration from JSON file with fallback to defaults."""
+    # Default to conf/config.json, handling path from tools/ directory
+    if config_file is None:
+        # Get the directory containing this script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Go up one level to repo root, then into conf/
+        config_file = os.path.join(os.path.dirname(script_dir), "conf", "config.json")
+    
     default_config = {
         "shodan": {
             "api_key": "YOUR_API_KEY_HERE"
@@ -44,7 +51,7 @@ def load_configuration(config_file="config.json"):
             "share_access_delay": 7
         },
         "files": {
-            "default_exclusion_file": "exclusion_list.txt"
+            "default_exclusion_file": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "conf", "exclusion_list.txt")
         },
         "countries": {
             "US": "United States",
@@ -934,11 +941,15 @@ file manifest. Use -m flag for human-readable reports, -d flag to download files
     parser.add_argument('-x', '--no-colors', action='store_true', help='Disable colored output')
     parser.add_argument('-m', '--manager-friendly', action='store_true', help='Generate human-readable report (off by default)')
     parser.add_argument('-p', '--plain-output', action='store_true', help='Disable emojis and formatting in human-readable output (for piping)')
+    parser.add_argument('--config', 
+                       type=str, 
+                       metavar='FILE', 
+                       help='Configuration file path (default: conf/config.json)')
     
     args = parser.parse_args()
     
     # Load configuration
-    config = load_configuration()
+    config = load_configuration(args.config)
     
     # Initialize scanner for color management
     snag = SMBSnag(config, 

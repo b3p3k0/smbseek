@@ -40,7 +40,7 @@ brew install samba
 ```
 
 ### 4. Configure Your API Key
-Edit `config.json`:
+Edit `conf/config.json`:
 ```json
 {
   "shodan": {
@@ -51,7 +51,7 @@ Edit `config.json`:
 
 ### 5. Run Your First Scan
 ```bash
-python3 smb_scan.py -c US
+python3 tools/smb_scan.py -c US
 ```
 
 **That's it!** In a few minutes, you'll have a database full of SMB server data ready to explore.
@@ -131,8 +131,8 @@ pip install -r requirements.txt
 ```
 
 ### Configuration Setup
-1. **Copy the example config**: `cp config.json.example config.json` (if available)
-2. **Add your Shodan API key** to `config.json`
+1. **Copy the example config**: `cp conf/config.json.example conf/config.json` (if available)
+2. **Add your Shodan API key** to `conf/config.json`
 3. **The database will be created automatically** when you run your first scan
 
 ---
@@ -170,22 +170,22 @@ source venv/bin/activate  # Linux/macOS
 # OR: venv\Scripts\activate  # Windows
 
 # Scan servers in the United States
-python3 smb_scan.py -c US
+python3 tools/smb_scan.py -c US
 ```
 
 ### Common Scan Commands
 ```bash
 # Scan multiple countries
-python3 smb_scan.py -c US,GB,CA
+python3 tools/smb_scan.py -c US,GB,CA
 
 # Quiet mode (less output)
-python3 smb_scan.py -q -c US
+python3 tools/smb_scan.py -q -c US
 
 # Verbose mode (detailed information)  
-python3 smb_scan.py -v -c US
+python3 tools/smb_scan.py -v -c US
 
 # Scan globally (not recommended for beginners)
-python3 smb_scan.py -t
+python3 tools/smb_scan.py -t
 ```
 
 ### Understanding the Output
@@ -207,50 +207,50 @@ SMBSeek includes a query tool for exploring your data without writing SQL:
 
 ```bash
 # Show summary of all servers
-python3 db_query.py --summary
+python3 tools/db_query.py --summary
 
 # Show vulnerability breakdown
-python3 db_query.py --vulnerabilities
+python3 tools/db_query.py --vulnerabilities
 
 # Show country distribution
-python3 db_query.py --countries
+python3 tools/db_query.py --countries
 
 # Show most common share names
-python3 db_query.py --shares
+python3 tools/db_query.py --shares
 
 # Show everything
-python3 db_query.py --all
+python3 tools/db_query.py --all
 ```
 
 ### Basic Database Examples
 
 **Example 1: Find all servers in my country**
 ```bash
-python3 db_query.py --countries
+python3 tools/db_query.py --countries
 ```
 This shows how many vulnerable servers were found in each country.
 
 **Example 2: Show me the most accessible servers**
 ```bash
-python3 db_query.py --summary
+python3 tools/db_query.py --summary
 ```
 This displays servers with the most accessible shares, sorted by accessibility.
 
 **Example 3: Which countries have the most vulnerable servers?**
 ```bash
-python3 db_query.py --countries
+python3 tools/db_query.py --countries
 ```
 See the geographic distribution of vulnerable SMB servers.
 
 **Example 4: What are the most common share names?**
 ```bash
-python3 db_query.py --shares
+python3 tools/db_query.py --shares
 ```
 Discover the most frequently found share names across all servers.
 
 **Example 5: Show me servers discovered in the last week**
 ```bash
-python3 db_query.py --statistics --days 7
+python3 tools/db_query.py --statistics --days 7
 ```
 View recent scan activity and success rates.
 
@@ -295,7 +295,7 @@ results = db.execute_query("""
 **Example 3: Export data for external tools**
 ```bash
 # Export all tables to CSV files
-python3 db_maintenance.py --export
+python3 tools/db_maintenance.py --export
 
 # This creates timestamped CSV files for external analysis
 ```
@@ -305,28 +305,28 @@ python3 db_maintenance.py --export
 ## 🔄 Common Workflows
 
 ### Security Assessment Workflow
-1. **Initial Discovery**: `python3 smb_scan.py -c US`
-2. **Review Results**: `python3 db_query.py --summary`
-3. **Focus Areas**: `python3 db_query.py --countries`
-4. **Generate Report**: `python3 db_maintenance.py --export`
+1. **Initial Discovery**: `python3 tools/smb_scan.py -c US`
+2. **Review Results**: `python3 tools/db_query.py --summary`
+3. **Focus Areas**: `python3 tools/db_query.py --countries`
+4. **Generate Report**: `python3 tools/db_maintenance.py --export`
 
 ### Educational/Research Workflow  
-1. **Broad Scan**: `python3 smb_scan.py -c US,GB,CA`
-2. **Explore Data**: `python3 db_query.py --all`
+1. **Broad Scan**: `python3 tools/smb_scan.py -c US,GB,CA`
+2. **Explore Data**: `python3 tools/db_query.py --all`
 3. **Analyze Patterns**: Use custom SQL queries
 4. **Document Findings**: Export to spreadsheet software
 
 ### Monitoring Workflow
 1. **Regular Scans**: Set up scheduled scanning
-2. **Track Changes**: `python3 db_query.py --statistics`
-3. **Database Maintenance**: `python3 db_maintenance.py --maintenance`
-4. **Backup Data**: `python3 db_maintenance.py --backup`
+2. **Track Changes**: `python3 tools/db_query.py --statistics`
+3. **Database Maintenance**: `python3 tools/db_maintenance.py --maintenance`
+4. **Backup Data**: `python3 tools/db_maintenance.py --backup`
 
 ---
 
 ## ⚙️ Essential Configuration
 
-### Key Settings in config.json
+### Key Settings in conf/config.json
 
 **Rate Limiting** (be respectful):
 ```json
@@ -376,7 +376,7 @@ python3 db_maintenance.py --export
 
 **"API key not working"**
 - Check that you copied the entire key from Shodan.io
-- Ensure the key is in quotes in config.json
+- Ensure the key is in quotes in conf/config.json
 - Verify your Shodan account is active
 
 **"No smbclient found"**
@@ -386,16 +386,16 @@ python3 db_maintenance.py --export
 
 **"Database locked" errors**
 - Close any other programs accessing the database
-- Run: `python3 db_maintenance.py --check`
+- Run: `python3 tools/db_maintenance.py --check`
 - If persistent, restart and try again
 
 **"Connection timeouts"**  
-- Increase timeout values in config.json
+- Increase timeout values in conf/config.json
 - Check your internet connection
 - Some networks may block SMB traffic (port 445)
 
 **"No results found"**
-- Try different countries: `python3 smb_scan.py -c GB`
+- Try different countries: `python3 tools/smb_scan.py -c GB`
 - Check Shodan API limits (free accounts have daily limits)
 - Verify your network allows outbound connections
 
@@ -431,9 +431,9 @@ python3 db_maintenance.py --export
 ## 🎓 Understanding the Results
 
 ### What Each Tool Does
-- **smb_scan.py**: Discovers servers with weak SMB authentication
-- **db_query.py**: Explores and reports on your scan data
-- **db_maintenance.py**: Manages database backups and optimization
+- **tools/smb_scan.py**: Discovers servers with weak SMB authentication
+- **tools/db_query.py**: Explores and reports on your scan data
+- **tools/db_maintenance.py**: Manages database backups and optimization
 
 ### Interpreting Your Data
 - **High share counts**: Servers with many accessible shares

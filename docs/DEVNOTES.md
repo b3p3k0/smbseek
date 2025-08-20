@@ -14,9 +14,9 @@
 SMBSeek is a defensive security toolkit for identifying and analyzing SMB servers with weak authentication. It consists of specialized tools that work together in a data flow pipeline:
 
 ```
-smb_scan.py → ip_record.csv → smb_peep.py → share_access_*.json → smb_snag.py
-           ↓                                                   ↓
-    failed_record.csv → failure_analyzer.py → failure_analysis_*.json
+tools/smb_scan.py → ip_record.csv → tools/smb_peep.py → share_access_*.json → tools/smb_snag.py
+                 ↓                                                          ↓
+    failed_record.csv → tools/failure_analyzer.py → failure_analysis_*.json
 ```
 
 ### Critical Success Factors for AI Agents
@@ -66,10 +66,10 @@ class ToolName:
 
 **Standard Pattern**:
 ```python
-def load_configuration(config_file="config.json"):
+def load_configuration(config_file="conf/config.json"):
     default_config = {
         "connection": {"timeout": 30, "rate_limit_delay": 3},
-        "files": {"default_exclusion_file": "exclusion_list.txt"},
+        "files": {"default_exclusion_file": "conf/exclusion_list.txt"},
         # ... complete defaults
     }
     

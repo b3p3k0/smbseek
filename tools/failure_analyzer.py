@@ -10,6 +10,7 @@ import json
 import socket
 import struct
 import time
+import os
 from collections import defaultdict, Counter
 from datetime import datetime
 from smbprotocol.connection import Connection
@@ -20,8 +21,13 @@ from contextlib import redirect_stderr
 from io import StringIO
 
 class SMBFailureAnalyzer:
-    def __init__(self, config_file="config.json"):
+    def __init__(self, config_file=None):
         """Initialize the failure analyzer with Shodan API."""
+        if config_file is None:
+            # Get the directory containing this script
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            # Go up one level to repo root, then into conf/
+            config_file = os.path.join(os.path.dirname(script_dir), "conf", "config.json")
         self.config = self.load_configuration(config_file)
         self.api = shodan.Shodan(self.config["shodan"]["api_key"])
         self.analysis_results = []
@@ -591,21 +597,32 @@ For more information, see the SMBSeek README.md documentation.
 def main():
     """Main function for standalone execution."""
     import sys
+    import argparse
+    import os
     
-    if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] in ['-h', '--help']):
+    parser = argparse.ArgumentParser(
+        description="SMB Failure Analyzer - Deep Analysis Tool for SMB Authentication Failures",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False  # We'll handle help manually
+    )
+    
+    parser.add_argument('csv_file', nargs='?', help='CSV file containing failed connection records')
+    parser.add_argument('-h', '--help', action='store_true', help='Show help message')
+    parser.add_argument('--config', 
+                       type=str, 
+                       metavar='FILE', 
+                       help='Configuration file path (default: conf/config.json)')
+    
+    args = parser.parse_args()
+    
+    if args.help or not args.csv_file:
         print_help()
         sys.exit(0)
     
-    if len(sys.argv) != 2:
-        print("Error: Invalid number of arguments")
-        print("Usage: python3 failure_analyzer.py <failed_connections.csv>")
-        print("       python3 failure_analyzer.py --help")
-        sys.exit(1)
-    
-    csv_file = sys.argv[1]
+    csv_file = args.csv_file
     
     try:
-        analyzer = SMBFailureAnalyzer()
+        analyzer = SMBFailureAnalyzer(args.config)
         briefing = analyzer.analyze_csv(csv_file)
         
         print("\n" + "=" * 80)

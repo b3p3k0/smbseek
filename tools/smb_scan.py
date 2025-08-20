@@ -31,8 +31,15 @@ YELLOW = '\033[93m'
 CYAN = '\033[96m'
 RESET = '\033[0m'
 
-def load_configuration(config_file="config.json"):
+def load_configuration(config_file=None):
     """Load configuration from JSON file with fallback to defaults."""
+    # Default to conf/config.json, handling path from tools/ directory
+    if config_file is None:
+        # Get the directory containing this script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Go up one level to repo root, then into conf/
+        config_file = os.path.join(os.path.dirname(script_dir), "conf", "config.json")
+    
     default_config = {
         "shodan": {
             "api_key": "YOUR_API_KEY_HERE"
@@ -43,7 +50,7 @@ def load_configuration(config_file="config.json"):
             "rate_limit_delay": 3
         },
         "files": {
-            "default_exclusion_file": "exclusion_list.txt"
+            "default_exclusion_file": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "conf", "exclusion_list.txt")
         },
         "countries": {
             "US": "United States",
@@ -870,6 +877,11 @@ Organization Exclusions:
     parser.add_argument('-x', '--nyx',
                        action='store_true',
                        help='Disable colored output (nyx = darkness/no colors)')
+
+    parser.add_argument('--config',
+                       type=str,
+                       metavar='FILE',
+                       help='Configuration file path (default: conf/config.json)')
 
     return parser.parse_args()
 
