@@ -268,7 +268,7 @@ class SMBPeep:
             # Add command to list directory (test read access)
             cmd.extend(["-c", "ls"])
             
-            self.print_if_verbose(f"      {self.CYAN}Testing access: {' '.join(cmd[:3])} ... -c ls{self.RESET}")
+            self.print_if_verbose(f"      {self.CYAN}Testing access: {' '.join(cmd)}{self.RESET}")
             
             # Run command with timeout
             result = subprocess.run(cmd, capture_output=True, text=True, 
@@ -330,30 +330,36 @@ class SMBPeep:
         
         try:
             # First check if port 445 is still open
+            self.print_if_not_quiet(f"  ⏳ Checking port 445...", end='', flush=True)
             if not self.check_port(ip, 445, self.config["connection"]["port_check_timeout"]):
-                self.print_if_not_quiet(f"  {self.RED}✗ Port 445 not accessible{self.RESET}")
+                print(f"\r  {self.RED}✗ Port 445 not accessible{self.RESET}")
                 target_result['error'] = 'Port 445 not accessible'
                 return target_result
+            print(f"\r  {self.GREEN}✓ Port 445 open{self.RESET}")
             
             # Enumerate shares fresh
+            self.print_if_not_quiet(f"  ⏳ Enumerating shares...", end='', flush=True)
             shares = self.enumerate_shares(ip, username, password)
             target_result['shares_found'] = shares
             
             if not shares:
-                self.print_if_not_quiet(f"  {self.YELLOW}⚠ No non-administrative shares found{self.RESET}")
+                print(f"\r  {self.YELLOW}⚠ No non-administrative shares found{self.RESET}")
                 return target_result
             
-            self.print_if_not_quiet(f"  {self.GREEN}Found {len(shares)} shares to test{self.RESET}")
+            print(f"\r  {self.GREEN}✓ Found {len(shares)} shares to test{self.RESET}")
             
             # Test access to each share
-            for share_name in shares:
-                self.print_if_verbose(f"    {self.CYAN}Testing share: {share_name}{self.RESET}")
+            for i, share_name in enumerate(shares, 1):
+                self.print_if_not_quiet(f"  ⏳ Testing share {i}/{len(shares)}: {share_name}...", end='', flush=True)
                 
                 access_result = self.test_share_access(ip, share_name, username, password)
                 target_result['share_details'].append(access_result)
                 
                 if access_result['accessible']:
                     target_result['accessible_shares'].append(share_name)
+                    print(f"\r  {self.GREEN}✓ Share {i}/{len(shares)}: {share_name} - accessible{self.RESET}")
+                else:
+                    print(f"\r  {self.RED}✗ Share {i}/{len(shares)}: {share_name} - {access_result.get('error', 'not accessible')}{self.RESET}")
                 
                 # Rate limiting between share tests
                 if share_name != shares[-1]:  # Don't delay after the last share
@@ -431,7 +437,7 @@ class SMBPeep:
             with open(self.output_file, 'w', encoding='utf-8') as f:
                 json.dump(output_data, f, indent=2, ensure_ascii=False)
             
-            self.print_if_not_quiet(f"\n✓ Results saved to {self.output_file}")
+            self.print_if_not_quiet(f"\n{self.GREEN}✓{self.RESET} Results saved to {self.output_file}")
             
         except Exception as e:
             print(f"✗ Failed to save results: {e}")
