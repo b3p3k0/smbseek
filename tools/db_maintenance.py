@@ -464,9 +464,13 @@ Examples:
     if args.config and os.path.exists(args.config):
         with open(args.config, 'r') as f:
             config = json.load(f)
-    elif os.path.exists("config.json"):
-        with open("config.json", 'r') as f:
-            config = json.load(f)
+    else:
+        # Default to conf/config.json, handling path from tools/ directory
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        default_config = os.path.join(os.path.dirname(script_dir), "conf", "config.json")
+        if os.path.exists(default_config):
+            with open(default_config, 'r') as f:
+                config = json.load(f)
     
     # Initialize maintenance utility
     maintenance = SMBSeekDatabaseMaintenance(db_path=args.db_path, config=config)

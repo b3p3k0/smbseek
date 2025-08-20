@@ -36,8 +36,15 @@ class SMBVulnScanner:
         self.config = self.load_configuration()
         self.results = []
 
-    def load_configuration(self, config_file="config.json"):
+    def load_configuration(self, config_file=None):
         """Load configuration from JSON file with fallback to defaults."""
+        # Default to conf/config.json, handling path from tools/ directory
+        if config_file is None:
+            # Get the directory containing this script
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            # Go up one level to repo root, then into conf/
+            config_file = os.path.join(os.path.dirname(script_dir), "conf", "config.json")
+        
         default_config = {
             "connection": {
                 "timeout": 30,
@@ -278,6 +285,10 @@ def main():
     parser.add_argument("-x", "--no-colors", action="store_true",
                       help="Disable colored output")
     parser.add_argument("-o", "--output", help="Specify output JSON file")
+    parser.add_argument("--config", 
+                       type=str, 
+                       metavar="FILE", 
+                       help="Configuration file path (default: conf/config.json)")
     
     args = parser.parse_args()
     
@@ -290,6 +301,9 @@ def main():
         sys.exit(1)
     
     scanner = SMBVulnScanner(quiet=args.quiet, verbose=args.verbose, no_colors=args.no_colors)
+    # Override config if specified
+    if args.config:
+        scanner.config = scanner.load_configuration(args.config)
     
     scanner.print_if_not_quiet("SMB Vulnerability Scanner")
     scanner.print_if_not_quiet("=" * 50)

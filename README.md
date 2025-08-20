@@ -6,11 +6,11 @@ A defensive security toolkit that uses the Shodan API to identify and analyze SM
 
 SMBSeek consists of five complementary tools:
 
-- **`smb_scan.py`**: Primary scanner for discovering SMB servers with weak authentication
-- **`failure_analyzer.py`**: Deep analysis tool for understanding authentication failures  
-- **`smb_peep.py`**: Share access verification tool for testing read accessibility
-- **`smb_snag.py`**: File collection tool for downloading samples from accessible shares with ransomware detection
-- **`smb_vuln.py`**: Vulnerability assessment tool for testing specific CVEs
+- **`tools/smb_scan.py`**: Primary scanner for discovering SMB servers with weak authentication
+- **`tools/failure_analyzer.py`**: Deep analysis tool for understanding authentication failures  
+- **`tools/smb_peep.py`**: Share access verification tool for testing read accessibility
+- **`tools/smb_snag.py`**: File collection tool for downloading samples from accessible shares with ransomware detection
+- **`tools/smb_vuln.py`**: Vulnerability assessment tool for testing specific CVEs
 
 ## Overview
 
@@ -53,7 +53,7 @@ pip install -r requirements.txt
 
 1. Sign up for a Shodan account at https://shodan.io
 2. Obtain your API key from your account dashboard
-3. Update the API key in `config.json`:
+3. Update the API key in `conf/config.json`:
 
 ```json
 {
@@ -69,46 +69,46 @@ pip install -r requirements.txt
 
 ```bash
 # Scan all default countries (US, GB, CA, IE, AU, NZ, ZA)
-python3 smb_scan.py
+python3 tools/smb_scan.py
 
 # Scan only United States
-python3 smb_scan.py -c US
+python3 tools/smb_scan.py -c US
 
 # Scan multiple countries
-python3 smb_scan.py -a FR,DE,IT
+python3 tools/smb_scan.py -a FR,DE,IT
 
 # Quiet mode
-python3 smb_scan.py -q
+python3 tools/smb_scan.py -q
 
 # Verbose mode (shows detailed authentication testing)
-python3 smb_scan.py -v
+python3 tools/smb_scan.py -v
 
 # Enable failure logging (stored in database)
-python3 smb_scan.py -f
+python3 tools/smb_scan.py -f
 ```
 
 ### Complete Workflow
 
 ```bash
 # 1. Discover vulnerable SMB servers
-python3 smb_scan.py -c US
+python3 tools/smb_scan.py -c US
 
 # 2. Query your results
-python3 db_query.py --summary
+python3 tools/db_query.py --summary
 
 # 3. View detailed statistics
-python3 db_query.py --all
+python3 tools/db_query.py --all
 
 # 4. Generate reports
-python3 db_maintenance.py --export
+python3 tools/db_maintenance.py --export
 
 # 5. Backup your data
-python3 db_maintenance.py --backup
+python3 tools/db_maintenance.py --backup
 ```
 
 ## Command Line Options
 
-### Main Scanner (smb_scan.py)
+### Main Scanner (tools/smb_scan.py)
 
 | Option | Description |
 |--------|-------------|
@@ -122,7 +122,7 @@ python3 db_maintenance.py --backup
 | `--db-path PATH` | Specify database file path (default: smbseek.db) |
 | `-x, --nyx` | Disable colored output |
 
-### Database Query Tool (db_query.py)
+### Database Query Tool (tools/db_query.py)
 
 | Option | Description |
 |--------|-------------|
@@ -162,18 +162,18 @@ Results are stored in structured tables:
 
 ```bash
 # View recent discoveries
-python3 db_query.py --summary
+python3 tools/db_query.py --summary
 
 # See geographic distribution
-python3 db_query.py --countries
+python3 tools/db_query.py --countries
 
 # Export to CSV for external analysis
-python3 db_maintenance.py --export
+python3 tools/db_maintenance.py --export
 ```
 
 ## Configuration
 
-SMBSeek uses a JSON configuration file (`config.json`) to manage all settings. The configuration file is automatically loaded on startup with fallback to defaults if not found.
+SMBSeek uses a JSON configuration file (`conf/config.json`) to manage all settings. The configuration file is automatically loaded on startup with fallback to defaults if not found.
 
 ### Basic Configuration
 
@@ -189,7 +189,7 @@ SMBSeek uses a JSON configuration file (`config.json`) to manage all settings. T
     "share_access_delay": 7
   },
   "files": {
-    "default_exclusion_file": "exclusion_list.txt"
+    "default_exclusion_file": "conf/exclusion_list.txt"
   },
   "security": {
     "ransomware_indicators": [
@@ -227,7 +227,7 @@ SMBSeek uses a JSON configuration file (`config.json`) to manage all settings. T
 
 ### Organization Exclusions
 
-The tool uses `exclusion_list.txt` to exclude known ISPs, hosting providers, and cloud services. This prevents scanning infrastructure that typically has SMB services on routers rather than vulnerable endpoints.
+The tool uses `conf/exclusion_list.txt` to exclude known ISPs, hosting providers, and cloud services. This prevents scanning infrastructure that typically has SMB services on routers rather than vulnerable endpoints.
 
 ## Authentication Methods
 
@@ -243,7 +243,7 @@ If the primary smbprotocol library fails, the tool falls back to using the syste
 
 ### Database Query System
 
-The database query tool (`db_query.py`) provides comprehensive analysis of your scan data:
+The database query tool (`tools/db_query.py`) provides comprehensive analysis of your scan data:
 
 - Server summaries with accessibility statistics
 - Geographic distribution analysis
@@ -266,12 +266,12 @@ The maintenance tool (`db_maintenance.py`) manages your SQLite database:
 
 Usage:
 ```bash
-python3 db_maintenance.py --maintenance
+python3 tools/db_maintenance.py --maintenance
 ```
 
 ### Data Import System
 
-The import tool (`db_import.py`) migrates existing data files to the database:
+The import tool (`tools/db_import.py`) migrates existing data files to the database:
 
 - **Legacy Support**: Imports existing CSV and JSON scan results
 - **Batch Processing**: Handles multiple files from different scan sessions
@@ -281,20 +281,20 @@ The import tool (`db_import.py`) migrates existing data files to the database:
 Usage:
 ```bash
 # Import all supported files from current directory
-python3 db_import.py --all
+python3 tools/db_import.py --all
 
 # Import specific legacy files
-python3 db_import.py --csv legacy_results.csv
+python3 tools/db_import.py --csv legacy_results.csv
 
 # Import from specific directory
-python3 db_import.py --directory /path/to/old/data
+python3 tools/db_import.py --directory /path/to/old/data
 ```
 
 #### Ransomware Detection Features
 
 - **Automatic Scanning**: Checks filenames against known ransomware indicators during enumeration
 - **Immediate Stop**: Halts all scanning on a host when malware indicators are detected
-- **Configurable Patterns**: Ransomware indicators defined in `config.json` for easy updates
+- **Configurable Patterns**: Ransomware indicators defined in `conf/config.json` for easy updates
 - **Case-Insensitive Matching**: Detects variations in filename casing
 
 Default detection patterns:
