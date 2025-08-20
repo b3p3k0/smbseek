@@ -1,0 +1,27 @@
+# SMBSeek Toolkit Dependencies
+# Core networking and SMB libraries
+shodan>=1.25.0
+smbprotocol>=1.10.0
+pyspnego>=0.8.0
+
+# Database and data handling (included in Python standard library)
+# sqlite3 - built-in
+# json - built-in  
+# csv - built-in
+# logging - built-in
+# argparse - built-in
+# datetime - built-in
+# os, sys, subprocess - built-in
+# threading - built-in
+# typing - built-in
+# pathlib - built-in
+# contextlib - built-in
+# collections - built-in
+# uuid - built-in
+# socket - built-in
+# time - built-in
+# re - built-in
+# glob - built-in
+# shutil - built-in
+# struct - built-in
+# io - built-in
