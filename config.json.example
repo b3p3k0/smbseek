@@ -20,6 +20,31 @@
     "NZ": "New Zealand",
     "ZA": "South Africa"
   },
+  "security": {
+    "ransomware_indicators": [
+      "!want_to_cry.txt",
+      "0XXX_DECRYPTION_README.TXT",
+      "HOW_TO_DECRYPT",
+      "RESTORE_FILES",
+      "DECRYPT_INSTRUCTION",
+      "Help_Restore_Your_Files",
+      "READ_IT.txt",
+      "HELP_DECRYPT",
+      "HOW_TO_RECOVER",
+      "README-FILE-",
+      "LOCKFILE-README-",
+      "_recover_instructions",
+      "DECRYPT_YOUR_FILES",
+      "ransom_note",
+      "payment_instructions",
+      "contact_here",
+      "files_encrypted",
+      "ATTENTION.txt",
+      "!!!readme!!!",
+      "recover_data",
+      "unlock_files"
+    ]
+  },
   "file_collection": {
     "max_files_per_target": 3,
     "max_total_size_mb": 500,

@@ -134,7 +134,7 @@ class SMBScanner:
             # Test API key validity
             self.api.info()
             if not self.quiet:
-                print("✓ Connected to Shodan API successfully")
+                print(f"✓ Connected to Shodan API successfully")
         except shodan.APIError as e:
             print(f"✗ Shodan API Error: {str(e)}")
             if "Invalid API key" in str(e):
@@ -503,16 +503,19 @@ class SMBScanner:
 
         try:
             # First check if port 445 is open
+            self.print_if_not_quiet(f"  ⏳ Checking port 445...", end='', flush=True)
             if not self.check_port(ip, 445, self.config["connection"]["port_check_timeout"]):
-                self.print_if_not_quiet(f"  {self.RED}✗ Port 445 not accessible{self.RESET}")
+                print(f"\r  {self.RED}✗ Port 445 not accessible{self.RESET}")
                 return
+            print(f"\r  {self.GREEN}✓ Port 445 open{self.RESET}")
 
             # Test with smbprotocol library
+            self.print_if_not_quiet(f"  ⏳ Testing authentication...", end='', flush=True)
             successful_method, shares = self.test_smb_connection(ip, auth_methods)
 
             # If smbprotocol fails, try smbclient as fallback
             if not successful_method:
-                self.print_if_verbose(f"    {self.CYAN}Trying smbclient fallback...{self.RESET}")
+                print(f"\r  ⏳ Trying smbclient fallback...", end='', flush=True)
                 fallback_method, fallback_shares = self.test_smb_alternative(ip)
                 if fallback_method:
                     successful_method = f"{fallback_method} (smbclient)"
@@ -522,9 +525,9 @@ class SMBScanner:
                 # Format shares for display
                 shares_text = ", ".join(shares) if shares else ""
                 if shares_text:
-                    self.print_if_not_quiet(f"  {self.GREEN}✓ Success! Authentication: {successful_method} | Shares: {shares_text}{self.RESET}")
+                    print(f"\r  {self.GREEN}✓ Success! Authentication: {successful_method} | Shares: {shares_text}{self.RESET}")
                 else:
-                    self.print_if_not_quiet(f"  {self.GREEN}✓ Success! Authentication: {successful_method}{self.RESET}")
+                    print(f"\r  {self.GREEN}✓ Success! Authentication: {successful_method}{self.RESET}")
                 
                 self.successful_connections.append({
                     'ip': ip,
@@ -534,7 +537,7 @@ class SMBScanner:
                     'timestamp': datetime.now().strftime('%Y-%m-%dT%H:%M')
                 })
             else:
-                self.print_if_not_quiet(f"  {self.RED}✗ All authentication methods failed{self.RESET}")
+                print(f"\r  {self.RED}✗ All authentication methods failed{self.RESET}")
                 
                 # Log failure if failure logging is enabled
                 if self.log_failures:
@@ -626,8 +629,8 @@ class SMBScanner:
 
             # Report results
             total_records = len(existing_records)
-            self.print_if_not_quiet(f"✓ Results saved to {self.output_file}")
-            self.print_if_not_quiet(f"✓ New IPs: {new_count}, Updated: {updated_count}, Total records: {total_records}")
+            self.print_if_not_quiet(f"{self.GREEN}✓{self.RESET} Results saved to {self.output_file}")
+            self.print_if_not_quiet(f"{self.GREEN}✓{self.RESET} New IPs: {new_count}, Updated: {updated_count}, Total records: {total_records}")
 
         except Exception as e:
             print(f"✗ Failed to save results: Unable to write to file")
@@ -730,8 +733,8 @@ class SMBScanner:
 
             # Report results
             total_records = len(existing_records)
-            self.print_if_not_quiet(f"✓ Failed connections saved to {self.failure_output_file}")
-            self.print_if_not_quiet(f"✓ New failures: {new_count}, Updated: {updated_count}, Total failure records: {total_records}")
+            self.print_if_not_quiet(f"{self.GREEN}✓{self.RESET} Failed connections saved to {self.failure_output_file}")
+            self.print_if_not_quiet(f"{self.GREEN}✓{self.RESET} New failures: {new_count}, Updated: {updated_count}, Total failure records: {total_records}")
 
         except Exception as e:
             print(f"✗ Failed to save failure results: Unable to write to file")
@@ -780,19 +783,19 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python smb_scanner.py                    # Scan all default countries
-  python smb_scanner.py -c US              # Scan only United States
-  python smb_scanner.py -a FR,DE           # Scan defaults plus France and Germany
-  python smb_scanner.py -t                 # Scan globally (no country filter)
-  python smb_scanner.py -q -o results.csv  # Quiet mode with custom output file
-  python smb_scanner.py -c GB -q           # Scan UK in quiet mode
-  python smb_scanner.py -v                 # Enable verbose authentication testing output
-  python smb_scanner.py -f                 # Log failed connections to failed_record.csv
-  python smb_scanner.py -f -v              # Verbose mode with failure logging
-  python smb_scanner.py -x                 # Disable colored output
-  python smb_scanner.py --exclude-file custom_exclusions.txt  # Use custom exclusion file
-  python smb_scanner.py --additional-excludes "My ISP,Another Org"  # Add more exclusions
-  python smb_scanner.py --no-default-excludes  # Skip default exclusions
+  python smb_scan.py                    # Scan all default countries
+  python smb_scan.py -c US              # Scan only United States
+  python smb_scan.py -a FR,DE           # Scan defaults plus France and Germany
+  python smb_scan.py -t                 # Scan globally (no country filter)
+  python smb_scan.py -q -o results.csv  # Quiet mode with custom output file
+  python smb_scan.py -c GB -q           # Scan UK in quiet mode
+  python smb_scan.py -v                 # Enable verbose authentication testing output
+  python smb_scan.py -f                 # Log failed connections to failed_record.csv
+  python smb_scan.py -f -v              # Verbose mode with failure logging
+  python smb_scan.py -x                 # Disable colored output
+  python smb_scan.py --exclude-file custom_exclusions.txt  # Use custom exclusion file
+  python smb_scan.py --additional-excludes "My ISP,Another Org"  # Add more exclusions
+  python smb_scan.py --no-default-excludes  # Skip default exclusions
 
 Default country codes:
   US - United States    GB - United Kingdom  CA - Canada

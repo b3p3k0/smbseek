@@ -55,6 +55,12 @@ def load_configuration(config_file="config.json"):
             "NZ": "New Zealand",
             "ZA": "South Africa"
         },
+        "security": {
+            "ransomware_indicators": [
+                "!want_to_cry.txt",
+                "0XXX_DECRYPTION_README.TXT"
+            ]
+        },
         "file_collection": {
             "max_files_per_target": 3,
             "max_total_size_mb": 500,
@@ -78,7 +84,7 @@ def load_configuration(config_file="config.json"):
             config = json.load(f)
         
         # Validate required sections exist
-        required_sections = ["shodan", "connection", "files", "countries", "file_collection"]
+        required_sections = ["shodan", "connection", "files", "countries", "security", "file_collection"]
         for section in required_sections:
             if section not in config:
                 print(f"✗ Warning: Missing '{section}' section in {config_file}, using defaults")
@@ -141,6 +147,9 @@ class SMBSnag:
         self.max_depth = self.config["file_collection"].get("max_directory_depth", 3)
         self.enum_timeout = self.config["file_collection"].get("enumeration_timeout_seconds", 120)
         
+        # Security configuration for ransomware detection
+        self.ransomware_indicators = [indicator.lower() for indicator in self.config["security"]["ransomware_indicators"]]
+        
     def print_if_not_quiet(self, message):
         """Print message unless in quiet mode."""
         if not self.quiet:
@@ -183,6 +192,7 @@ class SMBSnag:
     def get_directory_listing(self, ip, share_name, username, password, max_files, max_size):
         """Get recursive directory listing from SMB share using smbclient with depth limiting."""
         files = []
+        compromised = False
         
         try:
             # Build smbclient command for recursive directory listing
@@ -250,6 +260,14 @@ class SMBSnag:
                             # Skip if this looks like a directory or special entry
                             if filename in ['.', '..'] or filename.endswith('/'):
                                 continue
+                            
+                            # Check for ransomware indicators (case-insensitive)
+                            filename_lower = filename.lower()
+                            for indicator in self.ransomware_indicators:
+                                if indicator in filename_lower:
+                                    compromised = True
+                                    self.print_if_not_quiet(f"\r  {self.RED}⚠ Potentially compromised host; stopping.{self.RESET}")
+                                    return files, compromised
                                 
                             # Try to parse size (should be a number)
                             size = 0
@@ -289,7 +307,7 @@ class SMBSnag:
         except Exception as e:
             self.print_if_verbose(f"    {self.YELLOW}⚠{self.RESET} Error listing files on {share_name}: {e}")
             
-        return files
+        return files, compromised
         
     def download_file(self, ip, share_name, username, password, remote_path, local_path):
         """Download a single file from SMB share using smbclient."""
@@ -347,7 +365,7 @@ class SMBSnag:
         
         if not accessible_shares:
             self.print_if_verbose(f"  {self.YELLOW}⚠{self.RESET} No accessible shares for {ip}")
-            return target_dir, 0, 0
+            return target_dir, [], 0, False
             
         # Parse authentication method
         username, password = self.parse_auth_method(auth_method)
@@ -359,26 +377,33 @@ class SMBSnag:
         
         # Collect all files from all accessible shares
         all_files = []
+        compromised = False
         
-        for share_name in accessible_shares:
-            self.print_if_verbose(f"  {self.CYAN}📁{self.RESET} Scanning share: {share_name}")
+        for i, share_name in enumerate(accessible_shares, 1):
+            self.print_if_not_quiet(f"  ⏳ Scanning share {i}/{len(accessible_shares)}: {share_name}...", end='', flush=True)
             
             try:
-                share_files = self.get_directory_listing(ip, share_name, username, password, max_files, max_size_bytes)
+                share_files, share_compromised = self.get_directory_listing(ip, share_name, username, password, max_files, max_size_bytes)
+                
+                # Check if this share is compromised
+                if share_compromised:
+                    compromised = True
+                    # Return immediately with what we've collected so far
+                    return target_dir, all_files, sum(f['size'] for f in all_files), compromised
                 
                 # Add share name to each file (filtering already done in get_directory_listing)
                 for file_info in share_files:
                     file_info['share_name'] = share_name
                     all_files.append(file_info)
                         
-                self.print_if_verbose(f"    Found {len(share_files)} eligible files")
+                print(f"\r  {self.GREEN}✓ Scanned share {i}/{len(accessible_shares)}: {share_name} - {len(share_files)} files found{self.RESET}")
                 
             except Exception as e:
-                self.print_if_verbose(f"    {self.YELLOW}⚠{self.RESET} Error scanning share {share_name}: {e}")
+                print(f"\r  {self.RED}✗ Scanned share {i}/{len(accessible_shares)}: {share_name} - error: {str(e)[:30]}{self.RESET}")
                 
         if not all_files:
             self.print_if_verbose(f"  {self.YELLOW}⚠{self.RESET} No eligible files found on {ip}")
-            return target_dir, 0, 0
+            return target_dir, [], 0, compromised
             
         # Sort files by modification time (most recent first)
         all_files.sort(key=lambda f: f['modified'], reverse=True)
@@ -396,7 +421,7 @@ class SMBSnag:
             selected_files.append(file_info)
             total_size += file_info['size']
             
-        return target_dir, selected_files, total_size
+        return target_dir, selected_files, total_size, compromised
         
     def process_json_input(self, json_file):
         """Process smb_peep JSON output file."""
@@ -447,21 +472,24 @@ class SMBSnag:
             
             self.print_if_not_quiet(f"{self.CYAN}Server {self.current_server}/{self.total_servers}{self.RESET} - {ip}")
             
-            target_dir, selected_files, target_size = self.collect_files_from_target(target)
+            target_dir, selected_files, target_size, compromised = self.collect_files_from_target(target)
             
-            if selected_files:
+            if compromised or selected_files:
                 collection_plan.append({
                     'target': target,
                     'directory': target_dir,
                     'files': selected_files,
-                    'total_size': target_size
+                    'total_size': target_size,
+                    'compromised': compromised
                 })
                 
-                total_files_planned += len(selected_files)
-                total_size_planned += target_size
-                
-                size_mb = target_size / (1024 * 1024)
-                self.print_if_not_quiet(f"  {self.GREEN}✓{self.RESET} {len(selected_files)} files ({size_mb:.1f}MB) planned for download")
+                if not compromised:
+                    total_files_planned += len(selected_files)
+                    total_size_planned += target_size
+                    
+                    size_mb = target_size / (1024 * 1024)
+                    self.print_if_not_quiet(f"  {self.GREEN}✓{self.RESET} {len(selected_files)} files ({size_mb:.1f}MB) planned for download")
+                # Compromised hosts are already handled with the "stopping" message in get_directory_listing
             else:
                 self.print_if_not_quiet(f"  {self.YELLOW}⚠{self.RESET} No eligible files found")
                 
@@ -510,8 +538,14 @@ class SMBSnag:
             ip = target['ip_address']
             target_dir = plan['directory']
             files_to_download = plan['files']
+            compromised = plan.get('compromised', False)
             
             self.print_if_not_quiet(f"{self.CYAN}Server {server_count}/{len(collection_plan)}{self.RESET} - {ip}")
+            
+            # Skip downloads for compromised hosts
+            if compromised:
+                self.print_if_not_quiet(f"  {self.YELLOW}⚠{self.RESET} Skipping downloads from compromised host")
+                continue
             
             # Create target directory
             os.makedirs(target_dir, exist_ok=True)
@@ -519,6 +553,9 @@ class SMBSnag:
             
             # Parse authentication
             username, password = self.parse_auth_method(target['auth_method'])
+            
+            # Download configuration
+            download_delay = self.config["file_collection"]["download_delay_seconds"]
             
             # Download files
             file_count = 0
@@ -551,9 +588,7 @@ class SMBSnag:
                 local_path = os.path.join(target_dir, local_filename)
                 
                 # Progress display
-                if not self.quiet:
-                    progress = f"Server {server_count}/{len(collection_plan)} Files {file_count}/{len(files_to_download)}"
-                    print(f"  {progress} - {original_filename}", end='', flush=True)
+                self.print_if_not_quiet(f"  ⏳ File {file_count}/{len(files_to_download)}: {original_filename}...", end='', flush=True)
                 
                 # Download file
                 success = self.download_file(ip, share_name, username, password, remote_path, local_path)
@@ -573,11 +608,9 @@ class SMBSnag:
                         'timestamp': datetime.now().isoformat()
                     })
                     
-                    if not self.quiet:
-                        print(f" {self.GREEN}✓{self.RESET}")
+                    print(f"\r  {self.GREEN}✓ File {file_count}/{len(files_to_download)}: {original_filename} - downloaded{self.RESET}")
                 else:
-                    if not self.quiet:
-                        print(f" {self.RED}✗{self.RESET}")
+                    print(f"\r  {self.RED}✗ File {file_count}/{len(files_to_download)}: {original_filename} - failed{self.RESET}")
                 
                 # Rate limiting between downloads
                 if file_count < len(files_to_download):
@@ -616,6 +649,7 @@ class SMBSnag:
                 'ip_address': target['ip_address'],
                 'country': target.get('country', 'Unknown'),
                 'auth_method': target['auth_method'],
+                'compromised': plan.get('compromised', False),
                 'shares': []
             }
             
@@ -644,9 +678,9 @@ class SMBSnag:
         try:
             with open(manifest_file, 'w', encoding='utf-8') as f:
                 json.dump(manifest_data, f, indent=2)
-            self.print_if_not_quiet(f"  {self.GREEN}✓{self.RESET} Manifest saved: {manifest_file}")
+            self.print_if_not_quiet(f"{self.GREEN}✓{self.RESET} Manifest saved: {manifest_file}")
         except Exception as e:
-            self.print_if_not_quiet(f"  {self.RED}✗{self.RESET} Error saving manifest: {e}")
+            self.print_if_not_quiet(f"{self.RED}✗{self.RESET} Error saving manifest: {e}")
         
     def print_download_summary(self):
         """Print final download summary."""
@@ -782,47 +816,66 @@ class SMBSnag:
                 
                 for i, plan in enumerate(collection_plan, 1):
                     target = plan['target']
+                    compromised = plan.get('compromised', False)
                     
-                    # Server header
-                    server_icon = "🖥️  " if not self.plain_output else ""
-                    f.write(f"{server_icon}SERVER {i}/{len(collection_plan)}: {target['ip_address']}\n")
+                    # Server header with compromise indicator
+                    if compromised:
+                        server_icon = "💩 " if not self.plain_output else "[COMPROMISED] "
+                        compromise_text = " (POTENTIALLY COMPROMISED)"
+                    else:
+                        server_icon = "🖥️  " if not self.plain_output else ""
+                        compromise_text = ""
+                        
+                    f.write(f"{server_icon}SERVER {i}/{len(collection_plan)}: {target['ip_address']}{compromise_text}\n")
                     f.write(f"    Country: {target.get('country', 'Unknown')}\n")
                     f.write(f"    Authentication: {target['auth_method']}\n")
-                    f.write(f"    Shares: {len(plan['files'])}\n")
+                    
+                    if compromised:
+                        f.write(f"    Status: POTENTIALLY COMPROMISED - Scanning stopped for security\n")
+                        f.write(f"    Files: {len(plan['files'])} (partial scan)\n")
+                    else:
+                        f.write(f"    Files: {len(plan['files'])}\n")
+                        
                     f.write(f"    Total Size: {self.format_file_size(plan['total_size'])}\n\n")
                     
-                    # Group files by share
-                    shares_data = {}
-                    for file_info in plan['files']:
-                        share = file_info['share']
-                        if share not in shares_data:
-                            shares_data[share] = []
-                        shares_data[share].append(file_info)
-                    
-                    # Display shares and files
-                    share_names = list(shares_data.keys())
-                    for j, share_name in enumerate(share_names):
-                        files_in_share = shares_data[share_name]
-                        share_size = sum(f['size'] for f in files_in_share)
+                    # Only show file details for non-compromised hosts
+                    if not compromised and plan['files']:
+                        # Group files by share
+                        shares_data = {}
+                        for file_info in plan['files']:
+                            share = file_info['share_name']
+                            if share not in shares_data:
+                                shares_data[share] = []
+                            shares_data[share].append(file_info)
                         
-                        # Share line
-                        is_last_share = (j == len(share_names) - 1)
-                        share_prefix = "└── " if is_last_share else "├── "
-                        folder_icon = "📁 " if not self.plain_output else ""
-                        
-                        f.write(f"    {share_prefix}{folder_icon}{share_name} ({len(files_in_share)} files, {self.format_file_size(share_size)})\n")
-                        
-                        # Files in share
-                        for k, file_info in enumerate(files_in_share):
-                            is_last_file = (k == len(files_in_share) - 1)
+                        # Display shares and files
+                        share_names = list(shares_data.keys())
+                        for j, share_name in enumerate(share_names):
+                            files_in_share = shares_data[share_name]
+                            share_size = sum(f['size'] for f in files_in_share)
                             
-                            if is_last_share:
-                                file_prefix = "    └── " if is_last_file else "    ├── "
-                            else:
-                                file_prefix = "│   └── " if is_last_file else "│   ├── "
+                            # Share line
+                            is_last_share = (j == len(share_names) - 1)
+                            share_prefix = "└── " if is_last_share else "├── "
+                            folder_icon = "📁 " if not self.plain_output else ""
                             
-                            file_emoji = self.get_file_emoji(file_info['name'])
-                            f.write(f"    {file_prefix}{file_emoji}{file_info['name']} ({self.format_file_size(file_info['size'])})\n")
+                            f.write(f"    {share_prefix}{folder_icon}{share_name} ({len(files_in_share)} files, {self.format_file_size(share_size)})\n")
+                            
+                            # Files in share
+                            for k, file_info in enumerate(files_in_share):
+                                is_last_file = (k == len(files_in_share) - 1)
+                                
+                                if is_last_share:
+                                    file_prefix = "    └── " if is_last_file else "    ├── "
+                                else:
+                                    file_prefix = "│   └── " if is_last_file else "│   ├── "
+                                
+                                file_emoji = self.get_file_emoji(file_info['name'])
+                                f.write(f"    {file_prefix}{file_emoji}{file_info['name']} ({self.format_file_size(file_info['size'])})\n")
+                    elif compromised:
+                        # Show compromise warning instead of file details
+                        warning_icon = "⚠️  " if not self.plain_output else "[WARNING] "
+                        f.write(f"    └── {warning_icon}Ransomware indicators detected - scan terminated\n")
                     
                     # Add spacing between servers
                     if i < len(collection_plan):
@@ -833,10 +886,10 @@ class SMBSnag:
                 f.write("Report generated by SMBSeek Toolkit\n")
                 f.write("For security research and authorized testing only\n")
             
-            self.print_if_not_quiet(f"  {self.GREEN}✓{self.RESET} Human-readable report saved: {report_file}")
+            self.print_if_not_quiet(f"{self.GREEN}✓{self.RESET} Human-readable report saved: {report_file}")
             
         except Exception as e:
-            self.print_if_not_quiet(f"  {self.RED}✗{self.RESET} Error generating human-readable report: {e}")
+            self.print_if_not_quiet(f"{self.RED}✗{self.RESET} Error generating human-readable report: {e}")
 
 def main():
     """Main entry point."""

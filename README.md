@@ -4,12 +4,13 @@ A defensive security toolkit that uses the Shodan API to identify and analyze SM
 
 ## Tool Suite
 
-SMBSeek consists of four complementary tools:
+SMBSeek consists of five complementary tools:
 
 - **`smb_scan.py`**: Primary scanner for discovering SMB servers with weak authentication
 - **`failure_analyzer.py`**: Deep analysis tool for understanding authentication failures  
 - **`smb_peep.py`**: Share access verification tool for testing read accessibility
-- **`smb_snag.py`**: File collection tool for downloading samples from accessible shares
+- **`smb_snag.py`**: File collection tool for downloading samples from accessible shares with **ransomware detection**
+- **`smb_vuln.py`**: Vulnerability assessment tool for testing specific CVEs
 
 ## Overview
 
@@ -28,6 +29,8 @@ SMBSeek helps security professionals identify SMB servers that allow anonymous o
 - **SMB Share Enumeration**: Lists available shares on successfully authenticated servers
 - **Fallback Support**: Uses both smbprotocol library and smbclient for compatibility
 - **Rate Limiting**: Built-in delays to prevent aggressive scanning
+- **Ransomware Detection**: Automatic detection of compromised hosts during file scanning
+- **Progress Indicators**: Real-time feedback during network operations
 - **CSV Output**: Results saved in structured format for analysis
 
 ## Prerequisites
@@ -204,6 +207,12 @@ SMBSeek uses a JSON configuration file (`config.json`) to manage all settings. T
     "AU": "Australia",
     "NZ": "New Zealand",
     "ZA": "South Africa"
+  },
+  "security": {
+    "ransomware_indicators": [
+      "!want_to_cry.txt",
+      "0XXX_DECRYPTION_README.TXT"
+    ]
   }
 }
 ```
@@ -221,6 +230,9 @@ SMBSeek uses a JSON configuration file (`config.json`) to manage all settings. T
 
 #### File Settings
 - `default_exclusion_file`: Path to organization exclusion file (default: "exclusion_list.txt")
+
+#### Security Settings
+- `ransomware_indicators`: List of filename patterns that indicate ransomware/malware infection (case-insensitive matching)
 
 #### Default Countries
 - Defines the default set of countries to scan when no specific countries are specified
@@ -604,6 +616,7 @@ SMB Snag (`smb_snag.py`) is a specialized tool that downloads file samples from 
 
 After identifying accessible SMB shares, SMB Snag helps security professionals:
 - Collect file samples to understand the scope of data exposure
+- **Detect ransomware/malware infections** automatically during file enumeration
 - Download evidence for security audit reports and compliance assessments
 - Analyze file types and content patterns on exposed shares
 - Generate comprehensive collection manifests for investigation documentation
@@ -614,11 +627,17 @@ After identifying accessible SMB shares, SMB Snag helps security professionals:
 # Generate file manifest only (default behavior)
 python3 smb_snag.py share_access_20250818_195333.json
 
+# Generate manifest with human-readable report
+python3 smb_snag.py -m share_access_results.json
+
 # Generate manifest and download files with confirmation
 python3 smb_snag.py -d share_access_results.json
 
 # Generate manifest and auto-download files (no confirmation)
 python3 smb_snag.py -d -a share_access_results.json
+
+# Generate human-readable report with plain text output (for piping)
+python3 smb_snag.py -m -p share_access_results.json
 
 # Verbose manifest generation
 python3 smb_snag.py -v share_access_results.json
@@ -639,6 +658,8 @@ python3 smb_snag.py --help
 
 #### 2. File Discovery Phase
 - Re-enumerates files on each accessible share using original authentication
+- **Ransomware Detection**: Automatically scans for malware indicators during enumeration
+- **Security Stop**: Immediately halts scanning if ransomware/malware indicators detected
 - Applies configurable file extension filters (included/excluded lists)
 - Scans directories recursively with configurable depth limits (default: 3 levels)
 - Uses configurable enumeration timeout (default: 120 seconds)
@@ -749,6 +770,8 @@ SMB Snag generates timestamped JSON manifests documenting all collection activit
 | `-v, --verbose` | Enable verbose output showing detailed enumeration progress |
 | `-d, --download-files` | Download files (generates manifest only by default) |
 | `-a, --auto-download` | Skip confirmation prompt when downloading files |
+| `-m, --manager-friendly` | Generate human-readable report (off by default) |
+| `-p, --plain-output` | Disable emojis and formatting in human-readable output (for piping) |
 | `-x, --no-colors` | Disable colored output |
 
 ### Prerequisites
@@ -785,9 +808,34 @@ cat download_manifest_*.json | jq '.metadata'
 ls -la 20*-*/
 ```
 
+### Ransomware/Malware Detection
+
+SMB Snag includes built-in ransomware detection to protect researchers and identify compromised hosts:
+
+#### Detection Features
+- **Automatic Scanning**: Checks filenames against known ransomware indicators during enumeration
+- **Immediate Stop**: Halts all scanning on a host when malware indicators are detected
+- **Configurable Patterns**: Ransomware indicators defined in `config.json` for easy updates
+- **Case-Insensitive Matching**: Detects variations in filename casing
+- **Manifest Flagging**: Marks compromised hosts in output files for security review
+
+#### Default Detection Patterns
+- `!want_to_cry.txt` (WannaCry ransomware)
+- `0XXX_DECRYPTION_README.TXT` (Common ransom note pattern)
+- Additional patterns can be added via configuration
+
+#### Behavior on Detection
+1. Immediately displays: `⚠ Potentially compromised host; stopping.`
+2. Stops all further enumeration on that specific host
+3. Records any files discovered before detection in the manifest
+4. Marks the host as `"compromised": true` in output files
+5. Skips file downloads for compromised hosts
+6. Includes special indicators in human-readable reports (💩 emoji or `[COMPROMISED]` text)
+
 ### Security Considerations
 
 - **READ ONLY OPERATIONS**: Never attempts write operations or file modifications
+- **MALWARE PROTECTION**: Automatically detects and avoids compromised hosts
 - **Rate Limited**: Respects target systems with configurable delays between downloads
 - **Size Limited**: Enforces reasonable download limits to prevent excessive collection
 - **Extension Filtered**: Avoids downloading executable or system files by default
