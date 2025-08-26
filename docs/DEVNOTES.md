@@ -850,6 +850,565 @@ def register_parser(subparsers):
 
 ---
 
-**Next Steps**: Implement unified CLI architecture with subcommand pattern, maintaining modular backend while providing streamlined user experience.
+---
 
-This architectural evolution demonstrates effective human-AI collaboration in software design, balancing technical maintainability with user experience optimization.
+## Major Revision Lessons Learned
+
+### Unified CLI Implementation: Critical Bugs Found and Fixed
+
+**Context**: During the transition from separate tools to unified CLI, several critical bugs were discovered during real-world testing. This section documents the issues and solutions for future development reference.
+
+#### 1. Missing Database Methods Bug
+**Issue**: Implemented access.py command but forgot to implement required `get_authenticated_hosts()` method in shared/database.py  
+**Symptom**: Complete workflow failure with AttributeError after discovery phase  
+**Root Cause**: Incomplete interface implementation during code generation  
+**Fix**: Added missing methods: `get_authenticated_hosts()`, `get_hosts_with_accessible_shares()`, `get_failed_connections()`  
+**Lesson**: Always verify all called methods exist before testing workflows
+
+#### 2. Command Line Argument Parsing Bug  
+**Issue**: Global flags (--verbose, --quiet, --no-colors) only worked in global position, not subcommand position  
+**Symptom**: `./smbseek.py run --verbose --country US` failed with "unrecognized arguments"  
+**Root Cause**: Subcommand parsers didn't inherit common arguments  
+**Fix**: Created `add_common_arguments()` helper function and added to all subcommand parsers  
+**Lesson**: Consistent argument inheritance is critical for user experience
+
+#### 3. Configuration Ignored Bug
+**Issue**: config.json max_results=10 was ignored, always used hardcoded 1000  
+**Symptom**: User specified 10 results for testing but received 1000 from Shodan  
+**Root Cause**: Hardcoded values in discover.py instead of using config  
+**Fix**: Updated to use `self.config.get_shodan_config()['query_limits']['max_results']`  
+**Lesson**: Never hardcode what should be configurable
+
+#### 4. Database Field Syntax Error
+**Issue**: scan_count field contained literal string "scan_count + 1" instead of incremented integer  
+**Symptom**: Database records showing text instead of numbers  
+**Root Cause**: execute_update() method treats all values as parameters, not SQL expressions  
+**Fix**: Replaced with direct SQL query using proper arithmetic operation  
+**Lesson**: Understand ORM/database wrapper limitations with SQL expressions
+
+#### 5. Progress Indication Missing
+**Issue**: Long-running operations provided no user feedback, appearing frozen  
+**Symptom**: Users unable to determine if process was running or hung  
+**Root Cause**: Focus on completion over user experience during implementation  
+**Fix**: Added progress indicators every 25 hosts with success/failure counts  
+**Lesson**: User feedback is critical for long-running operations
+
+#### 6. Timestamp Precision Issue (Second Occurrence)
+**Issue**: Database timestamps included fractional seconds (unnecessary precision)  
+**Symptom**: Timestamps like "2025-08-20T14:35:12.847293" instead of "2025-08-20T14:35:00"  
+**Root Cause**: Using raw `datetime.now().isoformat()` throughout codebase  
+**Fix**: Created `get_standard_timestamp()` helper function, updated all timestamp usage  
+**Lesson**: Create utility functions for common operations; this is the SECOND time this issue occurred
+
+### Development Process Insights
+
+#### Testing Workflow Critical Importance
+**Key Finding**: Real-world testing immediately revealed multiple critical bugs that pure code review missed  
+**Implication**: Always test complete workflows before declaring "implementation complete"  
+**Process Update**: Test each major component AND complete workflow integration
+
+#### User-Centric Bug Discovery
+**Pattern**: Many bugs only surfaced when following realistic user workflows  
+**Examples**: 
+- --verbose flag position (users expect flexibility)
+- Configuration values ignored (users expect settings to work)
+- Progress feedback missing (users expect visibility)
+
+#### Code Generation vs. Integration Gaps
+**Observation**: AI code generation was technically correct but missed integration points  
+**Examples**: Created method calls but forgot to implement methods  
+**Solution**: Always verify interfaces and dependencies during implementation
+
+### Architectural Evolution Validation
+
+The unified CLI transition successfully addressed user experience goals:
+- ✅ Single command for complete workflow
+- ✅ Individual commands for advanced users  
+- ✅ Consistent argument patterns
+- ✅ Progress visibility during operations
+- ✅ Database integration with intelligent filtering
+
+### Future Development Guidelines
+
+#### 1. Pre-Implementation Checklist
+- [ ] All called methods exist and are implemented
+- [ ] All configuration values are properly loaded and used
+- [ ] All database operations use standardized patterns
+- [ ] Progress indication included for operations >30 seconds
+- [ ] Command line arguments consistent across all subcommands
+
+#### 2. Testing Protocol
+- [ ] Individual command testing
+- [ ] Complete workflow testing  
+- [ ] Configuration variation testing
+- [ ] Error condition testing
+- [ ] User experience validation
+
+#### 3. Common Pitfalls to Avoid
+- **Never**: Hardcode values that should be configurable
+- **Never**: Assume library wrappers handle SQL expressions correctly
+- **Never**: Implement interfaces without verifying all methods exist
+- **Always**: Provide user feedback for long operations
+- **Always**: Use standardized timestamp functions
+- **Always**: Test realistic user workflows, not just individual components
+
+### User Query Documentation
+
+#### Frequently Asked Question: Generate Report for Specific IP
+
+**User Question**: "I want to generate a report for a given IP that lists all accessible shares, how do I do that?"
+
+**Database Query Answer**:
+```sql
+-- Get all accessible shares for a specific IP
+SELECT 
+    s.ip_address,
+    s.country, 
+    s.auth_method,
+    sa.share_name,
+    sa.accessible,
+    sa.last_tested
+FROM smb_servers s
+JOIN share_access sa ON s.ip_address = sa.ip_address
+WHERE s.ip_address = '192.168.1.100' 
+  AND sa.accessible = 1
+ORDER BY sa.share_name;
+
+-- Get summary for specific IP
+SELECT 
+    s.ip_address,
+    s.country,
+    s.auth_method,
+    s.first_seen,
+    s.last_seen,
+    COUNT(sa.share_name) as total_shares,
+    COUNT(CASE WHEN sa.accessible = 1 THEN 1 END) as accessible_shares
+FROM smb_servers s
+LEFT JOIN share_access sa ON s.ip_address = sa.ip_address
+WHERE s.ip_address = '192.168.1.100'
+GROUP BY s.ip_address, s.country, s.auth_method, s.first_seen, s.last_seen;
+```
+
+**CLI Command Answer**:
+```bash
+# Generate executive report filtered to specific session or timeframe
+smbseek report --detailed --output ip_192.168.1.100_report.json
+
+# Query database directly for immediate results  
+smbseek db query --summary
+
+# For advanced users: Use database tools directly
+python3 tools/db_query.py --custom-query "SELECT * FROM smb_servers WHERE ip_address = '192.168.1.100'"
+```
+
+**Implementation Note**: This common query pattern should be added as a built-in report option in future versions.
+
+---
+
+**Next Steps**: Continue monitoring for similar patterns and update documentation with additional real-world findings.
+
+---
+
+## Default Country Resolution Implementation (August 2025)
+
+### Context and Motivation
+
+**Problem**: The unified CLI required `--country` argument, violating the "streamlined by default" design principle documented earlier in this guide.
+
+**User Experience Issue**: 
+```bash
+$ ./smbseek.py run
+usage: smbseek run [-h] --country CODE [options...]
+smbseek run: error: the following arguments are required: --country
+```
+
+**Design Principle Violation**: This contradicted the established "Progressive Disclosure Pattern" - simple interface with sensible defaults that reveals complexity as needed.
+
+### Implementation Approach
+
+#### 3-Tier Country Resolution Logic
+
+Implemented hierarchical fallback system:
+
+1. **Tier 1**: Use `--country` flag if provided (explicit user intent)
+2. **Tier 2**: Use `countries` section from `config.json` if exists (configured defaults)  
+3. **Tier 3**: Fall back to global scan with no country filter (maximum flexibility)
+
+#### Technical Implementation Details
+
+**Configuration Helper Function** (`shared/config.py`):
+```python
+def resolve_target_countries(self, args_country: Optional[str] = None) -> list:
+    # Tier 1: Command line override
+    if args_country:
+        return [country.strip().upper() for country in args_country.split(',')]
+    
+    # Tier 2: Configuration defaults
+    countries_config = self.get("countries")
+    if countries_config and isinstance(countries_config, dict):
+        return list(countries_config.keys())
+    
+    # Tier 3: Global scan
+    return []
+```
+
+**Query Building Enhancement** (`commands/discover.py`):
+- Modified `_build_targeted_query()` to handle empty country list
+- Updated Shodan query construction to conditionally include country filters
+- Added intelligent user messaging based on resolution path
+
+**User Experience Improvements**:
+- Clear messaging about which countries are being scanned
+- Verbose mode shows "No --country specified, loading from config" 
+- Quiet mode suppresses informational messages appropriately
+
+### Challenges Encountered
+
+#### 1. Multiple Country Support
+**Challenge**: Shodan accepts comma-separated country codes, but original implementation assumed single country.
+
+**Solution**: Enhanced query builder to handle both single and multiple countries:
+```python
+if len(countries) == 1:
+    country_filter = f'country:{countries[0]}'
+else:
+    country_codes = ','.join(countries)  
+    country_filter = f'country:{country_codes}'
+```
+
+#### 2. Configuration API Consistency
+**Challenge**: `config.get()` method had inconsistent behavior with nested dictionaries.
+
+**Solution**: Used `self.config.get("countries")` instead of `self.config.get("countries", {})` to avoid unhashable type errors.
+
+#### 3. Database Field Type Issues (Legacy Bug)
+**Challenge**: Previous implementation left scan_count as literal string "scan_count + 1" instead of integer.
+
+**Root Cause**: ORM wrapper treated SQL expressions as literal values.
+
+**Solution**: Fixed database records with direct SQL update:
+```python
+db.execute_query('UPDATE smb_servers SET scan_count = 1 WHERE scan_count = "scan_count + 1"')
+```
+
+### Best Practices Established
+
+#### 1. Optional Argument Design Pattern
+**Pattern**: Make arguments optional with intelligent defaults, not required with errors.
+
+**Implementation**:
+- Remove `required=True` from argument definitions
+- Implement fallback logic in business logic, not argument parser
+- Provide clear help text explaining fallback behavior
+
+#### 2. Configuration-First Defaults  
+**Pattern**: Use configuration files for sensible defaults, not hardcoded values.
+
+**Benefits**:
+- Users can customize default countries for their use case
+- Global scan available when no configuration provided
+- Clear separation between user intent and system defaults
+
+#### 3. Progressive User Messaging
+**Pattern**: Provide context about what the system is doing without being verbose.
+
+**Implementation**:
+- Show resolved countries in normal mode
+- Show resolution path in verbose mode  
+- Suppress informational messages in quiet mode
+
+### Integration Points
+
+#### Command Line Interface
+- Updated both `run` and `discover` subcommands consistently
+- Maintained backward compatibility (existing `--country` usage unchanged)
+- Enhanced help text to document fallback behavior
+
+#### Configuration System
+- Extended existing configuration loading patterns
+- No breaking changes to existing config.json structure
+- Graceful handling of missing countries section
+
+#### Database Integration  
+- Session data now records both original argument and resolved countries
+- Audit trail shows whether scan used explicit countries or defaults
+- Compatible with existing database schema
+
+### Testing and Validation
+
+#### Behavior Verification
+1. **Default Behavior**: `./smbseek.py run` → Uses config.json countries
+2. **Explicit Override**: `./smbseek.py run --country US` → Uses specified country
+3. **Global Fallback**: No countries in config → Global scan
+4. **Multiple Countries**: `--country US,GB,CA` → Scans all specified
+
+#### Edge Cases Handled
+- Empty countries section in config.json
+- Invalid JSON in config.json (falls back to global)
+- Mixed case country codes (normalized to uppercase)
+- Whitespace in comma-separated lists (stripped)
+
+### Lessons for Future AI Agents
+
+#### 1. User Experience First
+**Key Insight**: Technical correctness without user convenience violates design principles.
+
+**Application**: Always implement the most common use case as the default path.
+
+#### 2. Hierarchical Fallback Design
+**Pattern**: Explicit user input → Configuration defaults → System defaults
+
+**Benefits**: Provides flexibility while maintaining predictable behavior.
+
+#### 3. Database Legacy Issues
+**Observation**: Previous implementation bugs can surface during feature development.
+
+**Protocol**: Always verify database field types and constraints during integration testing.
+
+#### 4. Configuration API Design
+**Best Practice**: Use explicit dictionary access patterns to avoid type coercion issues:
+```python
+# Good: Explicit handling
+countries = self.config.get("countries")
+if countries and isinstance(countries, dict):
+    return list(countries.keys())
+
+# Problematic: Implicit default handling  
+countries = self.config.get("countries", {})  # Can cause type errors
+```
+
+### Documentation Requirements
+
+**User-Facing Documentation**: Updated USER_GUIDE.md with country resolution examples and ISO 3166 country code reference.
+
+**Technical Documentation**: This section serves as implementation reference for future modifications.
+
+**Configuration Documentation**: Enhanced config.json.example with country resolution examples.
+
+### Future Enhancement Opportunities
+
+1. **Validation**: Add ISO 3166 country code validation with helpful error messages
+2. **Auto-Configuration**: Detect user's country and offer as default  
+3. **Region Support**: Extend to support geographic regions (e.g., "EU", "APAC")
+4. **Query Optimization**: Cache Shodan results for common country combinations
+
+This implementation demonstrates successful application of the "streamlined by default" design principle while maintaining full backward compatibility and configuration flexibility.
+
+---
+
+## User Experience Enhancement: Database Filtering Feedback (August 2025)
+
+### Context and Problem
+
+**User Experience Issue**: During scanning operations, there was a significant pause after "Applying exclusion filters..." with no user feedback, causing users to believe the program had hung.
+
+**Root Cause Analysis**: The pause occurred during database operations in `get_new_hosts_filter()` method:
+- Database queries checking 1000 IPs against 200+ known servers
+- Date parsing and rescan policy analysis
+- No progress indicators for potentially slow operations
+
+### Implementation Approach
+
+#### Progressive Status Messaging Strategy
+
+**Before Enhancement**:
+```
+ℹ Applying exclusion filters...
+[LONG PAUSE - NO FEEDBACK]
+
+📊 Scan Planning:
+  • Total from Shodan: 1000
+  • Already known: 150
+  • New discoveries: 850
+```
+
+**After Enhancement**:
+```
+ℹ Applying exclusion filters...
+ℹ Checking 1000 IPs against database (200 known servers)...
+ℹ Analyzing scan history and rescan policies...
+ℹ Database filtering complete: 850 new, 150 known, 900 to scan
+
+📊 Scan Planning:
+  • Total from Shodan: 1000
+  • Already known: 150
+  • New discoveries: 850
+```
+
+### Technical Implementation Details
+
+#### 1. Enhanced Database Interface
+**Modified Method Signature** (`shared/database.py`):
+```python
+def get_new_hosts_filter(self, shodan_ips: Set[str], rescan_all: bool = False, 
+                       rescan_failed: bool = False, output_manager=None) -> Tuple[Set[str], Dict[str, int]]
+```
+
+**Added Progressive Status Updates**:
+- Initial status: Shows scale of operation (IP count vs known servers)
+- Mid-process status: Indicates what phase is being processed
+- Completion status: Summary of filtering results
+
+#### 2. Database Performance Optimization
+**Batch Processing Implementation**:
+```python
+def _get_known_hosts_info(self, ips: Set[str]) -> Dict[str, Dict]:
+    batch_size = 500  # SQLite SQLITE_MAX_VARIABLE_NUMBER default is 999
+    ips_list = list(ips)
+    host_info = {}
+    
+    for i in range(0, len(ips_list), batch_size):
+        batch = ips_list[i:i + batch_size]
+        # Process batch with single query
+        # Prevents SQL query limits and improves performance
+```
+
+**Benefits**:
+- Prevents SQL variable limit errors (SQLite default: 999 variables)
+- Improves performance for large IP sets
+- Maintains compatibility with existing database schema
+
+#### 3. Context-Aware Messaging
+**Output Manager Integration**:
+```python
+if output_manager:
+    output_manager.info(f"Checking {len(shodan_ips)} IPs against database ({self._get_known_servers_count()} known servers)...")
+```
+
+**Smart Helper Methods**:
+- `_get_known_servers_count()`: Provides context about database size
+- Graceful handling when output_manager is None (backward compatibility)
+
+### Challenges Encountered
+
+#### 1. Method Signature Compatibility
+**Challenge**: Adding output_manager parameter without breaking existing calls.
+
+**Solution**: Made parameter optional with default None value:
+```python
+output_manager=None  # Maintains backward compatibility
+```
+
+#### 2. Database Performance with Large IP Sets
+**Challenge**: SQLite has variable limit (SQLITE_MAX_VARIABLE_NUMBER = 999) that could cause failures.
+
+**Solution**: Implemented batch processing to stay under limits while providing performance benefits.
+
+#### 3. Message Timing and Clarity
+**Challenge**: Providing useful information without overwhelming users.
+
+**Solution**: Three-tier messaging strategy:
+- **Scale Context**: "Checking X IPs against database (Y known servers)"
+- **Process Status**: "Analyzing scan history and rescan policies"
+- **Completion Summary**: "Database filtering complete: X new, Y known, Z to scan"
+
+### Best Practices Established
+
+#### 1. Long-Running Operation Feedback Pattern
+**Pattern**: Always provide user feedback for operations >2 seconds.
+
+**Implementation**:
+- Show scale/context of operation upfront
+- Indicate progress through multi-step processes
+- Provide completion summary with meaningful metrics
+
+#### 2. Performance Optimization with User Experience
+**Pattern**: Optimize for performance AND user perception.
+
+**Benefits**:
+- Batch processing improves actual performance
+- Progress messages improve perceived performance
+- Users understand what's happening at each step
+
+#### 3. Backward Compatibility in Enhancement
+**Pattern**: Add optional parameters for new features without breaking existing code.
+
+**Implementation**:
+- Optional parameters with sensible defaults
+- Graceful degradation when new features unavailable
+- Maintain existing call patterns
+
+### Integration Points
+
+#### Database Operations
+- Enhanced `get_new_hosts_filter()` with progress messaging
+- Added `_get_known_servers_count()` helper for context
+- Optimized `_get_known_hosts_info()` with batch processing
+
+#### Command Interface
+- Updated `commands/discover.py` to pass output_manager
+- Maintains existing error handling and flow
+- No changes to user-facing command line interface
+
+#### Output Management
+- Leveraged existing output manager infrastructure
+- Consistent with established message formatting (ℹ symbols)
+- Respects quiet/verbose mode settings
+
+### Performance Impact
+
+#### Before Optimization
+- Single large SQL query with up to 1000 variables
+- Potential SQL variable limit errors
+- No user feedback during database operations
+
+#### After Optimization  
+- Batched queries in groups of 500 IPs
+- Eliminated SQL variable limit issues
+- Clear progress indication throughout process
+- Improved perceived responsiveness
+
+### User Experience Validation
+
+#### Feedback Flow Verification
+1. **Context Setting**: Users see scale of operation
+2. **Progress Tracking**: Users know what phase is active
+3. **Completion Confirmation**: Users get summary of results
+4. **No Dead Time**: Eliminated unexplained pauses
+
+#### Edge Cases Handled
+- Empty IP sets (graceful handling)
+- Database connection errors (fallback messaging)
+- Large IP sets (>1000 IPs) via batch processing
+- Output manager unavailable (backward compatibility)
+
+### Lessons for Future AI Agents
+
+#### 1. User Experience is Critical During Long Operations
+**Key Insight**: Technical correctness is insufficient if users believe the system has failed.
+
+**Application**: Always analyze workflow for operations >2 seconds and add appropriate feedback.
+
+#### 2. Performance and Perception are Both Important
+**Pattern**: Optimize actual performance AND perceived performance simultaneously.
+
+**Benefits**: 
+- Batch processing improves real performance
+- Progress messages improve user confidence
+- Combined approach addresses both technical and human factors
+
+#### 3. Backward Compatibility Enables Incremental Enhancement
+**Best Practice**: Use optional parameters and graceful degradation to add features without breaking existing functionality.
+
+**Protocol**: Always test both enhanced and legacy call patterns during development.
+
+#### 4. Context Matters for User Feedback
+**Pattern**: Provide scale and scope information so users understand operation complexity.
+
+**Examples**:
+- "Checking 1000 IPs..." (shows scale)
+- "...against database (200 known servers)" (shows context)
+- "Database filtering complete: 850 new, 150 known, 900 to scan" (shows results)
+
+### Future Enhancement Opportunities
+
+1. **Progress Bars**: Add visual progress bars for very large operations (>5000 IPs)
+2. **Time Estimates**: Provide ETA based on historical performance data
+3. **Cancellation Support**: Allow users to interrupt long-running operations gracefully
+4. **Caching**: Cache recent database queries to speed up repeated operations
+
+This enhancement demonstrates the importance of user experience in command-line tools and provides a template for adding feedback to other long-running operations throughout the SMBSeek toolkit.
+
+---
+
+This architectural evolution demonstrates effective human-AI collaboration in software design, balancing technical maintainability with user experience optimization while learning from actual implementation challenges.

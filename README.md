@@ -1,16 +1,50 @@
-# SMBSeek
+# SMBSeek - Unified SMB Security Toolkit
 
-A defensive security toolkit that uses the Shodan API to identify and analyze SMB servers with weak authentication for security auditing purposes.
+**A defensive security toolkit for identifying and analyzing SMB servers with weak authentication**
 
-## Tool Suite
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/username/smbseek)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-SMBSeek consists of five complementary tools:
+## 🚀 Quick Start
 
-- **`tools/smb_scan.py`**: Primary scanner for discovering SMB servers with weak authentication
-- **`tools/failure_analyzer.py`**: Deep analysis tool for understanding authentication failures  
-- **`tools/smb_peep.py`**: Share access verification tool for testing read accessibility
-- **`tools/smb_snag.py`**: File collection tool for downloading samples from accessible shares with ransomware detection
-- **`tools/smb_vuln.py`**: Vulnerability assessment tool for testing specific CVEs
+```bash
+# Install dependencies and configure API key
+pip install -r requirements.txt
+
+# Run complete security assessment workflow
+./smbseek.py run --country US
+```
+
+## 🎯 What SMBSeek Does
+
+SMBSeek helps security professionals identify exposed SMB servers with weak authentication through:
+
+### ✅ Unified CLI Interface
+- **Single Command Workflow**: `smbseek run --country US` 
+- **Individual Operations**: `smbseek discover`, `smbseek access`, etc.
+- **Database Integration**: Intelligent host filtering and historical tracking
+- **Progress Indication**: Real-time feedback during long operations
+
+### ✅ Smart & Respectful Scanning
+- **Rate Limited**: Configurable delays prevent aggressive behavior
+- **Exclusion Lists**: Built-in filters for ISPs and cloud providers  
+- **Time-Based Rescanning**: Avoid redundant testing of recent targets
+- **Read-Only Operations**: No modification of target systems
+
+## 🏗️ Architecture
+
+```
+smbseek.py (Unified CLI Entry Point)
+├── run         # Complete workflow orchestration
+├── discover    # Shodan querying + SMB authentication testing
+├── access      # Share enumeration and access verification  
+├── collect     # File enumeration with ransomware detection
+├── analyze     # Failure analysis and pattern recognition
+├── report      # Intelligence reporting and summaries
+└── db          # Database operations and maintenance
+```
+
+**Legacy Tools**: Individual scripts in `tools/` directory still supported for advanced users.
 
 ## Overview
 

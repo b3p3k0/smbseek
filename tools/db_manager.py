@@ -9,6 +9,14 @@ import json
 import os
 import logging
 from datetime import datetime
+import sys
+import os
+
+# Add shared directory to path
+shared_path = os.path.join(os.path.dirname(__file__), '..', 'shared')
+sys.path.insert(0, shared_path)
+
+from config import get_standard_timestamp
 from contextlib import contextmanager
 from typing import Dict, List, Optional, Any, Union
 import threading
@@ -238,26 +246,28 @@ class SMBSeekDataAccessLayer:
         
         if result:
             server_id = result[0]['id']
-            # Update last_seen and scan_count
-            self.db.execute_update(
-                'smb_servers',
-                {
-                    'last_seen': datetime.now().isoformat(),
-                    'scan_count': 'scan_count + 1',
-                    'updated_at': datetime.now().isoformat()
-                },
-                'id = ?',
-                (server_id,)
-            )
+            # Update last_seen and scan_count using direct SQL to increment
+            query = """
+                UPDATE smb_servers 
+                SET last_seen = ?, scan_count = scan_count + 1, updated_at = ?
+                WHERE id = ?
+            """
+            timestamp = get_standard_timestamp()
+            self.db.execute_query(query, (
+                timestamp,
+                timestamp,
+                server_id
+            ))
             return server_id
         else:
             # Create new server
+            timestamp = get_standard_timestamp()
             data = {
                 'ip_address': ip_address,
                 'country': country,
                 'auth_method': auth_method,
-                'first_seen': datetime.now().isoformat(),
-                'last_seen': datetime.now().isoformat(),
+                'first_seen': timestamp,
+                'last_seen': timestamp,
                 'scan_count': 1
             }
             return self.db.execute_insert('smb_servers', data)
