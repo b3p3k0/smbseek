@@ -74,3 +74,4 @@ MIGRATION_CHECKLIST.md
 # Test files
 *test*.json
 *test*.csv
+.gitignore

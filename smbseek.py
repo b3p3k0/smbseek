@@ -109,6 +109,32 @@ Documentation: docs/USER_GUIDE.md
     return parser
 
 
+def add_common_arguments(parser):
+    """Add common arguments to a subcommand parser."""
+    common_group = parser.add_argument_group('output options')
+    common_group.add_argument(
+        '--config',
+        type=str,
+        metavar='FILE',
+        help='Configuration file path (default: conf/config.json)'
+    )
+    common_group.add_argument(
+        '--quiet', '-q',
+        action='store_true',
+        help='Suppress output to screen'
+    )
+    common_group.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose output'
+    )
+    common_group.add_argument(
+        '--no-colors',
+        action='store_true',
+        help='Disable colored output'
+    )
+
+
 def register_run_command(subparsers):
     """Register the 'run' command (primary workflow)."""
     parser = subparsers.add_parser(
@@ -117,13 +143,15 @@ def register_run_command(subparsers):
         description='Run complete workflow: discover → access → collect → report'
     )
     
+    # Add common arguments
+    add_common_arguments(parser)
+    
     # Required arguments
     parser.add_argument(
         '--country',
         type=str,
-        required=True,
         metavar='CODE',
-        help='Country code for Shodan search (US, GB, CA, etc.)'
+        help='Country code for Shodan search (US, GB, CA, etc.). If not specified, uses countries from config.json or global scan if none configured.'
     )
     
     # Workflow options
@@ -169,12 +197,13 @@ def register_discover_command(subparsers):
         description='Query Shodan and test SMB authentication methods'
     )
     
+    add_common_arguments(parser)
+    
     parser.add_argument(
         '--country',
         type=str,
-        required=True,
         metavar='CODE',
-        help='Country code for Shodan search'
+        help='Country code for Shodan search (US, GB, CA, etc.). If not specified, uses countries from config.json or global scan if none configured.'
     )
     parser.add_argument(
         '--rescan-all',
@@ -197,6 +226,8 @@ def register_access_command(subparsers):
         help='Verify share access on discovered servers',
         description='Test access to SMB shares on authenticated servers'
     )
+    
+    add_common_arguments(parser)
     
     parser.add_argument(
         '--servers',
@@ -221,6 +252,8 @@ def register_collect_command(subparsers):
         help='Enumerate and collect files from accessible shares',
         description='Enumerate files on accessible shares with ransomware detection'
     )
+    
+    add_common_arguments(parser)
     
     parser.add_argument(
         '--download',
@@ -251,6 +284,8 @@ def register_analyze_command(subparsers):
         description='Deep analysis of authentication failures and connectivity issues'
     )
     
+    add_common_arguments(parser)
+    
     parser.add_argument(
         '--recent',
         type=int,
@@ -268,6 +303,8 @@ def register_report_command(subparsers):
         help='Generate intelligence reports and executive summaries',
         description='Create comprehensive security assessment reports'
     )
+    
+    add_common_arguments(parser)
     
     parser.add_argument(
         '--executive',
@@ -302,6 +339,8 @@ def register_database_command(subparsers):
         help='Database operations and maintenance',
         description='Query, maintain, and manage the SMBSeek database'
     )
+    
+    add_common_arguments(parser)
     
     # Database subcommands
     db_subparsers = parser.add_subparsers(
