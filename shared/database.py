@@ -251,6 +251,26 @@ class SMBSeekWorkflowDatabase:
             config_snapshot=session_data
         )
     
+    def create_session(self, tool_name: str) -> int:
+        """
+        Create a new scan session for database storage.
+        
+        Args:
+            tool_name: Name of the tool creating the session
+            
+        Returns:
+            Session ID
+        """
+        session_data = {
+            'tool_name': tool_name,
+            'timestamp': datetime.now().isoformat(),
+            'config_snapshot': self.config.config if hasattr(self.config, 'config') else None
+        }
+        return self.dal.create_scan_session(
+            tool_name=tool_name,
+            config_snapshot=session_data
+        )
+    
     def get_recent_activity_summary(self, days: int = 7) -> Dict:
         """
         Get summary of recent scanning activity.
@@ -397,10 +417,38 @@ class SMBSeekWorkflowDatabase:
             True if storage successful, False otherwise
         """
         try:
+            # Validate result data before processing
             ip_address = result.get('ip_address')
             if not ip_address:
+                error_msg = "⚠ Warning: No IP address in result data"
                 if hasattr(self, '_verbose') and self._verbose:
-                    print(f"⚠ Warning: No IP address in result data")
+                    print(error_msg)
+                return False
+            
+            # Check for validation errors from access command
+            if 'validation_error' in result:
+                error_msg = f"⚠ Warning: Validation error for {ip_address}: {result['validation_error']}"
+                if hasattr(self, '_verbose') and self._verbose:
+                    print(error_msg)
+                return False
+            
+            # Perform consistency checks
+            shares_found = result.get('shares_found', [])
+            accessible_shares = result.get('accessible_shares', [])
+            
+            # Critical validation: accessible shares should not exceed total shares
+            if len(accessible_shares) > len(shares_found):
+                error_msg = f"⚠ Warning: Data inconsistency for {ip_address}: {len(accessible_shares)} accessible > {len(shares_found)} total shares"
+                if hasattr(self, '_verbose') and self._verbose:
+                    print(error_msg)
+                return False
+            
+            # Check for invalid accessible shares (not in shares_found list)
+            invalid_accessible = [share for share in accessible_shares if share not in shares_found]
+            if invalid_accessible:
+                error_msg = f"⚠ Warning: Invalid accessible shares for {ip_address}: {invalid_accessible}"
+                if hasattr(self, '_verbose') and self._verbose:
+                    print(error_msg)
                 return False
             
             # Get server_id from smb_servers table
@@ -408,8 +456,9 @@ class SMBSeekWorkflowDatabase:
             servers = self.db_manager.execute_query(server_query, (ip_address,))
             
             if not servers:
+                error_msg = f"⚠ Warning: Server {ip_address} not found in database"
                 if hasattr(self, '_verbose') and self._verbose:
-                    print(f"⚠ Warning: Server {ip_address} not found in database")
+                    print(error_msg)
                 return False
             
             server_id = servers[0]['id']
@@ -430,7 +479,21 @@ class SMBSeekWorkflowDatabase:
                         'error': None if share in accessible_shares else 'Access denied'
                     })
             
-            # Store each share result
+            # DELETE existing shares for this server to prevent duplicates
+            # This implements "update on rescan" behavior - only keep most recent data
+            delete_query = "DELETE FROM share_access WHERE server_id = ?"
+            try:
+                self.db_manager.execute_query(delete_query, (server_id,))
+                if hasattr(self, '_verbose') and self._verbose:
+                    print(f"Cleared existing share data for {ip_address} before inserting new results")
+            except Exception as e:
+                error_msg = f"⚠ Warning: Failed to clear existing shares for {ip_address}: {e}"
+                if hasattr(self, '_verbose') and self._verbose:
+                    print(error_msg)
+                # Continue anyway - let INSERT handle potential duplicates
+            
+            # Store each share result with current session
+            stored_shares = 0
             for share_detail in share_details:
                 share_name = share_detail.get('share_name')
                 accessible = share_detail.get('accessible', False)
@@ -438,23 +501,29 @@ class SMBSeekWorkflowDatabase:
                 
                 if share_name:
                     try:
-                        self.dal.add_share_access_record(
+                        self.dal.add_share_access(
                             server_id=server_id,
                             session_id=session_id,
                             share_name=share_name,
                             accessible=accessible,
                             error_message=error_message
                         )
+                        stored_shares += 1
                     except Exception as e:
+                        error_msg = f"⚠ Warning: Failed to store share {share_name} for {ip_address}: {e}"
                         if hasattr(self, '_verbose') and self._verbose:
-                            print(f"⚠ Warning: Failed to store share {share_name}: {e}")
+                            print(error_msg)
                         continue
+            
+            if hasattr(self, '_verbose') and self._verbose:
+                print(f"Stored {stored_shares} share records for {ip_address} in session {session_id}")
             
             return True
             
         except Exception as e:
+            error_msg = f"⚠ Error storing share access results for {result.get('ip_address', 'unknown')}: {e}"
             if hasattr(self, '_verbose') and self._verbose:
-                print(f"⚠ Error storing share access results: {e}")
+                print(error_msg)
             return False
     
     def close(self):

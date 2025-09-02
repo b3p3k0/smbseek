@@ -189,32 +189,78 @@ class AccessCommand:
         shares = []
         lines = smbclient_output.split('\n')
         in_share_section = False
+        share_section_ended = False
         
-        for line in lines:
+        if self.args.verbose:
+            self.output.info("Parsing smbclient share list output")
+        
+        for line_num, line in enumerate(lines):
             line = line.strip()
             
+            # Skip if we've already finished parsing the shares section
+            if share_section_ended:
+                break
+            
             # Look for the start of the shares section
-            if "Sharename" in line and "Type" in line:
+            if not in_share_section and "Sharename" in line and "Type" in line:
                 in_share_section = True
+                if self.args.verbose:
+                    self.output.info(f"Found shares section header at line {line_num + 1}")
                 continue
             
-            # Stop when we hit the end of shares section
-            if in_share_section and (line.startswith("Server") or line.startswith("Workgroup") or line == ""):
-                if not line or line.startswith("-"):
+            # Skip header separator lines (dashes)
+            if in_share_section and line.startswith("-"):
+                continue
+            
+            # Detect end of shares section - more robust logic
+            if in_share_section:
+                # Empty line followed by non-share content indicates end
+                if line == "":
+                    # Check if next non-empty line looks like end of shares
+                    for next_line in lines[line_num + 1:line_num + 3]:  # Check next 2 lines
+                        next_line = next_line.strip()
+                        if next_line and (next_line.startswith("Server") or 
+                                        next_line.startswith("Workgroup") or
+                                        next_line.startswith("Domain")):
+                            share_section_ended = True
+                            if self.args.verbose:
+                                self.output.info(f"Detected end of shares section at line {line_num + 1}")
+                            break
                     continue
-                if line.startswith("Server") or line.startswith("Workgroup"):
+                
+                # Direct detection of section end markers
+                elif (line.startswith("Server") or line.startswith("Workgroup") or 
+                      line.startswith("Domain") or line.startswith("session request")):
+                    share_section_ended = True
+                    if self.args.verbose:
+                        self.output.info(f"Found section end marker at line {line_num + 1}: {line[:30]}...")
                     break
             
-            # Parse share lines
-            if in_share_section and line and not line.startswith("-"):
+            # Parse share lines - only when in shares section and not ended
+            if in_share_section and not share_section_ended and line:
                 parts = line.split()
                 if len(parts) >= 2:
                     share_name = parts[0]
                     share_type = parts[1]
                     
+                    # Validate share name format (basic sanity check)
+                    if not share_name.replace('_', '').replace('-', '').isalnum():
+                        if self.args.verbose:
+                            self.output.warning(f"Skipping invalid share name format: {share_name}")
+                        continue
+                    
                     # Only include non-administrative Disk shares
                     if not share_name.endswith('$') and share_type == "Disk":
                         shares.append(share_name)
+                        if self.args.verbose:
+                            self.output.info(f"Added share: {share_name}")
+                    elif self.args.verbose and share_name.endswith('$'):
+                        self.output.info(f"Skipped administrative share: {share_name}")
+                    elif self.args.verbose:
+                        self.output.info(f"Skipped non-disk share: {share_name} ({share_type})")
+        
+        if self.args.verbose:
+            self.output.info(f"Parsed {len(shares)} valid shares from smbclient output")
         
         return shares
     
@@ -345,10 +391,31 @@ class AccessCommand:
                     delay = self.config.get_share_access_delay()
                     time.sleep(delay)
             
-            # Summary output
+            # Validate results before summary output
             accessible_count = len(target_result['accessible_shares'])
             total_count = len(shares)
             
+            # Critical validation: accessible shares should never exceed total shares
+            if accessible_count > total_count:
+                self.output.error(f"VALIDATION ERROR: {accessible_count} accessible > {total_count} total shares on {ip}")
+                self.output.error(f"Found shares: {shares}")
+                self.output.error(f"Accessible shares: {target_result['accessible_shares']}")
+                # Flag this result as having an error to prevent database storage
+                target_result['validation_error'] = f"Accessible count ({accessible_count}) exceeds total count ({total_count})"
+            
+            # Check for duplicate shares in accessible list
+            if len(set(target_result['accessible_shares'])) != len(target_result['accessible_shares']):
+                duplicates = [x for x in target_result['accessible_shares'] if target_result['accessible_shares'].count(x) > 1]
+                self.output.warning(f"VALIDATION WARNING: Duplicate shares in accessible list: {set(duplicates)}")
+                target_result['validation_warning'] = f"Duplicate accessible shares: {set(duplicates)}"
+            
+            # Verify all accessible shares are in the original shares list
+            invalid_shares = [share for share in target_result['accessible_shares'] if share not in shares]
+            if invalid_shares:
+                self.output.error(f"VALIDATION ERROR: Accessible shares not in original list: {invalid_shares}")
+                target_result['validation_error'] = f"Invalid accessible shares: {invalid_shares}"
+            
+            # Summary output
             if accessible_count > 0:
                 self.output.success(f"{accessible_count}/{total_count} shares accessible on {ip}: {', '.join(target_result['accessible_shares'])}")
             else:
@@ -374,19 +441,31 @@ class AccessCommand:
     def save_results(self):
         """Save results to database and JSON file."""
         try:
-            # Save to database
+            # Save to database - exclude results with errors or validation issues
             session_id = self.database.create_session('access')
             stored_count = 0
-            for result in self.results:
-                if 'error' not in result:
-                    if self.database.store_share_access_result(session_id, result):
-                        stored_count += 1
-                    else:
-                        if self.args.verbose:
-                            self.output.warning(f"Failed to store results for {result.get('ip_address', 'unknown')}")
+            validation_errors = 0
             
+            for result in self.results:
+                # Skip results with errors or validation problems
+                if 'error' in result or 'validation_error' in result:
+                    if 'validation_error' in result:
+                        validation_errors += 1
+                        if self.args.verbose:
+                            self.output.warning(f"Skipping storage of {result.get('ip_address', 'unknown')} due to validation error")
+                    continue
+                    
+                if self.database.store_share_access_result(session_id, result):
+                    stored_count += 1
+                else:
+                    if self.args.verbose:
+                        self.output.warning(f"Failed to store results for {result.get('ip_address', 'unknown')}")
+            
+            valid_results_count = len([r for r in self.results if 'error' not in r and 'validation_error' not in r])
             if self.args.verbose:
-                self.output.info(f"Stored {stored_count}/{len([r for r in self.results if 'error' not in r])} results to database")
+                self.output.info(f"Stored {stored_count}/{valid_results_count} valid results to database")
+                if validation_errors > 0:
+                    self.output.warning(f"Excluded {validation_errors} results due to validation errors")
             
             # Also save to JSON file
             output_file = f"share_access_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
