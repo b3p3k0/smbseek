@@ -260,12 +260,21 @@ class DiscoverCommand:
         if not self.exclusions:
             return ip_addresses
         
-        self.output.info("Applying exclusion filters...")
+        total_ips = len(ip_addresses)
+        self.output.info(f"Applying exclusion filters to {total_ips} IPs...")
         
         filtered_ips = set()
         excluded_count = 0
+        processed_count = 0
         
         for ip in ip_addresses:
+            processed_count += 1
+            
+            # Show progress every 50 IPs or at key milestones
+            if processed_count % 50 == 0 or processed_count == 1 or processed_count == total_ips:
+                progress_pct = (processed_count / total_ips) * 100
+                self.output.info(f"🔍 Filtering progress: {processed_count}/{total_ips} ({progress_pct:.1f}%) | Excluded: {excluded_count}")
+            
             if self._should_exclude_ip(ip):
                 excluded_count += 1
             else:
@@ -274,7 +283,7 @@ class DiscoverCommand:
         self.stats['excluded_ips'] = excluded_count
         
         if excluded_count > 0:
-            self.output.info(f"Excluded {excluded_count} IPs (ISPs, cloud providers, etc.)")
+            self.output.info(f"✓ Excluded {excluded_count} IPs (ISPs, cloud providers, etc.)")
         
         return filtered_ips
     

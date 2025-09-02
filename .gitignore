@@ -50,11 +50,15 @@ CLAUDE.md
 
 # Configuration files with sensitive data
 conf/config.json
+conf/config.json.backup*
+conf/config.bak
 
 # Database files
 *.db
 *.db-shm
 *.db-wal
+*.db.backup*
+*.db.cleanup_backup_*
 db_backups/
 
 # Generated output files
