@@ -526,6 +526,138 @@ class SMBSeekWorkflowDatabase:
                 print(error_msg)
             return False
     
+    def get_all_discovered_shares_per_host(self) -> List[Dict]:
+        """
+        Get all discovered shares per host (both accessible and non-accessible).
+        
+        Returns:
+            List of host dictionaries with all discovered share information
+        """
+        try:
+            hosts = self.db_manager.execute_query("""
+                SELECT DISTINCT s.ip_address, s.country, s.auth_method,
+                       GROUP_CONCAT(sa.share_name) as all_shares
+                FROM smb_servers s
+                INNER JOIN share_access sa ON s.id = sa.server_id 
+                GROUP BY s.ip_address, s.country, s.auth_method
+                ORDER BY s.last_seen DESC
+            """)
+            
+            # Parse all_shares from comma-separated string to list
+            processed_hosts = []
+            for host in hosts:
+                host_dict = dict(host)  # Convert Row to dict
+                if host_dict['all_shares']:
+                    host_dict['all_shares'] = host_dict['all_shares'].split(',')
+                else:
+                    host_dict['all_shares'] = []
+                processed_hosts.append(host_dict)
+            
+            return processed_hosts
+            
+        except Exception as e:
+            print(f"⚠ Error getting all discovered shares per host: {e}")
+            return []
+    
+    def get_complete_share_summary(self) -> List[Dict]:
+        """
+        Get complete share summary with total counts and accessible counts per host.
+        Uses the v_host_share_summary view for optimized performance.
+        
+        Returns:
+            List of host dictionaries with complete share statistics
+        """
+        try:
+            # First check if the view exists
+            view_check = self.db_manager.execute_query("""
+                SELECT name FROM sqlite_master 
+                WHERE type='view' AND name='v_host_share_summary'
+            """)
+            
+            if not view_check:
+                # Fall back to manual query if view doesn't exist
+                if hasattr(self, '_verbose') and self._verbose:
+                    print("⚠ v_host_share_summary view not found, using fallback query")
+                return self._get_complete_share_summary_fallback()
+            
+            # Use the optimized view
+            hosts = self.db_manager.execute_query("""
+                SELECT ip_address, country, auth_method, first_seen, last_seen,
+                       total_shares_discovered, accessible_shares_count,
+                       all_shares_list, accessible_shares_list, last_share_test
+                FROM v_host_share_summary
+                ORDER BY last_seen DESC
+            """)
+            
+            # Process the results
+            processed_hosts = []
+            for host in hosts:
+                host_dict = dict(host)  # Convert Row to dict
+                
+                # Parse share lists from comma-separated strings
+                if host_dict['all_shares_list']:
+                    host_dict['all_shares_list'] = [s.strip() for s in host_dict['all_shares_list'].split(',') if s.strip()]
+                else:
+                    host_dict['all_shares_list'] = []
+                
+                if host_dict['accessible_shares_list']:
+                    host_dict['accessible_shares_list'] = [s.strip() for s in host_dict['accessible_shares_list'].split(',') if s.strip()]
+                else:
+                    host_dict['accessible_shares_list'] = []
+                
+                processed_hosts.append(host_dict)
+            
+            return processed_hosts
+            
+        except Exception as e:
+            print(f"⚠ Error getting complete share summary: {e}")
+            return []
+    
+    def _get_complete_share_summary_fallback(self) -> List[Dict]:
+        """
+        Fallback method for complete share summary when view is not available.
+        
+        Returns:
+            List of host dictionaries with complete share statistics
+        """
+        try:
+            hosts = self.db_manager.execute_query("""
+                SELECT s.ip_address, s.country, s.auth_method, s.first_seen, s.last_seen,
+                       COUNT(sa.share_name) as total_shares_discovered,
+                       SUM(CASE WHEN sa.accessible = 1 THEN 1 ELSE 0 END) as accessible_shares_count,
+                       GROUP_CONCAT(sa.share_name) as all_shares_list,
+                       GROUP_CONCAT(CASE WHEN sa.accessible = 1 THEN sa.share_name END) as accessible_shares_list,
+                       MAX(sa.test_timestamp) as last_share_test
+                FROM smb_servers s
+                INNER JOIN share_access sa ON s.id = sa.server_id
+                GROUP BY s.ip_address, s.country, s.auth_method, s.first_seen, s.last_seen
+                ORDER BY s.last_seen DESC
+            """)
+            
+            # Process the results
+            processed_hosts = []
+            for host in hosts:
+                host_dict = dict(host)  # Convert Row to dict
+                
+                # Parse share lists from comma-separated strings
+                if host_dict['all_shares_list']:
+                    host_dict['all_shares_list'] = [s.strip() for s in host_dict['all_shares_list'].split(',') if s.strip()]
+                else:
+                    host_dict['all_shares_list'] = []
+                
+                if host_dict['accessible_shares_list']:
+                    host_dict['accessible_shares_list'] = [s.strip() for s in host_dict['accessible_shares_list'].split(',') if s.strip()]
+                else:
+                    host_dict['accessible_shares_list'] = []
+                
+                processed_hosts.append(host_dict)
+            
+            return processed_hosts
+            
+        except Exception as e:
+            print(f"⚠ Error in fallback complete share summary query: {e}")
+            return []
+
     def close(self):
         """Close database connections."""
         if hasattr(self, 'db_manager'):
