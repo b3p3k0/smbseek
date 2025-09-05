@@ -171,6 +171,12 @@ def register_run_command(subparsers):
         action='store_true',
         help='Include previously failed hosts for rescanning'
     )
+    workflow_group.add_argument(
+        '--recent',
+        type=int,
+        metavar='HOURS',
+        help='Only test servers discovered in last N hours during access verification'
+    )
     
     # File collection options
     collection_group = parser.add_argument_group('collection options')
