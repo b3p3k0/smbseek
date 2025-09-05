@@ -154,7 +154,6 @@ python3 tools/db_maintenance.py --backup
 | `-x, --nyx` | Disable colored output |
 | `-f, --log-failures` | Log failed connection attempts to database |
 | `--db-path PATH` | Specify database file path (default: smbseek.db) |
-| `-x, --nyx` | Disable colored output |
 
 ### Database Query Tool (tools/db_query.py)
 
