@@ -1,6 +1,25 @@
 {
   "shodan": {
-    "api_key": "YOUR_API_KEY_HERE"
+    "api_key": "YOUR_API_KEY_HERE",
+    "query_limits": {
+      "max_results": 1000,
+      "timeout": 1
+    },
+    "query_components": {
+      "base_query": "smb authentication: disabled",
+      "product_filter": "product:\"Samba\"",
+      "additional_exclusions": [
+        "-\"DSL\""
+      ],
+      "use_organization_exclusions": true
+    }
+  },
+  "workflow": {
+    "rescan_after_days": 90,
+    "access_recent_hours": 2,
+    "pause_between_steps": false,
+    "auto_collect_files": true,
+    "skip_failed_hosts": true
   },
   "connection": {
     "timeout": 30,
@@ -8,8 +27,27 @@
     "rate_limit_delay": 3,
     "share_access_delay": 7
   },
-  "files": {
-    "default_exclusion_file": "exclusion_list.txt"
+  "security": {
+    "ransomware_indicators": [
+      "!want_to_cry.txt",
+      "0XXX_DECRYPTION_README.TXT",
+      "HOW_TO_DECRYPT_FILES.txt",
+      "DECRYPT_INSTRUCTIONS.txt",
+      "_DECRYPT_INFO_.txt",
+      "README_FOR_DECRYPT.txt"
+    ],
+    "exclusion_file": "conf/exclusion_list.txt"
+  },
+  "database": {
+    "path": "smbseek.db",
+    "backup_enabled": true,
+    "backup_directory": "db_backups",
+    "max_backup_files": 30
+  },
+  "output": {
+    "colors_enabled": true,
+    "verbose_by_default": false,
+    "executive_summary": true
   },
   "countries": {
     "US": "United States",
@@ -19,31 +57,6 @@
     "AU": "Australia",
     "NZ": "New Zealand",
     "ZA": "South Africa"
-  },
-  "security": {
-    "ransomware_indicators": [
-      "!want_to_cry.txt",
-      "0XXX_DECRYPTION_README.TXT",
-      "HOW_TO_DECRYPT",
-      "RESTORE_FILES",
-      "DECRYPT_INSTRUCTION",
-      "Help_Restore_Your_Files",
-      "READ_IT.txt",
-      "HELP_DECRYPT",
-      "HOW_TO_RECOVER",
-      "README-FILE-",
-      "LOCKFILE-README-",
-      "_recover_instructions",
-      "DECRYPT_YOUR_FILES",
-      "ransom_note",
-      "payment_instructions",
-      "contact_here",
-      "files_encrypted",
-      "ATTENTION.txt",
-      "!!!readme!!!",
-      "recover_data",
-      "unlock_files"
-    ]
   },
   "file_collection": {
     "max_files_per_target": 3,
