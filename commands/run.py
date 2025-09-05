@@ -184,12 +184,12 @@ class WorkflowOrchestrator:
             from commands.access import AccessCommand
             
             # Create access args with intelligent recent filtering
-            # Use a reasonable time window that balances efficiency with thoroughness
-            access_recent_hours = self.config.get("workflow", "access_recent_hours", 2)
+            # Use --recent parameter from args, or fall back to config, or default to 2 hours
+            access_recent_hours = getattr(self.args, 'recent', None) or self.config.get("workflow", "access_recent_hours", 2)
             
             access_args = type('Args', (), {
                 'servers': None,  # Use recent discoveries
-                'recent': access_recent_hours,  # Configurable recent window
+                'recent': access_recent_hours,  # Use recent parameter from command line
                 'config': self.args.config,
                 'quiet': self.args.quiet,
                 'verbose': self.args.verbose,
