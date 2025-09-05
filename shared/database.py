@@ -318,22 +318,33 @@ class SMBSeekWorkflowDatabase:
                 'updated_servers': 0
             }
     
-    def get_authenticated_hosts(self) -> List[Dict]:
+    def get_authenticated_hosts(self, recent_hours: Optional[int] = None) -> List[Dict]:
         """
         Get hosts that have successful SMB authentication.
+        
+        Args:
+            recent_hours: Only return hosts discovered/scanned in the last N hours
         
         Returns:
             List of host dictionaries with authentication information
         """
         try:
-            hosts = self.db_manager.execute_query("""
-                SELECT DISTINCT s.ip_address, s.country, s.auth_method,
+            # Build query with optional time filtering
+            base_query = """
+                SELECT DISTINCT s.ip_address, s.country, s.auth_method, s.last_seen,
                        GROUP_CONCAT(sa.share_name) as accessible_shares
                 FROM smb_servers s
                 LEFT JOIN share_access sa ON s.id = sa.server_id 
                 WHERE s.auth_method IS NOT NULL AND (sa.accessible = 1 OR sa.accessible IS NULL)
-                GROUP BY s.ip_address, s.country, s.auth_method
-            """)
+            """
+            
+            params = []
+            if recent_hours is not None:
+                base_query += " AND s.last_seen >= datetime('now', '-{} hours')".format(int(recent_hours))
+            
+            base_query += " GROUP BY s.ip_address, s.country, s.auth_method, s.last_seen"
+            
+            hosts = self.db_manager.execute_query(base_query, tuple(params))
             
             # Parse accessible_shares from comma-separated string to list
             processed_hosts = []
@@ -350,6 +361,21 @@ class SMBSeekWorkflowDatabase:
         except Exception as e:
             print(f"⚠ Error getting authenticated hosts: {e}")
             return []
+    
+    def get_recent_authenticated_hosts(self, hours: int = 24) -> List[Dict]:
+        """
+        Get hosts that have successful SMB authentication within the last N hours.
+        
+        This is a convenience method specifically for recent host filtering to avoid
+        testing access on hosts that were already scanned recently.
+        
+        Args:
+            hours: Number of hours to look back (default: 24)
+        
+        Returns:
+            List of host dictionaries with authentication information from recent scans
+        """
+        return self.get_authenticated_hosts(recent_hours=hours)
     
     def get_hosts_with_accessible_shares(self) -> List[Dict]:
         """

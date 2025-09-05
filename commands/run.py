@@ -183,10 +183,13 @@ class WorkflowOrchestrator:
             # Import and execute access verification
             from commands.access import AccessCommand
             
-            # Create access args
+            # Create access args with intelligent recent filtering
+            # Use a reasonable time window that balances efficiency with thoroughness
+            access_recent_hours = self.config.get("workflow", "access_recent_hours", 2)
+            
             access_args = type('Args', (), {
                 'servers': None,  # Use recent discoveries
-                'recent': 1,  # Last 1 hour
+                'recent': access_recent_hours,  # Configurable recent window
                 'config': self.args.config,
                 'quiet': self.args.quiet,
                 'verbose': self.args.verbose,

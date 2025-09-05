@@ -97,12 +97,36 @@ class AccessCommand:
                 self.output.error("SMB libraries not available. Install with: pip install smbprotocol pyspnego")
                 return 1
             
-            # Get authenticated hosts from database
-            authenticated_hosts = self.database.get_authenticated_hosts()
-            if not authenticated_hosts:
-                self.output.warning("No authenticated hosts found in database")
-                self.output.info("Run discovery first: smbseek discover --country US")
-                return 0
+            # Handle specific servers parameter if provided
+            if hasattr(self.args, 'servers') and self.args.servers:
+                # Parse comma-separated server list
+                target_ips = [ip.strip() for ip in self.args.servers.split(',')]
+                self.output.info(f"Testing specific servers: {', '.join(target_ips)}")
+                
+                # Filter authenticated hosts to only include specified servers
+                authenticated_hosts = self.database.get_authenticated_hosts()
+                authenticated_hosts = [host for host in authenticated_hosts if host['ip_address'] in target_ips]
+                
+                if not authenticated_hosts:
+                    self.output.warning(f"None of the specified servers are authenticated: {', '.join(target_ips)}")
+                    return 0
+            
+            # Get authenticated hosts from database with recent filtering
+            elif hasattr(self.args, 'recent') and self.args.recent is not None:
+                # Use recent parameter if specified
+                authenticated_hosts = self.database.get_authenticated_hosts(recent_hours=self.args.recent)
+                if not authenticated_hosts:
+                    self.output.warning(f"No authenticated hosts found from the last {self.args.recent} hours")
+                    self.output.info("Try increasing the --recent parameter or run discovery first")
+                    return 0
+                self.output.info(f"Using recent host filter: {self.args.recent} hours ({len(authenticated_hosts)} hosts)")
+            else:
+                # Get all authenticated hosts (existing behavior)
+                authenticated_hosts = self.database.get_authenticated_hosts()
+                if not authenticated_hosts:
+                    self.output.warning("No authenticated hosts found in database")
+                    self.output.info("Run discovery first: smbseek discover --country US")
+                    return 0
             
             self.total_targets = len(authenticated_hosts)
             self.output.info(f"Testing share access on {self.total_targets} authenticated hosts")
