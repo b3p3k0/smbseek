@@ -73,5 +73,15 @@
       ".exe", ".dll", ".sys", ".bat", ".cmd", ".scr", ".com", ".pif", ".msi", 
       ".bin", ".log", ".tmp", ".temp", ".bak", ".old", ".swp", ".lock"
     ]
+  },
+  "smb_limits": {
+    "_comment": "SMB security limits for advanced security controls",
+    "max_shares_per_server": 100,
+    "max_files_per_share": 1000,
+    "max_depth": 3,
+    "signing_required": false,
+    "protocols": ["SMB2", "SMB3"],
+    "process_timeout": 60,
+    "max_output_size": 10485760
   }
 }

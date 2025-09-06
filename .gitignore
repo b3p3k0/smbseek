@@ -75,9 +75,37 @@ collection_report_*.txt
 experimental/
 MIGRATION_CHECKLIST.md
 
-# Test files
-*test*.json
-*test*.csv
+# Test files and development artifacts
+test_*.py
+test_*.json
+test_*.csv
+*_test.py
+*_tests.py
+testing/
+tests/
 
-# Enhanced share tracking test files
-test_enhanced_share_tracking.py
+# Documentation and maintenance files
+docs/
+AUDIT_NOTES.txt
+REPO_MAINT.txt
+TODO.md
+NOTES.md
+CHANGELOG.draft.md
+
+# Legacy tools directory (for clean distribution)
+tools/
+
+# Development workspace
+dev/
+scratch/
+tmp/
+
+# Security audit artifacts
+security_audit_*.json
+audit_*.log
+
+# Additional output patterns
+ip_record*.csv
+server_manifest*.json
+collection_*.txt
+analysis_*.json
