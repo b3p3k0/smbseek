@@ -97,6 +97,18 @@ class SMBSeekConfig:
                 "colors_enabled": True,
                 "verbose_by_default": False,
                 "executive_summary": True
+            },
+            "limits": {
+                "smb": {
+                    "timeout_per_stage_seconds": 3,
+                    "timeout_per_host_seconds": 30,
+                    "max_pdu_bytes": 65536,
+                    "max_stdout_bytes": 10000,
+                    "max_shares": 256,
+                    "max_share_name_len": 80,
+                    "signing_required": True,
+                    "resolve_netbios": False
+                }
             }
         }
         
@@ -243,6 +255,50 @@ class SMBSeekConfig:
         # Tier 3: Fall back to global scan (empty list)
         return []
     
+    def get_smb_limits(self) -> Dict[str, Any]:
+        """
+        Get SMB security limits configuration.
+        
+        Returns:
+            Dictionary with SMB limits and defaults if missing
+        """
+        return self.get("limits", "smb", {
+            "timeout_per_stage_seconds": 3,
+            "timeout_per_host_seconds": 30,
+            "max_pdu_bytes": 65536,
+            "max_stdout_bytes": 10000,
+            "max_shares": 256,
+            "max_share_name_len": 80,
+            "signing_required": True,
+            "resolve_netbios": False
+        })
+    
+    def get_smb_limit(self, key: str, default: Any = None) -> Any:
+        """
+        Get specific SMB limit value.
+        
+        Args:
+            key: SMB limit key name
+            default: Default value if not found
+            
+        Returns:
+            SMB limit value or default
+        """
+        limits = self.get_smb_limits()
+        return limits.get(key, default)
+    
+    def is_smb_signing_required(self) -> bool:
+        """Check if SMB signing is required by configuration."""
+        return self.get_smb_limit("signing_required", True)
+    
+    def get_smb_timeout_per_host(self) -> int:
+        """Get SMB per-host timeout in seconds."""
+        return self.get_smb_limit("timeout_per_host_seconds", 30)
+    
+    def get_smb_max_shares(self) -> int:
+        """Get maximum shares per host limit."""
+        return self.get_smb_limit("max_shares", 256)
+
     def validate_configuration(self) -> bool:
         """
         Validate configuration for common issues.
@@ -267,6 +323,17 @@ class SMBSeekConfig:
         
         if self.get("connection", "timeout", 30) < 5:
             issues.append("connection timeout should be at least 5 seconds")
+        
+        # Check SMB limits if present
+        smb_limits = self.get_smb_limits()
+        if smb_limits.get("timeout_per_host_seconds", 30) < 1:
+            issues.append("SMB timeout_per_host_seconds must be at least 1")
+        
+        if smb_limits.get("max_shares", 256) < 1 or smb_limits.get("max_shares", 256) > 1000:
+            issues.append("SMB max_shares must be between 1-1000")
+        
+        if smb_limits.get("max_share_name_len", 80) < 1 or smb_limits.get("max_share_name_len", 80) > 255:
+            issues.append("SMB max_share_name_len must be between 1-255")
         
         if issues:
             print("⚠ Configuration validation issues:")

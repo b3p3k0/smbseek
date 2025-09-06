@@ -3,6 +3,7 @@
 shodan>=1.25.0
 smbprotocol>=1.10.0
 pyspnego>=0.8.0
+impacket>=0.10.0
 
 # Database and data handling (included in Python standard library)
 # sqlite3 - built-in

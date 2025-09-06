@@ -23,6 +23,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.config import load_config, get_standard_timestamp
 from shared.database import create_workflow_database
 from shared.output import create_output_manager
+from shared.proc import run_smbclient_safe, ProcessExecutionError, ProcessTimeoutError
+from shared.safety import strip_control, validate_share_name, sanitize_hostname, SecurityLimits
+from shared.smb_v1_probe import (
+    scan_host_smb1, SMB1ProbeError, validate_smb1_mode_constraints,
+    print_smb1_banner_start, print_smb1_banner_end
+)
 
 # Check if SMB libraries are available
 SMB_AVAILABLE = False
@@ -63,6 +69,21 @@ class AccessCommand:
             no_colors=args.no_colors
         )
         self.database = create_workflow_database(self.config, args.verbose)
+        
+        # Get SMB security limits
+        self.smb_limits = self.config.get_smb_limits()
+        
+        # SMB1 mode configuration
+        self.smb1_mode = getattr(args, 'enable_smb1', False)
+        self.smb1_acknowledged = getattr(args, 'yes_i_know', False)
+        
+        # Validate SMB1 mode constraints
+        if self.smb1_mode:
+            is_valid, error_msg = validate_smb1_mode_constraints(
+                self.smb1_mode, self.smb1_acknowledged
+            )
+            if not is_valid:
+                raise ValueError(error_msg)
         
         # Check smbclient availability for share enumeration
         self.smbclient_available = self.check_smbclient_availability()
@@ -131,16 +152,24 @@ class AccessCommand:
             self.total_targets = len(authenticated_hosts)
             self.output.info(f"Testing share access on {self.total_targets} authenticated hosts")
             
-            # Process each authenticated host
-            for host in authenticated_hosts:
-                target_result = self.process_target(host)
-                self.results.append(target_result)
+            # SMB1 mode banner
+            if self.smb1_mode:
+                print_smb1_banner_start()
             
-            # Save results and show summary
-            self.save_results()
-            self.print_summary()
-            
-            return 0
+                # Process each authenticated host
+                for host in authenticated_hosts:
+                    target_result = self.process_target(host)
+                    self.results.append(target_result)
+                
+                # Save results and show summary
+                self.save_results()
+                self.print_summary()
+                
+                return 0
+            finally:
+                # SMB1 mode banner end
+                if self.smb1_mode:
+                    print_smb1_banner_end()
         
         except Exception as e:
             self.output.error(f"Access verification failed: {e}")
@@ -169,56 +198,78 @@ class AccessCommand:
             return "guest", "guest"
     
     def enumerate_shares(self, ip, username, password):
-        """Enumerate available SMB shares on the target server."""
+        """Enumerate available SMB shares on the target server with security hardening."""
+        # Sanitize hostname
+        clean_ip = sanitize_hostname(ip)
+        if not clean_ip:
+            if self.args.verbose:
+                self.output.error(f"Invalid hostname: {ip}")
+            return []
+        
+        # SMB1 mode uses dedicated secure probe
+        if self.smb1_mode:
+            return self._enumerate_shares_smb1(clean_ip, username, password)
+        
+        # Default SMB2/3 mode with security hardening
+        return self._enumerate_shares_smb23(clean_ip, username, password)
+    
+    def _enumerate_shares_smb1(self, ip, username, password):
+        """SMB1 share enumeration using secure probe module."""
+        # SMB1 mode enforces anonymous-only
+        if username or password:
+            if self.args.verbose:
+                self.output.error("SMB1 mode requires anonymous authentication")
+            return []
+        
+        try:
+            shares_data = scan_host_smb1(ip, self.smb_limits)
+            shares = [share['name'] for share in shares_data 
+                     if share['type'] in ['Disk', 'IPC']  # Filter to useful share types
+                     and not self._is_admin_share(share['name'])]
+            
+            if self.args.verbose:
+                self.output.info(f"SMB1 enumeration found {len(shares)} shares on {ip}")
+            return shares
+            
+        except SMB1ProbeError as e:
+            if self.args.verbose:
+                self.output.warning(f"SMB1 enumeration failed for {ip}: {e}")
+            return []
+    
+    def _enumerate_shares_smb23(self, ip, username, password):
+        """SMB2/3 share enumeration with hardened smbclient."""
         if not self.smbclient_available:
             return []
         
         try:
-            # Use smbclient command to list shares
-            cmd = ["smbclient", "-L", f"//{ip}"]
-            
-            # Add authentication based on credentials
-            if username == "" and password == "":
-                cmd.append("-N")  # No password (anonymous)
-            elif username == "guest":
-                if password == "":
-                    cmd.extend(["--user", "guest%"])
-                else:
-                    cmd.extend(["--user", f"guest%{password}"])
-            else:
-                cmd.extend(["--user", f"{username}%{password}"])
+            # Use hardened smbclient execution
+            result = run_smbclient_safe(
+                host=ip,
+                username=username,
+                password=password,
+                list_shares=True,
+                timeout=self.smb_limits.get('timeout_per_host_seconds', 30),
+                max_output_bytes=self.smb_limits.get('max_stdout_bytes', 10000)
+            )
             
             if self.args.verbose:
-                self.output.info(f"Enumerating shares: {' '.join(cmd)}")
+                self.output.info(f"SMB2/3 enumeration completed for {ip} (rc: {result.returncode})")
             
-            # Run command with timeout, prevent password prompts
-            result = subprocess.run(cmd, capture_output=True, text=True, 
-                                  timeout=15, stdin=subprocess.DEVNULL)
-            
-            # Parse shares from output
+            # Parse shares from output with security controls
             if result.returncode == 0 or "Sharename" in result.stdout:
-                shares = self.parse_share_list(result.stdout)
+                shares = self.parse_share_list_secure(result.stdout)
                 if self.args.verbose:
                     self.output.info(f"Found {len(shares)} non-admin shares")
                 return shares
             
-        except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+        except (ProcessExecutionError, ProcessTimeoutError) as e:
             if self.args.verbose:
-                self.output.warning(f"Share enumeration failed: {str(e)}")
+                self.output.warning(f"Secure share enumeration failed: {e}")
         
         return []
     
-    def parse_share_list(self, smbclient_output):
-        """Parse smbclient -L output to extract non-administrative share names."""
-        shares = []
-        lines = smbclient_output.split('\n')
-        in_share_section = False
-        share_section_ended = False
-        
-        if self.args.verbose:
-            self.output.info("Parsing smbclient share list output")
-        
-        for line_num, line in enumerate(lines):
+    def parse_share_list_secure(self, smbclient_output):
+        \"\"\"Parse smbclient -L output with security controls and validation.\"\"\"\n        shares = []\n        \n        # Strip control characters from entire output\n        clean_output = strip_control(smbclient_output)\n        lines = clean_output.split('\\n')\n        \n        # Enforce line limits to prevent DoS\n        if len(lines) > 500:\n            if self.args.verbose:\n                self.output.warning(f\"Output has {len(lines)} lines, truncating to 500\")\n            lines = lines[:500]\n        \n        in_share_section = False\n        share_section_ended = False\n        share_count = 0\n        \n        if self.args.verbose:\n            self.output.info(\"Parsing smbclient share list output with security controls\")\n        \n        for line_num, line in enumerate(lines):
             line = line.strip()
             
             # Skip if we've already finished parsing the shares section
@@ -267,18 +318,25 @@ class AccessCommand:
                     share_name = parts[0]
                     share_type = parts[1]
                     
-                    # Validate share name format (basic sanity check)
-                    if not share_name.replace('_', '').replace('-', '').isalnum():
+                    # Security controls: validate share name
+                    if not validate_share_name(share_name, self.smb_limits.get('max_share_name_len', 80)):
                         if self.args.verbose:
-                            self.output.warning(f"Skipping invalid share name format: {share_name}")
+                            self.output.warning(f"Skipping invalid share name: {share_name}")
                         continue
                     
+                    # Enforce share count limits
+                    if share_count >= self.smb_limits.get('max_shares', 256):
+                        if self.args.verbose:
+                            self.output.warning(f"Share count limit exceeded, stopping at {share_count}")
+                        break
+                    
                     # Only include non-administrative Disk shares
-                    if not share_name.endswith('$') and share_type == "Disk":
+                    if not self._is_admin_share(share_name) and share_type == "Disk":
                         shares.append(share_name)
+                        share_count += 1
                         if self.args.verbose:
                             self.output.info(f"Added share: {share_name}")
-                    elif self.args.verbose and share_name.endswith('$'):
+                    elif self.args.verbose and self._is_admin_share(share_name):
                         self.output.info(f"Skipped administrative share: {share_name}")
                     elif self.args.verbose:
                         self.output.info(f"Skipped non-disk share: {share_name} ({share_type})")
@@ -287,6 +345,9 @@ class AccessCommand:
             self.output.info(f"Parsed {len(shares)} valid shares from smbclient output")
         
         return shares
+    
+    def _is_admin_share(self, share_name):
+        \"\"\"Check if share name is administrative (ending with $).\"\"\"\n        return share_name.endswith('$')
     
     def test_share_access(self, ip, share_name, username, password):
         """Test read access to a specific SMB share using smbclient."""

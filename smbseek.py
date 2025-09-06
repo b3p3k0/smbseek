@@ -28,6 +28,33 @@ from shared.config import load_config
 from shared.output import create_output_manager
 
 
+def print_sandbox_hint():
+    """Print hardened container command template."""
+    print("🐳 Hardened Container Command Template:")
+    print()
+    print("docker run --rm -it \\")
+    print("  --network host \\")
+    print("  --cap-drop ALL \\")
+    print("  --pids-limit 256 \\")
+    print("  --read-only \\")
+    print("  --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \\")
+    print("  --security-opt no-new-privileges \\")
+    print("  --security-opt seccomp=/usr/share/containers/seccomp.json \\")
+    print("  --security-opt apparmor=docker-default \\")
+    print("  smbseek:latest <your-smbseek-args>")
+    print()
+    print("Note: This template provides defense-in-depth isolation")
+    print("Replace <your-smbseek-args> with your actual command arguments")
+
+
+def print_smb1_security_warning():
+    """Print SMB1 mode security warning as required by audit."""
+    print("⚠ WARNING: SMB1 Discovery Mode Active")
+    print("⚠ Protocol: NT1 (SMB1) | Auth: Anonymous | Mode: Discovery-only")
+    print("⚠ This mode has security risks and should only be used for discovery")
+    print()
+
+
 def create_main_parser() -> argparse.ArgumentParser:
     """
     Create the main argument parser with subcommands.
@@ -135,6 +162,26 @@ def add_common_arguments(parser):
     )
 
 
+def add_security_arguments(parser):
+    """Add security-related arguments including SMB1 discovery mode."""
+    security_group = parser.add_argument_group('security options')
+    security_group.add_argument(
+        '--enable-smb1',
+        action='store_true',
+        help='Enable SMB1 Discovery Mode for THIS RUN ONLY (requires --yes-i-know)'
+    )
+    security_group.add_argument(
+        '--yes-i-know',
+        action='store_true',
+        help='Required acknowledgment of security risks when using --enable-smb1'
+    )
+    security_group.add_argument(
+        '--sandbox-hint',
+        action='store_true',
+        help='Print hardened container command template (does not execute)'
+    )
+
+
 def register_run_command(subparsers):
     """Register the 'run' command (primary workflow)."""
     parser = subparsers.add_parser(
@@ -145,6 +192,9 @@ def register_run_command(subparsers):
     
     # Add common arguments
     add_common_arguments(parser)
+    
+    # Add security arguments  
+    add_security_arguments(parser)
     
     # Required arguments
     parser.add_argument(
@@ -204,6 +254,9 @@ def register_discover_command(subparsers):
     )
     
     add_common_arguments(parser)
+    
+    # Add security arguments
+    add_security_arguments(parser)
     
     parser.add_argument(
         '--country',
@@ -470,6 +523,22 @@ def main():
     if args.quiet and args.verbose:
         print("Error: Cannot use both --quiet and --verbose options")
         return 1
+    
+    # Handle sandbox hint (print and exit)
+    if hasattr(args, 'sandbox_hint') and args.sandbox_hint:
+        print_sandbox_hint()
+        return 0
+    
+    # Validate SMB1 mode constraints
+    if hasattr(args, 'enable_smb1') and hasattr(args, 'yes_i_know'):
+        if args.enable_smb1 and not args.yes_i_know:
+            print("Error: SMB1 Discovery Mode requires explicit acknowledgment")
+            print("Use --yes-i-know to acknowledge security risks when using --enable-smb1")
+            return 1
+        
+        # Check for credentials in SMB1 mode (will be enforced by individual commands)
+        if args.enable_smb1:
+            print_smb1_security_warning()
     
     try:
         # Execute the requested command
