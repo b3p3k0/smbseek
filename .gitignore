@@ -61,6 +61,19 @@ conf/config.bak
 *.db.cleanup_backup_*
 db_backups/
 
+# Developer-only directories (not shipped to end users)
+docs/
+tools/
+
+# Pytest cache
+.pytest_cache/
+
+# Python bytecode (redundant but explicit)
+*.py[cod]
+
+# Root-level test files
+test_*.py
+
 # Generated output files
 *.csv
 *.json
