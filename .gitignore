@@ -75,6 +75,9 @@ collection_report_*.txt
 experimental/
 MIGRATION_CHECKLIST.md
 
+# Legacy tools (deprecated, kept for reference)
+legacy/
+
 # Test files
 *test*.json
 *test*.csv

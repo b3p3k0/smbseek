@@ -1,6 +1,6 @@
 {
   "shodan": {
-    "api_key": "YOUR_API_KEY_HERE",
+    "api_key": "",
     "query_limits": {
       "max_results": 1000,
       "timeout": 1
@@ -24,8 +24,8 @@
   "connection": {
     "timeout": 30,
     "port_check_timeout": 10,
-    "rate_limit_delay": 3,
-    "share_access_delay": 7
+    "rate_limit_delay": 1,
+    "share_access_delay": 1
   },
   "security": {
     "ransomware_indicators": [
