@@ -347,8 +347,8 @@ class WorkflowOrchestrator:
                 SELECT DISTINCT s.ip_address, sa.share_name
                 FROM smb_servers s
                 JOIN share_access sa ON s.id = sa.server_id
-                WHERE sa.accessible = 1 
-                AND sa.timestamp >= datetime('now', '-1 hour')
+                WHERE sa.accessible = 1
+                AND sa.test_timestamp >= datetime('now', '-1 hour')
             """
             results = self.database.db_manager.execute_query(query)
             return [{'ip': row['ip_address'], 'share': row['share_name']} for row in results]
@@ -360,8 +360,8 @@ class WorkflowOrchestrator:
         try:
             query = """
                 SELECT COUNT(*) as file_count
-                FROM file_manifests 
-                WHERE timestamp >= datetime('now', '-1 hour')
+                FROM file_manifests
+                WHERE discovery_timestamp >= datetime('now', '-1 hour')
             """
             results = self.database.db_manager.execute_query(query)
             return results[0]['file_count'] if results else 0
