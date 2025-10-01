@@ -239,17 +239,44 @@ class SMBSeekWorkflowDatabase:
     def record_scan_session(self, session_data: Dict) -> str:
         """
         Record a new scan session in the database.
-        
+
         Args:
             session_data: Session information dictionary
-            
+
         Returns:
             Session ID
         """
-        return self.dal.create_scan_session(
+        session_id = self.dal.create_scan_session(
             tool_name=session_data.get('tool_name', 'smbseek'),
             config_snapshot=session_data
         )
+
+        # Map legacy keys to schema column names and update session with actual metrics
+        update_data = {}
+
+        # Map legacy keys to schema fields
+        if 'targets_found' in session_data:
+            update_data['total_targets'] = session_data['targets_found']
+        elif 'total_targets' in session_data:
+            update_data['total_targets'] = session_data['total_targets']
+
+        if 'successful_connections' in session_data:
+            update_data['successful_targets'] = session_data['successful_connections']
+        elif 'successful_targets' in session_data:
+            update_data['successful_targets'] = session_data['successful_targets']
+
+        if 'failed_targets' in session_data:
+            update_data['failed_targets'] = session_data['failed_targets']
+        elif 'total_targets' in update_data and 'successful_targets' in update_data:
+            # Compute failed_targets if not provided
+            update_data['failed_targets'] = update_data['total_targets'] - update_data['successful_targets']
+
+        # Update session status to completed if we have metrics
+        if update_data:
+            update_data['status'] = 'completed'
+            self.dal.update_scan_session(session_id, **update_data)
+
+        return session_id
     
     def create_session(self, tool_name: str) -> int:
         """
@@ -274,33 +301,33 @@ class SMBSeekWorkflowDatabase:
     def get_recent_activity_summary(self, days: int = 7) -> Dict:
         """
         Get summary of recent scanning activity.
-        
+
         Args:
             days: Number of days to look back
-            
+
         Returns:
             Summary dictionary
         """
         cutoff_date = datetime.now() - timedelta(days=days)
         cutoff_str = cutoff_date.isoformat()
-        
+
         try:
-            # Recent sessions
+            # Recent sessions - use correct schema column names
             sessions = self.db_manager.execute_query("""
                 SELECT COUNT(*) as session_count,
-                       SUM(targets_found) as total_targets,
-                       SUM(successful_connections) as total_successful
-                FROM scan_sessions 
+                       SUM(total_targets) as total_targets,
+                       SUM(successful_targets) as total_successful
+                FROM scan_sessions
                 WHERE timestamp >= ?
             """, (cutoff_str,))
-            
+
             # Recently updated servers
             servers = self.db_manager.execute_query("""
                 SELECT COUNT(*) as updated_servers
-                FROM smb_servers 
+                FROM smb_servers
                 WHERE last_seen >= ?
             """, (cutoff_str,))
-            
+
             return {
                 'days': days,
                 'scan_sessions': sessions[0]['session_count'] or 0,
@@ -340,7 +367,7 @@ class SMBSeekWorkflowDatabase:
             
             params = []
             if recent_hours is not None:
-                base_query += " AND s.last_seen >= datetime('now', '-{} hours')".format(int(recent_hours))
+                base_query += " AND s.last_seen >= datetime('now', 'localtime', '-{} hours')".format(int(recent_hours))
             
             base_query += " GROUP BY s.ip_address, s.country, s.auth_method, s.last_seen"
             

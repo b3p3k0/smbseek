@@ -576,15 +576,21 @@ class DiscoverCommand:
             session_data = {
                 'tool_name': 'smbseek-discover',
                 'countries': target_countries if target_countries else ['global'],
-                'targets_found': self.stats['shodan_results'],
-                'successful_connections': len(successful_hosts),
+                'total_targets': self.stats['shodan_results'],
+                'successful_targets': len(successful_hosts),
+                'failed_targets': self.stats['failed_auth'],
                 'total_shares': 0,  # Will be updated by access command
                 'accessible_shares': 0,  # Will be updated by access command
                 'config_used': {
                     'country_arg': self.args.country,
                     'resolved_countries': target_countries,
                     'rescan_all': getattr(self.args, 'rescan_all', False),
-                    'rescan_failed': getattr(self.args, 'rescan_failed', False)
+                    'rescan_failed': getattr(self.args, 'rescan_failed', False),
+                    # Preserve legacy keys for backward compatibility
+                    'legacy_metrics': {
+                        'targets_found': self.stats['shodan_results'],
+                        'successful_connections': len(successful_hosts)
+                    }
                 }
             }
             
