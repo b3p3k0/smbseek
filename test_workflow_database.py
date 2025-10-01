@@ -106,36 +106,36 @@ class TestWorkflowDatabase(unittest.TestCase):
 
         # Insert recent accessible share (within last hour) - use SQLite datetime
         self.db_conn.execute(
-            "INSERT INTO share_access (server_id, session_id, share_name, accessible, test_timestamp) VALUES (?, ?, ?, ?, datetime('now', '-30 minutes'))",
+            "INSERT INTO share_access (server_id, session_id, share_name, accessible, test_timestamp) VALUES (?, ?, ?, ?, datetime('now', 'localtime', '-30 minutes'))",
             (server_id, 1, 'recent_share', 1)
         )
 
         # Insert old accessible share (more than 1 hour ago) - use SQLite datetime
         self.db_conn.execute(
-            "INSERT INTO share_access (server_id, session_id, share_name, accessible, test_timestamp) VALUES (?, ?, ?, ?, datetime('now', '-2 hours'))",
+            "INSERT INTO share_access (server_id, session_id, share_name, accessible, test_timestamp) VALUES (?, ?, ?, ?, datetime('now', 'localtime', '-2 hours'))",
             (server_id, 1, 'old_share', 1)
         )
 
         # Insert inaccessible share (recent but not accessible) - use SQLite datetime
         self.db_conn.execute(
-            "INSERT INTO share_access (server_id, session_id, share_name, accessible, test_timestamp) VALUES (?, ?, ?, ?, datetime('now', '-30 minutes'))",
+            "INSERT INTO share_access (server_id, session_id, share_name, accessible, test_timestamp) VALUES (?, ?, ?, ?, datetime('now', 'localtime', '-30 minutes'))",
             (server_id, 1, 'inaccessible_share', 0)
         )
 
         # Insert recent file manifests - use SQLite datetime
         self.db_conn.execute(
-            "INSERT INTO file_manifests (server_id, session_id, share_name, file_path, discovery_timestamp) VALUES (?, ?, ?, ?, datetime('now', '-30 minutes'))",
+            "INSERT INTO file_manifests (server_id, session_id, share_name, file_path, discovery_timestamp) VALUES (?, ?, ?, ?, datetime('now', 'localtime', '-30 minutes'))",
             (server_id, 1, 'recent_share', '/path/to/file1.txt')
         )
 
         self.db_conn.execute(
-            "INSERT INTO file_manifests (server_id, session_id, share_name, file_path, discovery_timestamp) VALUES (?, ?, ?, ?, datetime('now', '-30 minutes'))",
+            "INSERT INTO file_manifests (server_id, session_id, share_name, file_path, discovery_timestamp) VALUES (?, ?, ?, ?, datetime('now', 'localtime', '-30 minutes'))",
             (server_id, 1, 'recent_share', '/path/to/file2.txt')
         )
 
         # Insert old file manifest - use SQLite datetime
         self.db_conn.execute(
-            "INSERT INTO file_manifests (server_id, session_id, share_name, file_path, discovery_timestamp) VALUES (?, ?, ?, ?, datetime('now', '-2 hours'))",
+            "INSERT INTO file_manifests (server_id, session_id, share_name, file_path, discovery_timestamp) VALUES (?, ?, ?, ?, datetime('now', 'localtime', '-2 hours'))",
             (server_id, 1, 'old_share', '/path/to/old_file.txt')
         )
 

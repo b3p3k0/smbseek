@@ -331,9 +331,9 @@ class WorkflowOrchestrator:
         try:
             # Get hosts discovered in the last hour
             query = """
-                SELECT DISTINCT ip_address 
-                FROM smb_servers 
-                WHERE last_seen >= datetime('now', '-1 hour')
+                SELECT DISTINCT ip_address
+                FROM smb_servers
+                WHERE last_seen >= datetime('now', 'localtime', '-1 hour')
             """
             results = self.database.db_manager.execute_query(query)
             return {row['ip_address'] for row in results}
@@ -348,7 +348,7 @@ class WorkflowOrchestrator:
                 FROM smb_servers s
                 JOIN share_access sa ON s.id = sa.server_id
                 WHERE sa.accessible = 1
-                AND sa.test_timestamp >= datetime('now', '-1 hour')
+                AND sa.test_timestamp >= datetime('now', 'localtime', '-1 hour')
             """
             results = self.database.db_manager.execute_query(query)
             return [{'ip': row['ip_address'], 'share': row['share_name']} for row in results]
@@ -361,7 +361,7 @@ class WorkflowOrchestrator:
             query = """
                 SELECT COUNT(*) as file_count
                 FROM file_manifests
-                WHERE discovery_timestamp >= datetime('now', '-1 hour')
+                WHERE discovery_timestamp >= datetime('now', 'localtime', '-1 hour')
             """
             results = self.database.db_manager.execute_query(query)
             return results[0]['file_count'] if results else 0
