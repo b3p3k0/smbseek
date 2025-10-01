@@ -19,10 +19,10 @@
 git clone <repository-url>
 cd smbseek
 
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # Linux/macOS
-# OR: venv\Scripts\activate  # Windows
+# Create virtual environment (you can name this anything)
+python3 -m venv smbseek_env
+source smbseek_env/bin/activate  # Linux/macOS
+# OR: smbseek_env\Scripts\activate  # Windows
 
 # Install dependencies
 pip install -r requirements.txt
@@ -40,7 +40,12 @@ brew install samba
 ```
 
 ### 4. Configure Your API Key
-Edit `conf/config.json`:
+```bash
+# Copy example configuration
+cp conf/config.json.example conf/config.json
+
+# Edit conf/config.json and add your API key:
+```
 ```json
 {
   "shodan": {
@@ -51,11 +56,11 @@ Edit `conf/config.json`:
 
 ### 5. Run Your First Scan
 ```bash
-# New unified CLI (recommended)
+# Unified CLI - complete workflow
 ./smbseek.py run --country US
 
-# OR use the legacy tools (still supported)
-python3 tools/smb_scan.py -c US
+# With verbose output for learning
+./smbseek.py run --country US --verbose
 ```
 
 **That's it!** In a few minutes, you'll have a database full of SMB server data ready to explore.
@@ -65,7 +70,7 @@ python3 tools/smb_scan.py -c US
 ## 📦 Complete Installation Guide
 
 ### System Requirements
-- **Python**: 3.6 or newer
+- **Python**: 3.8 or newer (recommended: 3.10+)
 - **Operating System**: Linux, macOS, or Windows
 - **Network**: Internet connection for Shodan API
 - **Storage**: 50MB minimum for database and tools
@@ -83,8 +88,8 @@ sudo apt install python3 python3-venv python3-pip smbclient
 # Clone and setup SMBSeek
 git clone <repository-url>
 cd smbseek
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv smbseek_env
+source smbseek_env/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -97,8 +102,8 @@ sudo dnf install python3 python3-venv python3-pip samba-client
 # Clone and setup SMBSeek
 git clone <repository-url>
 cd smbseek
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv smbseek_env
+source smbseek_env/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -113,8 +118,8 @@ brew install python samba
 # Clone and setup SMBSeek
 git clone <repository-url>
 cd smbseek
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv smbseek_env
+source smbseek_env/bin/activate
 pip install -r requirements.txt
 ```
 
