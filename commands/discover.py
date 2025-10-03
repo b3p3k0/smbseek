@@ -1,7 +1,7 @@
 """
-SMBSeek Discover Command
+SMBSeek Discover Operations
 
-Discovery and authentication testing functionality adapted for the unified CLI.
+Discovery and authentication testing functionality for the unified workflow.
 Implements Shodan querying and SMB authentication testing with intelligent filtering.
 """
 
@@ -13,6 +13,7 @@ import uuid
 import socket
 import subprocess
 from datetime import datetime
+from dataclasses import dataclass
 from typing import Set, List, Dict, Optional
 from contextlib import redirect_stderr
 from io import StringIO
@@ -36,33 +37,41 @@ except ImportError:
     SMB_AVAILABLE = False
 
 
-class DiscoverCommand:
+@dataclass
+class DiscoverResult:
+    """Results from discovery operation"""
+    query_used: str
+    total_hosts: int
+    authenticated_hosts: int
+    host_ips: Set[str]
+
+
+class DiscoverOperation:
     """
-    SMB discovery and authentication testing command.
-    
+    SMB discovery and authentication testing operation.
+
     Queries Shodan for SMB servers and tests authentication methods
     with intelligent host filtering and database integration.
     """
-    
-    def __init__(self, args):
+
+    def __init__(self, config, output, database, session_id):
         """
-        Initialize discover command.
-        
+        Initialize discover operation.
+
         Args:
-            args: Parsed command line arguments
+            config: SMBSeekConfig instance
+            output: SMBSeekOutput instance
+            database: SMBSeekWorkflowDatabase instance
+            session_id: Database session ID for this operation
         """
-        self.args = args
-        
-        # Load configuration and components
-        self.config = load_config(args.config)
-        self.output = create_output_manager(
-            self.config,
-            quiet=args.quiet,
-            verbose=args.verbose,
-            no_colors=args.no_colors
-        )
-        self.database = create_workflow_database(self.config)
-        
+        self.config = config
+        self.output = output
+        self.database = database
+        self.session_id = session_id
+
+        # Initialize Shodan host metadata tracking
+        self.shodan_host_metadata = {}
+
         # Initialize Shodan API
         try:
             api_key = self.config.get_shodan_api_key()
@@ -70,15 +79,15 @@ class DiscoverCommand:
         except ValueError as e:
             self.shodan_api = None
             self.output.error(str(e))
-        
+
         # Load exclusion list
         self.exclusions = self._load_exclusions()
-        
+
         # Check smbclient availability for fallback authentication
         self.smbclient_available = self._check_smbclient_availability()
-        if not self.smbclient_available and not args.quiet:
-            self.output.warning("smbclient unavailable; authentication will use smbprotocol only")
-        
+        if not self.smbclient_available:
+            self.output.print_if_verbose("smbclient unavailable; authentication will use smbprotocol only")
+
         # Statistics
         self.stats = {
             'shodan_results': 0,
@@ -89,79 +98,105 @@ class DiscoverCommand:
             'failed_auth': 0,
             'total_processed': 0
         }
-    
-    def execute(self) -> int:
+
+    def execute(self, country=None, rescan_all=False, rescan_failed=False) -> DiscoverResult:
         """
-        Execute the discover command.
-        
+        Execute the discover operation.
+
+        Args:
+            country: Target country code for Shodan search
+            rescan_all: Force rescan of all discovered hosts
+            rescan_failed: Include previously failed hosts for rescanning
+
         Returns:
-            Exit code (0 for success, non-zero for failure)
+            DiscoverResult with discovery statistics
+
+        Raises:
+            RuntimeError: If SMB libraries unavailable or Shodan API fails
         """
         if not SMB_AVAILABLE:
-            self.output.error("SMB libraries not available. Please install: pip install smbprotocol")
-            return 1
-        
+            raise RuntimeError("SMB libraries not available. Please install: pip install smbprotocol")
+
         if not self.shodan_api:
-            return 1
-        
-        try:
-            self.output.header("SMB Discovery & Authentication Testing")
-            
-            # Show database status
-            self.database.show_database_status()
-            
-            # Query Shodan
-            shodan_results = self._query_shodan()
-            if not shodan_results:
-                self.output.warning("No results from Shodan query")
-                return 0
-            
-            # Apply exclusions
-            filtered_results = self._apply_exclusions(shodan_results)
-            
-            # Filter for new hosts
-            hosts_to_scan, filter_stats = self.database.get_new_hosts_filter(
-                filtered_results,
-                rescan_all=getattr(self.args, 'rescan_all', False),
-                rescan_failed=getattr(self.args, 'rescan_failed', False),
-                output_manager=self.output
+            raise RuntimeError("Shodan API not available")
+
+        # Clear metadata from any previous runs to prevent stale data leakage
+        self.shodan_host_metadata = {}
+
+        self.output.print_if_verbose("Starting discovery operation...")
+
+        # Query Shodan
+        shodan_results = self._query_shodan(country)
+        if not shodan_results:
+            self.output.warning("No results from Shodan query")
+            return DiscoverResult(
+                query_used="",
+                total_hosts=0,
+                authenticated_hosts=0,
+                host_ips=set()
             )
-            
-            # Display scan statistics
-            self.database.display_scan_statistics(filter_stats, hosts_to_scan)
-            
-            if not hosts_to_scan:
-                return 0
-            
-            # Test SMB authentication
-            successful_hosts = self._test_smb_authentication(hosts_to_scan)
-            
-            # Display final results
-            self._display_results(successful_hosts)
-            
-            return 0
-        
-        except KeyboardInterrupt:
-            self.output.warning("Discovery interrupted by user")
-            return 130
-        except Exception as e:
-            self.output.error(f"Discovery failed: {e}")
-            if self.args.verbose:
-                import traceback
-                traceback.print_exc()
-            return 1
-        finally:
-            self.database.close()
+
+        # Build the query string for summary display
+        target_countries = self.config.resolve_target_countries(country)
+        query_used = self._build_targeted_query(target_countries)
+
+        # Apply exclusions
+        filtered_results = self._apply_exclusions(shodan_results)
+
+        # Filter for new hosts
+        hosts_to_scan, filter_stats = self.database.get_new_hosts_filter(
+            filtered_results,
+            rescan_all=rescan_all,
+            rescan_failed=rescan_failed,
+            output_manager=self.output
+        )
+
+        # Trim metadata to only hosts that will be scanned to maintain alignment
+        self.shodan_host_metadata = {
+            ip: self.shodan_host_metadata[ip]
+            for ip in hosts_to_scan
+            if ip in self.shodan_host_metadata
+        }
+
+        # Display scan statistics
+        self.database.display_scan_statistics(filter_stats, hosts_to_scan)
+
+        if not hosts_to_scan:
+            self.output.info("No new hosts to scan")
+            return DiscoverResult(
+                query_used=query_used,
+                total_hosts=len(filtered_results),
+                authenticated_hosts=0,
+                host_ips=set()
+            )
+
+        # Test SMB authentication
+        successful_hosts = self._test_smb_authentication(hosts_to_scan, country)
+
+        # Save results to database using provided session_id
+        authenticated_ips = self._save_to_database(successful_hosts, country)
+
+        self.output.print_if_verbose(f"Discovery operation completed: {len(authenticated_ips)} authenticated hosts")
+
+        return DiscoverResult(
+            query_used=query_used,
+            total_hosts=len(hosts_to_scan),
+            authenticated_hosts=len(authenticated_ips),
+            host_ips=authenticated_ips
+        )
     
-    def _query_shodan(self) -> Set[str]:
+    def _query_shodan(self, country=None) -> Set[str]:
         """
         Query Shodan for SMB servers in specified country.
-        
+
+        Args:
+            country: Target country code for search
+
         Returns:
             Set of IP addresses from Shodan results
         """
         # Resolve target countries using 3-tier fallback logic
-        target_countries = self.config.resolve_target_countries(self.args.country)
+        target_countries = self.config.resolve_target_countries(country)
         
         # Display what we're scanning
         if target_countries:
@@ -169,8 +204,8 @@ class DiscoverCommand:
             country_names = [countries_dict.get(c, c) for c in target_countries]
             self.output.info(f"Querying Shodan for SMB servers in: {', '.join(country_names)}")
         else:
-            if not self.args.country and not self.args.quiet:
-                self.output.info("No --country specified, loading from config")
+            if not country:
+                self.output.print_if_verbose("No country specified, using global search")
             self.output.info("Querying Shodan for SMB servers globally (no country filter)")
         
         try:
@@ -182,11 +217,29 @@ class DiscoverCommand:
             max_results = shodan_config['query_limits']['max_results']
             results = self.shodan_api.search(query, limit=max_results)
             
-            # Extract IP addresses
-            ip_addresses = {result['ip_str'] for result in results['matches']}
-            
+            # Extract IP addresses and capture country metadata
+            ip_addresses = set()
+            for result in results['matches']:
+                ip = result['ip_str']
+                ip_addresses.add(ip)
+
+                # Extract location metadata with fallbacks
+                location = result.get('location', {})
+                country_name = location.get('country_name') or result.get('country_name')
+                country_code = location.get('country_code') or result.get('country_code')
+
+                # Store metadata using "first complete record wins" strategy
+                if ip not in self.shodan_host_metadata:
+                    self.shodan_host_metadata[ip] = {}
+
+                if country_name and not self.shodan_host_metadata[ip].get('country_name'):
+                    self.shodan_host_metadata[ip]['country_name'] = country_name
+                if country_code and not self.shodan_host_metadata[ip].get('country_code'):
+                    self.shodan_host_metadata[ip]['country_code'] = country_code
+
             self.stats['shodan_results'] = len(ip_addresses)
             self.output.success(f"Found {len(ip_addresses)} SMB servers in Shodan database")
+            self.output.print_if_verbose(f"Captured metadata for {len(self.shodan_host_metadata)} hosts")
             
             return ip_addresses
         
@@ -277,6 +330,8 @@ class DiscoverCommand:
             
             if self._should_exclude_ip(ip):
                 excluded_count += 1
+                # Remove excluded IP from metadata to maintain alignment
+                self.shodan_host_metadata.pop(ip, None)
             else:
                 filtered_ips.add(ip)
         
@@ -347,13 +402,14 @@ class DiscoverCommand:
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
             return False
     
-    def _test_smb_authentication(self, ip_addresses: Set[str]) -> List[Dict]:
+    def _test_smb_authentication(self, ip_addresses: Set[str], country=None) -> List[Dict]:
         """
         Test SMB authentication on IP addresses.
-        
+
         Args:
             ip_addresses: Set of IP addresses to test
-            
+            country: Country code for metadata
+
         Returns:
             List of successful authentication results
         """
@@ -372,7 +428,7 @@ class DiscoverCommand:
             
             self.output.print_if_verbose(f"[{i}/{total_hosts}] Testing {ip}...")
             
-            result = self._test_single_host(ip)
+            result = self._test_single_host(ip, country)
             if result:
                 successful_hosts.append(result)
                 self.stats['successful_auth'] += 1
@@ -387,13 +443,14 @@ class DiscoverCommand:
         self.stats['total_processed'] = total_hosts
         return successful_hosts
     
-    def _test_single_host(self, ip: str) -> Optional[Dict]:
+    def _test_single_host(self, ip: str, country=None) -> Optional[Dict]:
         """
         Test SMB authentication on a single host.
-        
+
         Args:
             ip: IP address to test
-            
+            country: Country code for metadata
+
         Returns:
             Authentication result dictionary or None if failed
         """
@@ -410,9 +467,15 @@ class DiscoverCommand:
         
         for method_name, username, password in auth_methods:
             if self._test_smb_auth(ip, username, password):
+                # Use metadata lookup with CLI fallback
+                metadata = self.shodan_host_metadata.get(ip, {})
+                country_name = metadata.get('country_name') or country or 'Unknown'
+                country_code = metadata.get('country_code')
+
                 return {
                     'ip_address': ip,
-                    'country': getattr(self.args, 'country', 'Unknown') or 'Unknown',
+                    'country': country_name,
+                    'country_code': country_code,
                     'auth_method': method_name,
                     'timestamp': datetime.now().isoformat(),
                     'status': 'accessible'
@@ -422,9 +485,15 @@ class DiscoverCommand:
         if self.smbclient_available:
             fallback_result = self._test_smb_alternative(ip)
             if fallback_result:
+                # Use metadata lookup with CLI fallback (same as above)
+                metadata = self.shodan_host_metadata.get(ip, {})
+                country_name = metadata.get('country_name') or country or 'Unknown'
+                country_code = metadata.get('country_code')
+
                 return {
                     'ip_address': ip,
-                    'country': getattr(self.args, 'country', 'Unknown') or 'Unknown',
+                    'country': country_name,
+                    'country_code': country_code,
                     'auth_method': f"{fallback_result} (smbclient)",
                     'timestamp': datetime.now().isoformat(),
                     'status': 'accessible'
@@ -537,77 +606,131 @@ class DiscoverCommand:
         
         return None
     
-    def _display_results(self, successful_hosts: List[Dict]):
-        """
-        Display final results and save to database.
-        
-        Args:
-            successful_hosts: List of successful authentication results
-        """
-        self.output.subheader("Discovery Results")
-        
-        # Display statistics
-        self.output.print_if_not_quiet(f"Shodan Results: {self.stats['shodan_results']}")
-        self.output.print_if_not_quiet(f"Excluded IPs: {self.stats['excluded_ips']}")
-        self.output.print_if_not_quiet(f"Hosts Tested: {self.stats['total_processed']}")
-        self.output.print_if_not_quiet(f"Successful Auth: {self.stats['successful_auth']}")
-        self.output.print_if_not_quiet(f"Failed Auth: {self.stats['failed_auth']}")
-        
-        if successful_hosts:
-            self.output.success(f"Found {len(successful_hosts)} accessible SMB servers")
-            
-            # Save to database
-            self._save_to_database(successful_hosts)
-        else:
-            self.output.warning("No accessible SMB servers found")
     
-    def _save_to_database(self, successful_hosts: List[Dict]):
+    def _save_to_database(self, successful_hosts: List[Dict], country=None) -> Set[str]:
         """
-        Save successful authentication results to database.
-        
+        Save successful authentication results to database using provided session_id.
+
         Args:
             successful_hosts: List of successful results to save
+            country: Country code for metadata
+
+        Returns:
+            Set of authenticated IP addresses
         """
         try:
-            # Record scan session
-            # Resolve target countries for session data
-            target_countries = self.config.resolve_target_countries(self.args.country)
-            
-            session_data = {
-                'tool_name': 'smbseek-discover',
-                'countries': target_countries if target_countries else ['global'],
-                'total_targets': self.stats['shodan_results'],
-                'successful_targets': len(successful_hosts),
-                'failed_targets': self.stats['failed_auth'],
-                'total_shares': 0,  # Will be updated by access command
-                'accessible_shares': 0,  # Will be updated by access command
-                'config_used': {
-                    'country_arg': self.args.country,
-                    'resolved_countries': target_countries,
-                    'rescan_all': getattr(self.args, 'rescan_all', False),
-                    'rescan_failed': getattr(self.args, 'rescan_failed', False),
-                    # Preserve legacy keys for backward compatibility
-                    'legacy_metrics': {
-                        'targets_found': self.stats['shodan_results'],
-                        'successful_connections': len(successful_hosts)
-                    }
-                }
-            }
-            
-            session_id = self.database.record_scan_session(session_data)
-            
-            # Save individual host results
+            # Save individual host results using the workflow's session_id
             from db_manager import SMBSeekDataAccessLayer
             dal = SMBSeekDataAccessLayer(self.database.db_manager)
-            
+
+            authenticated_ips = set()
             for host in successful_hosts:
                 server_id = dal.get_or_create_server(
                     ip_address=host['ip_address'],
                     country=host['country'],
-                    auth_method=host['auth_method']
+                    auth_method=host['auth_method'],
+                    country_code=host.get('country_code')
                 )
-            
-            self.output.success(f"Results saved to database (session: {session_id})")
-        
+                authenticated_ips.add(host['ip_address'])
+
+            self.output.print_if_verbose(f"Saved {len(successful_hosts)} authenticated hosts to database")
+            return authenticated_ips
+
         except Exception as e:
             self.output.error(f"Failed to save results to database: {e}")
+            return set()
+
+
+# Compatibility layer for old DiscoverCommand interface
+class DiscoverCommand:
+    """
+    DEPRECATED: Legacy compatibility wrapper for DiscoverOperation.
+    Use workflow.UnifiedWorkflow or DiscoverOperation directly.
+    """
+
+    def __init__(self, args):
+        """
+        Initialize legacy discover command.
+
+        Args:
+            args: Parsed command line arguments
+        """
+        import warnings
+        warnings.warn("DiscoverCommand is deprecated, use DiscoverOperation or UnifiedWorkflow",
+                      DeprecationWarning, stacklevel=2)
+
+        self.args = args
+
+        # Load configuration and components for compatibility
+        from shared.config import load_config
+        from shared.database import create_workflow_database
+        from shared.output import create_output_manager
+
+        self.config = load_config(args.config)
+        self.output = create_output_manager(
+            self.config,
+            quiet=args.quiet,
+            verbose=args.verbose,
+            no_colors=args.no_colors
+        )
+        self.database = create_workflow_database(self.config)
+
+    def execute(self) -> int:
+        """
+        Execute the legacy discover command.
+
+        Returns:
+            Exit code (0 for success, non-zero for failure)
+        """
+        try:
+            # Create a session for backward compatibility
+            session_data = {
+                'tool_name': 'smbseek-discover-legacy',
+                'config_snapshot': '{}',
+                'status': 'running'
+            }
+            session_id = self.database.dal.create_session(session_data)
+
+            # Create and execute the operation
+            operation = DiscoverOperation(
+                self.config,
+                self.output,
+                self.database,
+                session_id
+            )
+
+            result = operation.execute(
+                country=getattr(self.args, 'country', None),
+                rescan_all=getattr(self.args, 'rescan_all', False),
+                rescan_failed=getattr(self.args, 'rescan_failed', False)
+            )
+
+            # Update session
+            self.database.dal.update_session(session_id, {
+                'status': 'completed',
+                'total_targets': result.total_hosts,
+                'successful_targets': result.authenticated_hosts
+            })
+
+            # Display legacy-style results
+            self.output.subheader("Discovery Results")
+            self.output.print_if_not_quiet(f"Hosts Tested: {result.total_hosts}")
+            self.output.print_if_not_quiet(f"Successful Auth: {result.authenticated_hosts}")
+
+            if result.authenticated_hosts > 0:
+                self.output.success(f"Found {result.authenticated_hosts} accessible SMB servers")
+            else:
+                self.output.warning("No accessible SMB servers found")
+
+            return 0
+
+        except Exception as e:
+            self.output.error(f"Discovery failed: {e}")
+            if getattr(self.args, 'verbose', False):
+                import traceback
+                traceback.print_exc()
+            return 1
+
+        finally:
+            if hasattr(self.database, 'close'):
+                self.database.close()

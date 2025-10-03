@@ -56,11 +56,11 @@ cp conf/config.json.example conf/config.json
 
 ### 5. Run Your First Scan
 ```bash
-# Unified CLI - complete workflow
-./smbseek.py run --country US
+# Streamlined single command - complete workflow
+./smbseek.py --country US
 
 # With verbose output for learning
-./smbseek.py run --country US --verbose
+./smbseek.py --country US --verbose
 ```
 
 **That's it!** In a few minutes, you'll have a database full of SMB server data ready to explore.
@@ -163,10 +163,10 @@ SMBSeek stores all scan results in a SQLite database (`smbseek.db`) that automat
 - **Export data** in various formats
 
 ### The Workflow
-1. **Scan**: Query Shodan and test SMB servers
-2. **Store**: Save results automatically in the database  
-3. **Query**: Use built-in tools to explore your data
-4. **Analyze**: Generate insights and reports
+1. **Scan**: Query Shodan and test SMB servers (`./smbseek.py [--country ...]`)
+2. **Store**: Results are saved automatically in `smbseek.db`
+3. **Query**: Explore findings with `python tools/db_query.py`
+4. **Act**: Feed the data into your reporting or security processes
 
 ---
 
@@ -178,34 +178,25 @@ SMBSeek stores all scan results in a SQLite database (`smbseek.db`) that automat
 source venv/bin/activate  # Linux/macOS
 # OR: venv\Scripts\activate  # Windows
 
-# Unified CLI (recommended) - uses default countries from config.json
-./smbseek.py run
+# Single command interface - complete workflow
+./smbseek.py --country US
 
-# Or scan specific country
-./smbseek.py run --country US
-
-# Legacy approach (still supported)
-python3 tools/smb_scan.py -c US
+# Or scan with global defaults
+./smbseek.py
 ```
 
 ### Common Scan Commands
 ```bash
-# Unified CLI commands (recommended)
-./smbseek.py run                    # Uses default countries from config
-./smbseek.py run --country US       # Scan specific country
-./smbseek.py run --country US,GB,CA # Scan multiple countries
-./smbseek.py run --quiet            # Quiet mode (less output)
-./smbseek.py run --verbose          # Verbose mode (detailed information)
+# SMBSeek 3.0 single command interface
+./smbseek.py                       # Uses global defaults
+./smbseek.py --country US          # Scan specific country
+./smbseek.py --country US,GB,CA    # Scan multiple countries
+./smbseek.py --quiet               # Quiet mode (less output)
+./smbseek.py --verbose             # Verbose mode (detailed information)
 
-# Discovery only (without full workflow)
-./smbseek.py discover               # Uses config defaults
-./smbseek.py discover --country US  # Specific country
-
-# Legacy commands (still supported)
-python3 tools/smb_scan.py -c US,GB,CA  # Multiple countries
-python3 tools/smb_scan.py -q -c US     # Quiet mode
-python3 tools/smb_scan.py -v -c US     # Verbose mode
-python3 tools/smb_scan.py -t           # Global scan
+# Legacy subcommands (deprecated – emit warnings)
+./smbseek.py run --country US      # ⚠️ Deprecated
+./smbseek.py discover --country US # ⚠️ Deprecated
 ```
 
 ### Understanding the Output
@@ -289,51 +280,35 @@ python3 tools/db_query.py --all
 
 **Example 1: Find all servers in my country**
 ```bash
-# Unified CLI (recommended)
-./smbseek.py report --countries
-
-# Legacy approach
+# Database query tools
 python3 tools/db_query.py --countries
 ```
 This shows how many vulnerable servers were found in each country.
 
 **Example 2: Show me the most accessible servers**
 ```bash
-# Unified CLI (recommended)
-./smbseek.py report --summary
-
-# Legacy approach
+# Database query tools
 python3 tools/db_query.py --summary
 ```
 This displays servers with the most accessible shares, sorted by accessibility.
 
 **Example 3: Which countries have the most vulnerable servers?**
 ```bash
-# Unified CLI (recommended)
-./smbseek.py report --countries
-
-# Legacy approach
+# Database query tools
 python3 tools/db_query.py --countries
 ```
 See the geographic distribution of vulnerable SMB servers.
 
 **Example 4: What are the most common share names?**
 ```bash
-# Unified CLI (recommended)
-./smbseek.py report --shares
-
-# Legacy approach
+# Database query tools
 python3 tools/db_query.py --shares
 ```
 Discover the most frequently found share names across all servers.
 
 **Example 5: Show me servers discovered in the last week**
 ```bash
-# Unified CLI (recommended)
-./smbseek.py report --recent --days 7
-
-# Legacy approach
-python3 tools/db_query.py --statistics --days 7
+python3 tools/db_query.py --recent --days 7
 ```
 View recent scan activity and success rates.
 
@@ -387,39 +362,27 @@ python3 tools/db_maintenance.py --export
 
 ## 🔄 Common Workflows
 
-### Security Assessment Workflow
+### Security Assessment
 ```bash
-# Unified CLI (recommended)
-1. ./smbseek.py run                    # Complete workflow
-2. ./smbseek.py report --summary       # Review results
-3. ./smbseek.py report --countries     # Focus areas
-4. ./smbseek.py database --export      # Generate report
+./smbseek.py --country US              # Run discovery + share enumeration
+python3 tools/db_query.py --summary    # Review key findings
+python3 tools/db_query.py --countries  # Identify hotspots
+python3 tools/db_maintenance.py --export  # Optional: export snapshots
 ```
 
+### Broad Recon / Research
 ```bash
-# Legacy approach (still supported)
-1. python3 tools/smb_scan.py -c US
-2. python3 tools/db_query.py --summary
-3. python3 tools/db_query.py --countries
-4. python3 tools/db_maintenance.py --export
+./smbseek.py --country US,GB,CA        # Multi-country scan
+python3 tools/db_query.py --all        # Explore comprehensive data
+python3 tools/db_query.py --shares     # Investigate common share names
 ```
 
-### Educational/Research Workflow
+### Continuous Monitoring
 ```bash
-# Unified CLI (recommended)
-1. ./smbseek.py run --country US,GB,CA # Broad scan
-2. ./smbseek.py report --all           # Explore data
-3. ./smbseek.py database --query       # Custom queries
-4. ./smbseek.py database --export      # Export findings
-```
-
-### Monitoring Workflow
-```bash
-# Unified CLI (recommended)
-1. ./smbseek.py run                    # Regular scans
-2. ./smbseek.py report --statistics    # Track changes
-3. ./smbseek.py database --maintenance # Database maintenance
-4. ./smbseek.py database --backup      # Backup data
+./smbseek.py                          # Use defaults for recurring scans
+python3 tools/db_query.py --recent --days 7   # Track recent changes
+python3 tools/db_maintenance.py --maintenance  # Keep database optimized
+python3 tools/db_maintenance.py --backup       # Regular backups
 ```
 
 ---
@@ -432,8 +395,8 @@ SMBSeek uses a 3-tier system to determine which countries to scan:
 
 1. **Command Line Override** (highest priority)
    ```bash
-   ./smbseek.py run --country US        # Scan only United States
-   ./smbseek.py run --country US,GB,CA  # Scan multiple countries
+   ./smbseek.py --country US            # Scan only United States
+   ./smbseek.py --country US,GB,CA      # Scan multiple countries
    ```
 
 2. **Configuration File Defaults** (medium priority)
@@ -446,13 +409,13 @@ SMBSeek uses a 3-tier system to determine which countries to scan:
    }
    ```
    ```bash
-   ./smbseek.py run  # Uses US, GB, CA from config
+   ./smbseek.py  # Uses US, GB, CA from config
    ```
 
 3. **Global Scan Fallback** (lowest priority)
    ```bash
    # If no --country AND no countries in config.json
-   ./smbseek.py run  # Scans globally (no country filter)
+   ./smbseek.py  # Scans globally (no country filter)
    ```
 
 ### Country Code Reference
@@ -471,7 +434,7 @@ SMBSeek accepts **ISO 3166-1 alpha-2** country codes (two-letter codes):
 
 **Multiple Countries:**
 ```bash
-./smbseek.py run --country US,GB,CA,AU,DE  # Comma-separated
+./smbseek.py --country US,GB,CA,AU,DE  # Comma-separated
 ```
 
 **Note:** Shodan may return more servers for global scans but they may be less relevant to your specific needs. Country-specific scans are usually more targeted and manageable.

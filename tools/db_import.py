@@ -90,11 +90,12 @@ class SMBSeekDataImporter:
                         shares_str = row.get('shares', '').strip()
                         timestamp_str = row.get('timestamp', '').strip()
                         
-                        # Get or create server
+                        # Get or create server (country_code=None for legacy imports)
                         server_id = self.dal.get_or_create_server(
                             ip_address=ip_address,
                             country=country,
-                            auth_method=auth_method
+                            auth_method=auth_method,
+                            country_code=None
                         )
                         
                         # Parse shares if available
@@ -228,12 +229,13 @@ class SMBSeekDataImporter:
                     
                     country = result.get('country', '').strip() or None
                     auth_method = result.get('auth_method', '').strip() or None
-                    
-                    # Get or create server
+
+                    # Get or create server (country_code=None for legacy imports)
                     server_id = self.dal.get_or_create_server(
                         ip_address=ip_address,
                         country=country,
-                        auth_method=auth_method
+                        auth_method=auth_method,
+                        country_code=None
                     )
                     
                     # Import accessible shares
@@ -330,12 +332,13 @@ class SMBSeekDataImporter:
                     
                     country = server.get('country', '').strip() or None
                     auth_method = server.get('auth_method', '').strip() or None
-                    
-                    # Get or create server
+
+                    # Get or create server (country_code=None for legacy imports)
                     server_id = self.dal.get_or_create_server(
                         ip_address=ip_address,
                         country=country,
-                        auth_method=auth_method
+                        auth_method=auth_method,
+                        country_code=None
                     )
                     
                     # Import file discoveries
@@ -425,8 +428,8 @@ class SMBSeekDataImporter:
                     if not ip_address:
                         continue
                     
-                    # Get or create server
-                    server_id = self.dal.get_or_create_server(ip_address=ip_address)
+                    # Get or create server (country_code=None for legacy imports)
+                    server_id = self.dal.get_or_create_server(ip_address=ip_address, country_code=None)
                     
                     # Import vulnerability
                     self.dal.add_vulnerability(

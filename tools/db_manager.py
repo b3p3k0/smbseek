@@ -225,16 +225,17 @@ class SMBSeekDataAccessLayer:
         kwargs['updated_at'] = datetime.now().isoformat()
         return self.db.execute_update('scan_sessions', kwargs, 'id = ?', (session_id,)) > 0
     
-    def get_or_create_server(self, ip_address: str, country: Optional[str] = None, 
-                           auth_method: Optional[str] = None) -> int:
+    def get_or_create_server(self, ip_address: str, country: Optional[str] = None,
+                           auth_method: Optional[str] = None, country_code: Optional[str] = None) -> int:
         """
         Get existing server or create new one.
-        
+
         Args:
             ip_address: Server IP address
             country: Country name (optional)
             auth_method: Authentication method used (optional)
-        
+            country_code: Country code (optional)
+
         Returns:
             Server ID
         """
@@ -265,6 +266,7 @@ class SMBSeekDataAccessLayer:
             data = {
                 'ip_address': ip_address,
                 'country': country,
+                'country_code': country_code,
                 'auth_method': auth_method,
                 'first_seen': timestamp,
                 'last_seen': timestamp,

@@ -1,13 +1,14 @@
 """
-SMBSeek Access Command
+SMBSeek Access Operations
 
-Share access verification functionality adapted for the unified CLI.
+Share access verification functionality for the unified workflow.
 Tests access to SMB shares on authenticated servers.
 """
 
 import subprocess
 import csv
 import json
+import re
 import time
 import sys
 import os
@@ -16,6 +17,8 @@ from datetime import datetime
 from pathlib import Path
 from contextlib import redirect_stderr
 from io import StringIO
+from dataclasses import dataclass
+from typing import Set, List, Dict, Optional
 
 # Add project paths for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -38,37 +41,60 @@ except ImportError:
     pass
 
 
-class AccessCommand:
+@dataclass
+class AccessResult:
+    """Results from share access verification operation"""
+    accessible_hosts: int        # Count of hosts with any accessible shares
+    accessible_shares: int       # Total count of accessible share entries
+    share_details: List[Dict]    # Detailed share information
+
+
+class AccessOperation:
     """
-    SMB share access verification command.
-    
+    SMB share access verification operation.
+
     Tests access to SMB shares on previously authenticated servers.
     """
-    
-    def __init__(self, args):
+
+    # Map common NT_STATUS codes to user-friendly descriptions
+    SMB_STATUS_HINTS = {
+        'NT_STATUS_ACCESS_DENIED': 'Access denied - insufficient permissions',
+        'NT_STATUS_BAD_NETWORK_NAME': 'Share not found or unavailable',
+        'NT_STATUS_LOGON_FAILURE': 'Authentication failed',
+        'NT_STATUS_ACCOUNT_DISABLED': 'User account is disabled',
+        'NT_STATUS_ACCOUNT_LOCKED_OUT': 'User account is locked out',
+        'NT_STATUS_PASSWORD_EXPIRED': 'Password has expired',
+        'NT_STATUS_CONNECTION_REFUSED': 'Connection refused by server',
+        'NT_STATUS_HOST_UNREACHABLE': 'Host is unreachable',
+        'NT_STATUS_NETWORK_UNREACHABLE': 'Network is unreachable',
+        'NT_STATUS_IO_TIMEOUT': 'Connection timed out',
+        'NT_STATUS_PIPE_NOT_AVAILABLE': 'Named pipe not available',
+        'NT_STATUS_PIPE_BROKEN': 'Named pipe broken',
+        'NT_STATUS_OBJECT_NAME_NOT_FOUND': 'Object or path not found',
+        'NT_STATUS_SHARING_VIOLATION': 'File is in use by another process',
+        'NT_STATUS_INSUFFICIENT_RESOURCES': 'Insufficient server resources'
+    }
+
+    def __init__(self, config, output, database, session_id):
         """
-        Initialize access command.
-        
+        Initialize access operation.
+
         Args:
-            args: Parsed command line arguments
+            config: SMBSeekConfig instance
+            output: SMBSeekOutput instance
+            database: SMBSeekWorkflowDatabase instance
+            session_id: Database session ID for this operation
         """
-        self.args = args
-        
-        # Load configuration and components
-        self.config = load_config(args.config)
-        self.output = create_output_manager(
-            self.config,
-            quiet=args.quiet,
-            verbose=args.verbose,
-            no_colors=args.no_colors
-        )
-        self.database = create_workflow_database(self.config, args.verbose)
+        self.config = config
+        self.output = output
+        self.database = database
+        self.session_id = session_id
         
         # Check smbclient availability for share enumeration
         self.smbclient_available = self.check_smbclient_availability()
-        if not self.smbclient_available and not args.quiet:
-            self.output.warning("smbclient unavailable; share enumeration will be limited.")
-        
+        if not self.smbclient_available:
+            self.output.print_if_verbose("smbclient unavailable; share enumeration will be limited.")
+
         self.results = []
         self.total_targets = 0
         self.current_target = 0
@@ -83,73 +109,60 @@ class AccessCommand:
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
             return False
     
-    def execute(self) -> int:
+    def execute(self, target_ips: Set[str], recent_hours=None) -> AccessResult:
         """
-        Execute the access command.
-        
+        Execute the access verification operation.
+
+        Args:
+            target_ips: Set of IP addresses to test for share access
+            recent_hours: Filter for hosts discovered in recent hours (optional)
+
         Returns:
-            Exit code (0 for success, non-zero for failure)
+            AccessResult with share enumeration statistics
+
+        Raises:
+            RuntimeError: If SMB libraries unavailable
         """
-        try:
-            self.output.header("SMB Share Access Verification")
-            
-            if not SMB_AVAILABLE:
-                self.output.error("SMB libraries not available. Install with: pip install smbprotocol pyspnego")
-                return 1
-            
-            # Handle specific servers parameter if provided
-            if hasattr(self.args, 'servers') and self.args.servers:
-                # Parse comma-separated server list
-                target_ips = [ip.strip() for ip in self.args.servers.split(',')]
-                self.output.info(f"Testing specific servers: {', '.join(target_ips)}")
-                
-                # Filter authenticated hosts to only include specified servers
-                authenticated_hosts = self.database.get_authenticated_hosts()
-                authenticated_hosts = [host for host in authenticated_hosts if host['ip_address'] in target_ips]
-                
-                if not authenticated_hosts:
-                    self.output.warning(f"None of the specified servers are authenticated: {', '.join(target_ips)}")
-                    return 0
-            
-            # Get authenticated hosts from database with recent filtering
-            elif hasattr(self.args, 'recent') and self.args.recent is not None:
-                # Use recent parameter if specified
-                authenticated_hosts = self.database.get_authenticated_hosts(recent_hours=self.args.recent)
-                if not authenticated_hosts:
-                    self.output.warning(f"No authenticated hosts found from the last {self.args.recent} hours")
-                    self.output.info("Try increasing the --recent parameter or run discovery first")
-                    return 0
-                self.output.info(f"Using recent host filter: {self.args.recent} hours ({len(authenticated_hosts)} hosts)")
-            else:
-                # Get all authenticated hosts (existing behavior)
-                authenticated_hosts = self.database.get_authenticated_hosts()
-                if not authenticated_hosts:
-                    self.output.warning("No authenticated hosts found in database")
-                    self.output.info("Run discovery first: smbseek discover --country US")
-                    return 0
-            
-            self.total_targets = len(authenticated_hosts)
-            self.output.info(f"Testing share access on {self.total_targets} authenticated hosts")
-            
-            # Process each authenticated host
-            for host in authenticated_hosts:
-                target_result = self.process_target(host)
-                self.results.append(target_result)
-            
-            # Save results and show summary
-            self.save_results()
-            self.print_summary()
-            
-            return 0
-        
-        except Exception as e:
-            self.output.error(f"Access verification failed: {e}")
-            if self.args.verbose:
-                import traceback
-                traceback.print_exc()
-            return 1
-        finally:
-            self.database.close()
+        if not SMB_AVAILABLE:
+            raise RuntimeError("SMB libraries not available. Install with: pip install smbprotocol pyspnego")
+
+        self.output.print_if_verbose("Starting share access verification...")
+
+        # Convert target IPs to list for database queries
+        target_ip_list = list(target_ips)
+
+        # Get authenticated host information from database
+        authenticated_hosts = self.database.get_authenticated_hosts(
+            ip_filter=target_ip_list,
+            recent_hours=recent_hours
+        )
+
+        if not authenticated_hosts:
+            self.output.warning("No authenticated hosts available for share testing")
+            return AccessResult(
+                accessible_hosts=0,
+                accessible_shares=0,
+                share_details=[]
+            )
+
+        self.total_targets = len(authenticated_hosts)
+        self.output.info(f"Testing share access on {self.total_targets} authenticated hosts")
+
+        # Process each authenticated host
+        for host in authenticated_hosts:
+            target_result = self.process_target(host)
+            self.results.append(target_result)
+
+        # Save results to database using session_id and compute summary
+        accessible_hosts, accessible_shares, share_details = self._save_and_summarize_results()
+
+        self.output.print_if_verbose(f"Access verification completed: {accessible_hosts} hosts, {accessible_shares} shares")
+
+        return AccessResult(
+            accessible_hosts=accessible_hosts,
+            accessible_shares=accessible_shares,
+            share_details=share_details
+        )
     
     def parse_auth_method(self, auth_method_str):
         """Parse authentication method string to extract credentials."""
@@ -164,8 +177,7 @@ class AccessCommand:
             return "guest", "guest"
         else:
             # Default fallback
-            if self.args.verbose:
-                self.output.warning(f"Unknown auth method '{auth_method_str}', defaulting to guest/guest")
+            self.output.print_if_verbose(f"Unknown auth method '{auth_method_str}', defaulting to guest/guest")
             return "guest", "guest"
     
     def enumerate_shares(self, ip, username, password):
@@ -188,23 +200,20 @@ class AccessCommand:
             else:
                 cmd.extend(["--user", f"{username}%{password}"])
             
-            if self.args.verbose:
-                self.output.info(f"Enumerating shares: {' '.join(cmd)}")
-            
+            self.output.print_if_verbose(f"Enumerating shares: {' '.join(cmd)}")
+
             # Run command with timeout, prevent password prompts
-            result = subprocess.run(cmd, capture_output=True, text=True, 
+            result = subprocess.run(cmd, capture_output=True, text=True,
                                   timeout=15, stdin=subprocess.DEVNULL)
-            
+
             # Parse shares from output
             if result.returncode == 0 or "Sharename" in result.stdout:
                 shares = self.parse_share_list(result.stdout)
-                if self.args.verbose:
-                    self.output.info(f"Found {len(shares)} non-admin shares")
+                self.output.print_if_verbose(f"Found {len(shares)} non-admin shares")
                 return shares
-            
+
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
-            if self.args.verbose:
-                self.output.warning(f"Share enumeration failed: {str(e)}")
+            self.output.print_if_verbose(f"Share enumeration failed: {str(e)}")
         
         return []
     
@@ -215,8 +224,7 @@ class AccessCommand:
         in_share_section = False
         share_section_ended = False
         
-        if self.args.verbose:
-            self.output.info("Parsing smbclient share list output")
+        self.output.print_if_verbose("Parsing smbclient share list output")
         
         for line_num, line in enumerate(lines):
             line = line.strip()
@@ -228,8 +236,8 @@ class AccessCommand:
             # Look for the start of the shares section
             if not in_share_section and "Sharename" in line and "Type" in line:
                 in_share_section = True
-                if self.args.verbose:
-                    self.output.info(f"Found shares section header at line {line_num + 1}")
+                if True:  # verbose check handled by output methods
+                    self.output.print_if_verbose(f"Found shares section header at line {line_num + 1}")
                 continue
             
             # Skip header separator lines (dashes)
@@ -247,8 +255,8 @@ class AccessCommand:
                                         next_line.startswith("Workgroup") or
                                         next_line.startswith("Domain")):
                             share_section_ended = True
-                            if self.args.verbose:
-                                self.output.info(f"Detected end of shares section at line {line_num + 1}")
+                            if True:  # verbose check handled by output methods
+                                self.output.print_if_verbose(f"Detected end of shares section at line {line_num + 1}")
                             break
                     continue
                 
@@ -256,8 +264,8 @@ class AccessCommand:
                 elif (line.startswith("Server") or line.startswith("Workgroup") or 
                       line.startswith("Domain") or line.startswith("session request")):
                     share_section_ended = True
-                    if self.args.verbose:
-                        self.output.info(f"Found section end marker at line {line_num + 1}: {line[:30]}...")
+                    if True:  # verbose check handled by output methods
+                        self.output.print_if_verbose(f"Found section end marker at line {line_num + 1}: {line[:30]}...")
                     break
             
             # Parse share lines - only when in shares section and not ended
@@ -269,21 +277,21 @@ class AccessCommand:
                     
                     # Validate share name format (basic sanity check)
                     if not share_name.replace('_', '').replace('-', '').isalnum():
-                        if self.args.verbose:
-                            self.output.warning(f"Skipping invalid share name format: {share_name}")
+                        if True:  # verbose check handled by output methods
+                            self.output.print_if_verbose(f"Skipping invalid share name format: {share_name}")
                         continue
                     
                     # Only include non-administrative Disk shares
                     if not share_name.endswith('$') and share_type == "Disk":
                         shares.append(share_name)
-                        if self.args.verbose:
-                            self.output.info(f"Added share: {share_name}")
+                        if True:  # verbose check handled by output methods
+                            self.output.print_if_verbose(f"Added share: {share_name}")
                     elif self.args.verbose and share_name.endswith('$'):
-                        self.output.info(f"Skipped administrative share: {share_name}")
-                    elif self.args.verbose:
-                        self.output.info(f"Skipped non-disk share: {share_name} ({share_type})")
+                        self.output.print_if_verbose(f"Skipped administrative share: {share_name}")
+                    elif True:  # verbose check handled by output methods
+                        self.output.print_if_verbose(f"Skipped non-disk share: {share_name} ({share_type})")
         
-        if self.args.verbose:
+        if True:  # verbose check handled by output methods
             self.output.info(f"Parsed {len(shares)} valid shares from smbclient output")
         
         return shares
@@ -314,8 +322,8 @@ class AccessCommand:
             # Add command to list directory (test read access)
             cmd.extend(["-c", "ls"])
             
-            if self.args.verbose:
-                self.output.info(f"Testing access: {' '.join(cmd)}")
+            if True:  # verbose check handled by output methods
+                self.output.print_if_verbose(f"Testing access: {' '.join(cmd)}")
             
             # Run command with timeout
             result = subprocess.run(cmd, capture_output=True, text=True, 
@@ -326,36 +334,86 @@ class AccessCommand:
                 # Additional check: ensure we got actual file listing output
                 if "NT_STATUS" not in result.stderr and len(result.stdout.strip()) > 0:
                     access_result['accessible'] = True
-                    if self.args.verbose:
+                    if True:  # verbose check handled by output methods
                         self.output.success(f"Share '{share_name}' is accessible")
                 else:
                     access_result['error'] = f"Access denied or empty share"
-                    if self.args.verbose:
-                        self.output.warning(f"Share '{share_name}' - no readable content")
+                    if True:  # verbose check handled by output methods
+                        self.output.print_if_verbose(f"Share '{share_name}' - no readable content")
             else:
-                # Parse error from stderr
-                error_msg = result.stderr.strip() if result.stderr else "Unknown error"
-                if "NT_STATUS_ACCESS_DENIED" in error_msg:
-                    access_result['error'] = "Access denied"
-                elif "NT_STATUS_BAD_NETWORK_NAME" in error_msg:
-                    access_result['error'] = "Share not found"
-                else:
-                    access_result['error'] = f"smbclient error: {error_msg[:50]}"
-                
-                if self.args.verbose:
-                    self.output.error(f"Share '{share_name}' - {access_result['error']}")
+                # Format error using new helper
+                friendly_msg, raw_context = self._format_smbclient_error(result)
+                access_result['error'] = friendly_msg
+
+                if True:  # verbose check handled by output methods
+                    # Include raw context in brackets if it differs from the friendly message
+                    if raw_context and raw_context != friendly_msg:
+                        self.output.error(f"Share '{share_name}' - {friendly_msg} [{raw_context}]")
+                    else:
+                        self.output.error(f"Share '{share_name}' - {friendly_msg}")
                 
         except subprocess.TimeoutExpired:
             access_result['error'] = "Connection timeout"
-            if self.args.verbose:
+            if True:  # verbose check handled by output methods
                 self.output.error(f"Share '{share_name}' - timeout")
         except Exception as e:
             access_result['error'] = f"Test error: {str(e)}"
-            if self.args.verbose:
+            if True:  # verbose check handled by output methods
                 self.output.error(f"Share '{share_name}' - test error")
         
         return access_result
-    
+
+    def _format_smbclient_error(self, result):
+        """
+        Format smbclient error messages with NT_STATUS codes and context.
+
+        Args:
+            result: subprocess.CompletedProcess with stdout, stderr, returncode
+
+        Returns:
+            tuple: (friendly_message, raw_combined_context)
+        """
+        # Combine and trim stdout/stderr
+        stderr_trimmed = result.stderr.strip() if result.stderr else ""
+        stdout_trimmed = result.stdout.strip() if result.stdout else ""
+
+        # Combine both streams with separator when both exist
+        if stderr_trimmed and stdout_trimmed:
+            combined_output = f"{stderr_trimmed} | {stdout_trimmed}"
+        elif stderr_trimmed:
+            combined_output = stderr_trimmed
+        elif stdout_trimmed:
+            combined_output = stdout_trimmed
+        else:
+            combined_output = ""
+
+        # If no output at all, provide exit code info
+        if not combined_output:
+            return (f"smbclient exited with code {result.returncode} and produced no output", "")
+
+        # Look for NT_STATUS codes using regex
+        nt_status_match = re.search(r'(NT_STATUS_[A-Z_]+)', combined_output)
+
+        if nt_status_match:
+            status_code = nt_status_match.group(1)
+            hint = self.SMB_STATUS_HINTS.get(status_code, "SMB protocol error")
+
+            # Find context around the status code (up to 80 chars before/after)
+            start_pos = max(0, nt_status_match.start() - 80)
+            end_pos = min(len(combined_output), nt_status_match.end() + 80)
+            context = combined_output[start_pos:end_pos]
+
+            # Trim to ~160 chars total if needed
+            if len(context) > 160:
+                context = context[:157] + "..."
+
+            friendly_msg = f"{hint} ({status_code}) - {context}"
+            return (friendly_msg, combined_output)
+        else:
+            # No NT_STATUS found, provide generic error with trimmed output
+            trimmed_output = combined_output[:160] + "..." if len(combined_output) > 160 else combined_output
+            return (f"smbclient error: {trimmed_output}", combined_output)
+
     def process_target(self, host_record):
         """Process a single host target for share access testing."""
         ip = host_record['ip_address']
@@ -367,7 +425,7 @@ class AccessCommand:
         
         # Parse authentication method
         username, password = self.parse_auth_method(auth_method)
-        if self.args.verbose:
+        if True:  # verbose check handled by output methods
             self.output.info(f"Using auth: {username}/{password if password else '[blank]'}")
         
         # Create result structure
@@ -450,7 +508,66 @@ class AccessCommand:
             target_result['error'] = str(e)
         
         return target_result
-    
+
+    def _save_and_summarize_results(self):
+        """
+        Save results to database using session_id and compute summary statistics.
+
+        Returns:
+            Tuple of (accessible_hosts, accessible_shares, share_details)
+        """
+        try:
+            # Save results to database using the workflow's session_id
+            from db_manager import SMBSeekDataAccessLayer
+            dal = SMBSeekDataAccessLayer(self.database.db_manager)
+
+            stored_count = 0
+            accessible_hosts = set()
+            total_accessible_shares = 0
+            share_details = []
+
+            for result in self.results:
+                # Skip results with errors
+                if 'error' in result or 'validation_error' in result:
+                    continue
+
+                ip_address = result.get('ip_address')
+                if not ip_address:
+                    continue
+
+                # Store share access results using the session_id
+                accessible_shares = result.get('accessible_shares', [])
+                if accessible_shares:
+                    accessible_hosts.add(ip_address)
+                    total_accessible_shares += len(accessible_shares)
+
+                    # Store each accessible share in database
+                    for share_name in accessible_shares:
+                        share_record = {
+                            'ip_address': ip_address,
+                            'share_name': share_name,
+                            'accessible': True,
+                            'session_id': self.session_id
+                        }
+                        # Store in database
+                        if self.database.store_share_access_result(self.session_id, share_record):
+                            stored_count += 1
+
+                        # Add to details list
+                        share_details.append({
+                            'ip_address': ip_address,
+                            'share_name': share_name,
+                            'accessible': True
+                        })
+
+            self.output.print_if_verbose(f"Stored {stored_count} share access results to database")
+
+            return len(accessible_hosts), total_accessible_shares, share_details
+
+        except Exception as e:
+            self.output.error(f"Failed to save results to database: {e}")
+            return 0, 0, []
+
     def check_port(self, ip, port, timeout):
         """Check if a specific port is open on the target."""
         try:
@@ -475,19 +592,19 @@ class AccessCommand:
                 if 'error' in result or 'validation_error' in result:
                     if 'validation_error' in result:
                         validation_errors += 1
-                        if self.args.verbose:
-                            self.output.warning(f"Skipping storage of {result.get('ip_address', 'unknown')} due to validation error")
+                        if True:  # verbose check handled by output methods
+                            self.output.print_if_verbose(f"Skipping storage of {result.get('ip_address', 'unknown')} due to validation error")
                     continue
                     
                 if self.database.store_share_access_result(session_id, result):
                     stored_count += 1
                 else:
-                    if self.args.verbose:
-                        self.output.warning(f"Failed to store results for {result.get('ip_address', 'unknown')}")
+                    if True:  # verbose check handled by output methods
+                        self.output.print_if_verbose(f"Failed to store results for {result.get('ip_address', 'unknown')}")
             
             valid_results_count = len([r for r in self.results if 'error' not in r and 'validation_error' not in r])
-            if self.args.verbose:
-                self.output.info(f"Stored {stored_count}/{valid_results_count} valid results to database")
+            if True:  # verbose check handled by output methods
+                self.output.print_if_verbose(f"Stored {stored_count}/{valid_results_count} valid results to database")
                 if validation_errors > 0:
                     self.output.warning(f"Excluded {validation_errors} results due to validation errors")
             
@@ -537,3 +654,113 @@ class AccessCommand:
         if total_shares_found > 0:
             access_rate = (total_accessible_shares / total_shares_found) * 100
             self.output.info(f"Share access rate: {access_rate:.1f}%")
+
+
+# Compatibility layer for old AccessCommand interface
+class AccessCommand:
+    """
+    DEPRECATED: Legacy compatibility wrapper for AccessOperation.
+    Use workflow.UnifiedWorkflow or AccessOperation directly.
+    """
+
+    def __init__(self, args):
+        """
+        Initialize legacy access command.
+
+        Args:
+            args: Parsed command line arguments
+        """
+        import warnings
+        warnings.warn("AccessCommand is deprecated, use AccessOperation or UnifiedWorkflow",
+                      DeprecationWarning, stacklevel=2)
+
+        self.args = args
+
+        # Load configuration and components for compatibility
+        from shared.config import load_config
+        from shared.database import create_workflow_database
+        from shared.output import create_output_manager
+
+        self.config = load_config(args.config)
+        self.output = create_output_manager(
+            self.config,
+            quiet=args.quiet,
+            verbose=args.verbose,
+            no_colors=args.no_colors
+        )
+        self.database = create_workflow_database(self.config, args.verbose)
+
+    def execute(self) -> int:
+        """
+        Execute the legacy access command.
+
+        Returns:
+            Exit code (0 for success, non-zero for failure)
+        """
+        try:
+            # Create a session for backward compatibility
+            session_data = {
+                'tool_name': 'smbseek-access-legacy',
+                'config_snapshot': '{}',
+                'status': 'running'
+            }
+            session_id = self.database.dal.create_session(session_data)
+
+            # Get target IPs based on legacy arguments
+            if hasattr(self.args, 'servers') and self.args.servers:
+                target_ips = set(ip.strip() for ip in self.args.servers.split(','))
+            else:
+                # Get all authenticated hosts from database
+                authenticated_hosts = self.database.get_authenticated_hosts(
+                    recent_hours=getattr(self.args, 'recent', None)
+                )
+                target_ips = set(host['ip_address'] for host in authenticated_hosts)
+
+            if not target_ips:
+                self.output.warning("No authenticated hosts found in database")
+                self.output.info("Run discovery first")
+                return 0
+
+            # Create and execute the operation
+            operation = AccessOperation(
+                self.config,
+                self.output,
+                self.database,
+                session_id
+            )
+
+            result = operation.execute(
+                target_ips=target_ips,
+                recent_hours=getattr(self.args, 'recent', None)
+            )
+
+            # Update session
+            self.database.dal.update_session(session_id, {
+                'status': 'completed',
+                'total_targets': len(target_ips),
+                'successful_targets': result.accessible_hosts
+            })
+
+            # Display legacy-style results
+            self.output.subheader("Access Verification Results")
+            self.output.print_if_not_quiet(f"Hosts Tested: {len(target_ips)}")
+            self.output.print_if_not_quiet(f"Accessible Hosts: {result.accessible_hosts}")
+            self.output.print_if_not_quiet(f"Accessible Shares: {result.accessible_shares}")
+
+            if result.accessible_shares > 0:
+                self.output.success(f"Found {result.accessible_shares} accessible shares on {result.accessible_hosts} hosts")
+            else:
+                self.output.warning("No accessible shares found")
+
+            return 0
+
+        except Exception as e:
+            self.output.error(f"Access verification failed: {e}")
+            if getattr(self.args, 'verbose', False):
+                import traceback
+                traceback.print_exc()
+            return 1
+
+        finally:
+            if hasattr(self.database, 'close'):
+                self.database.close()

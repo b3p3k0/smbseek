@@ -24,7 +24,7 @@ First, let's see what data you currently have:
 
 ```bash
 # Check your current database status  
-./smbseek.py database query --summary
+python3 tools/db_query.py --summary
 ```
 
 This will show you how many hosts and shares are currently tracked.
@@ -155,7 +155,7 @@ python3 tools/add_share_summary_view.py
 **Possible causes**:
 1. **No share discovery yet**: Run SMBSeek discovery first:
    ```bash
-   ./smbseek.py run --country US
+   ./smbseek.py --country US
    ```
 
 2. **No accessible shares found**: This is normal if targets have strong security. The enhancement will still show total shares discovered.
@@ -212,7 +212,7 @@ SELECT 'Total Accessible Shares', SUM(accessible_shares_count) FROM v_host_share
 Run SMBSeek scans regularly to keep share data current:
 ```bash
 # Rescan existing hosts every 30 days (default)
-./smbseek.py run --country US --rescan-all
+./smbseek.py --country US --rescan-all
 ```
 
 ### 2. Data Backup

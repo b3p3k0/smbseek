@@ -15,26 +15,27 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'commands'))
 
-from commands.access import AccessCommand
+from commands.access import AccessOperation
 
 
 class TestShareParsing(unittest.TestCase):
     """Test cases for share parsing logic."""
-    
+
     def setUp(self):
         """Set up test fixtures."""
-        # Create mock args object
-        self.mock_args = Mock()
-        self.mock_args.config = 'conf/config.json'
-        self.mock_args.quiet = False
-        self.mock_args.verbose = True
-        self.mock_args.no_colors = True
-        
-        # Mock external dependencies
-        with patch('commands.access.load_config'), \
-             patch('commands.access.create_output_manager'), \
-             patch('commands.access.create_workflow_database'):
-            self.access_cmd = AccessCommand(self.mock_args)
+        # Create mock components for AccessOperation
+        self.mock_config = Mock()
+        self.mock_output = Mock()
+        self.mock_database = Mock()
+        self.session_id = 1
+
+        # Create AccessOperation with mocks
+        self.access_op = AccessOperation(
+            config=self.mock_config,
+            output=self.mock_output,
+            database=self.mock_database,
+            session_id=self.session_id
+        )
     
     def test_basic_share_parsing(self):
         """Test basic share parsing with standard Windows format."""
@@ -54,7 +55,7 @@ class TestShareParsing(unittest.TestCase):
         ---------            -------
         """
         
-        shares = self.access_cmd.parse_share_list(smbclient_output)
+        shares = self.access_op.parse_share_list(smbclient_output)
         
         # Should only include non-administrative disk shares
         expected_shares = ['shared', 'documents']
@@ -74,7 +75,7 @@ class TestShareParsing(unittest.TestCase):
         ---------            -------
         """
         
-        shares = self.access_cmd.parse_share_list(smbclient_output)
+        shares = self.access_op.parse_share_list(smbclient_output)
         
         self.assertEqual(shares, [])
         self.assertEqual(len(shares), 0)
@@ -99,7 +100,7 @@ class TestShareParsing(unittest.TestCase):
         WORKGROUP            SAMBA-SERVER
         """
         
-        shares = self.access_cmd.parse_share_list(smbclient_output)
+        shares = self.access_op.parse_share_list(smbclient_output)
         
         expected_shares = ['public', 'homes', 'netlogon', 'sysvol']
         self.assertEqual(shares, expected_shares)
@@ -121,7 +122,7 @@ class TestShareParsing(unittest.TestCase):
         Domain=[WORKGROUP] OS=[Unix] Server=[Samba/4.13.3]
         """
         
-        shares = self.access_cmd.parse_share_list(smbclient_output)
+        shares = self.access_op.parse_share_list(smbclient_output)
         
         expected_shares = ['volume1', 'backup', 'media']
         self.assertEqual(shares, expected_shares)
@@ -144,7 +145,7 @@ class TestShareParsing(unittest.TestCase):
         Server stuff here
         """
         
-        shares = self.access_cmd.parse_share_list(smbclient_output)
+        shares = self.access_op.parse_share_list(smbclient_output)
         
         # Should only get the valid share
         expected_shares = ['validshare']
@@ -171,7 +172,7 @@ class TestShareParsing(unittest.TestCase):
         WORKGROUP           SERVER1
         """
         
-        shares = self.access_cmd.parse_share_list(smbclient_output)
+        shares = self.access_op.parse_share_list(smbclient_output)
         
         # Should stop parsing after the shares section
         expected_shares = ['share1', 'share2']
@@ -185,7 +186,7 @@ class TestShareParsing(unittest.TestCase):
         SMB1 disabled -- no workgroup available
         """
         
-        shares = self.access_cmd.parse_share_list(smbclient_output)
+        shares = self.access_op.parse_share_list(smbclient_output)
         
         self.assertEqual(shares, [])
         self.assertEqual(len(shares), 0)
@@ -207,7 +208,7 @@ class TestShareParsing(unittest.TestCase):
         ---------            -------
         """
         
-        shares = self.access_cmd.parse_share_list(smbclient_output)
+        shares = self.access_op.parse_share_list(smbclient_output)
         
         # Should only include shares with valid names (alphanumeric plus - and _)
         expected_shares = ['valid_share', 'valid-share', 'ValidShare', '123share']
@@ -234,7 +235,7 @@ class TestShareParsing(unittest.TestCase):
         WORKGROUP           FILE-SERVER
         """
         
-        shares = self.access_cmd.parse_share_list(smbclient_output)
+        shares = self.access_op.parse_share_list(smbclient_output)
         
         # Should be exactly 2 shares, no more
         expected_shares = ['data', 'backup']
@@ -252,16 +253,19 @@ class TestShareValidation(unittest.TestCase):
     
     def setUp(self):
         """Set up test fixtures."""
-        self.mock_args = Mock()
-        self.mock_args.config = 'conf/config.json'
-        self.mock_args.quiet = False
-        self.mock_args.verbose = True
-        self.mock_args.no_colors = True
-        
-        with patch('commands.access.load_config'), \
-             patch('commands.access.create_output_manager'), \
-             patch('commands.access.create_workflow_database'):
-            self.access_cmd = AccessCommand(self.mock_args)
+        # Create mock components for AccessOperation
+        self.mock_config = Mock()
+        self.mock_output = Mock()
+        self.mock_database = Mock()
+        self.session_id = 1
+
+        # Create AccessOperation with mocks
+        self.access_op = AccessOperation(
+            config=self.mock_config,
+            output=self.mock_output,
+            database=self.mock_database,
+            session_id=self.session_id
+        )
     
     def test_valid_share_counts(self):
         """Test validation passes with correct share counts."""

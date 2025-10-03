@@ -58,6 +58,7 @@ conf/config.bak
 *.db-shm
 *.db-wal
 *.db.backup*
+smbseek.db.*
 *.db.cleanup_backup_*
 db_backups/
 
