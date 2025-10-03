@@ -1,8 +1,8 @@
 # SMBSeek - Unified SMB Security Toolkit
 
-**A defensive security toolkit for identifying and analyzing SMB servers with weak authentication**
+**A defensive security toolkit for identifying SMB servers with weak authentication**
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/username/smbseek)
+[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/username/smbseek)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## Quick Start
@@ -20,8 +20,8 @@ pip install -r requirements.txt
 cp conf/config.json.example conf/config.json
 # Edit conf/config.json with your Shodan API key
 
-# Run complete security assessment
-./smbseek.py run --country US
+# Run complete security assessment (discovery + share enumeration)
+./smbseek.py --country US
 ```
 
 <details>
@@ -127,22 +127,22 @@ See `conf/config.json.example` for complete configuration options with detailed 
 
 ## Basic Usage
 
-### Primary Workflow
+### Unified Workflow
 
-The `run` command executes the complete SMB security assessment workflow:
+SMBSeek 3.0+ uses a simplified single-command interface that performs discovery and share enumeration in one operation:
 
 ```bash
 # Scan United States for vulnerable SMB servers
-./smbseek.py run --country US
+./smbseek.py --country US
 
 # Scan with verbose output
-./smbseek.py run --country US --verbose
+./smbseek.py --country US --verbose
 
-# Interactive mode with review points between steps
-./smbseek.py run --country US --pause-between-steps
+# Scan globally (uses configuration defaults)
+./smbseek.py
 
-# Force rescan of all previously discovered hosts
-./smbseek.py run --country US --rescan-all
+# Quiet mode (minimal output)
+./smbseek.py --country US --quiet
 ```
 
 ### Available Countries
@@ -158,93 +158,65 @@ SMBSeek supports country-specific scanning using two-letter country codes:
 
 Or scan globally by omitting the `--country` parameter.
 
-## Advanced Usage
+## Migration from 2.x
 
-### Individual Commands
+**⚠️ BREAKING CHANGES in SMBSeek 3.0.0**
 
-For specific tasks, use individual subcommands:
+The multi-command CLI has been replaced by a single streamlined entry point. Legacy subcommands now emit deprecation warnings before forwarding to the unified workflow.
 
+**Old (deprecated):**
 ```bash
-# Discovery and authentication testing only
-./smbseek.py discover --country US
-
-# Share access verification on previously discovered hosts
-./smbseek.py access --recent 24
-
-# File enumeration and collection
-./smbseek.py collect --download --max-files 5
-
-# Generate intelligence reports
-./smbseek.py report --executive --output report.txt
-
-# Analyze authentication failures
-./smbseek.py analyze --recent 7
+./smbseek.py run --country US       # ⚠️ Deprecated, forwards to unified workflow
+./smbseek.py discover --country US  # ⚠️ Deprecated, forwards to unified workflow
+./smbseek.py collect --download     # ❌ Removed
+./smbseek.py report --executive     # ❌ Removed
 ```
 
-### Workflow Customization
-
+**New (3.0+):**
 ```bash
-# Test only servers discovered in last 6 hours
-./smbseek.py run --country US --recent 6
-
-# Download files during collection phase
-./smbseek.py run --country US --download --max-files 3
-
-# Include previously failed hosts in rescan
-./smbseek.py run --country US --rescan-failed
+./smbseek.py --country US           # ✅ Unified discovery + share enumeration
 ```
+
+**What's Changed:**
+- **Single workflow** – discovery and share access run sequentially in one command
+- **File collection removed** – rely on third-party tooling if you need downloads
+- **Reporting removed** – query `smbseek.db` or `tools/db_query.py` for insights
+- **Database subcommands removed** – use `tools/db_*.py` scripts directly
 
 ## Database Operations
 
-SMBSeek stores all results in a SQLite database for analysis and reporting:
+SMBSeek stores all results in a SQLite database (`smbseek.db`). Use the `tools/` scripts for analysis and maintenance:
 
-### Query Operations
 ```bash
-# View summary statistics
-./smbseek.py db query --summary
+# Summary statistics
+python tools/db_query.py --summary
 
-# Show geographic distribution
-./smbseek.py db query --countries
+# Country distribution
+python tools/db_query.py --countries
 
-# Display all available reports
-./smbseek.py db query --all
-```
+# Database health / backups
+python tools/db_maintenance.py --info
+python tools/db_maintenance.py --backup
 
-### Maintenance Operations
-```bash
-# Create database backup
-./smbseek.py db backup
-
-# Show database information
-./smbseek.py db info
-
-# Run database maintenance
-./smbseek.py db maintenance
-```
-
-### Import Operations
-```bash
-# Import legacy CSV data
-./smbseek.py db import --csv legacy_results.csv
-
-# Import JSON data
-./smbseek.py db import --json scan_results.json
+# Import historical data
+python tools/db_import.py --csv legacy_results.csv
 ```
 
 ## Architecture Overview
 
-SMBSeek 2.0 uses a unified CLI architecture with modular backend components:
+SMBSeek 3.0 uses a streamlined single-command interface with modular backend components:
 
 ```
-smbseek.py                    # Main CLI entry point
-├── commands/                 # Individual subcommand implementations
-│   ├── run.py               # Complete workflow orchestration
+smbseek.py                    # Main CLI entry point (single command)
+├── workflow.py              # Unified workflow orchestration
+├── commands/                 # Backend operation modules
 │   ├── discover.py          # Shodan queries + SMB authentication
 │   ├── access.py            # Share enumeration and access testing
-│   ├── collect.py           # File discovery with ransomware detection
-│   ├── analyze.py           # Failure analysis and pattern recognition
-│   ├── report.py            # Intelligence reporting and summaries
-│   └── database.py          # Database operations and queries
+│   ├── run.py               # Legacy workflow (backward compatibility)
+│   ├── collect.py           # Deprecated (stub)
+│   ├── analyze.py           # Deprecated (stub)
+│   ├── report.py            # Deprecated (stub)
+│   └── database.py          # Deprecated (stub)
 ├── shared/                  # Common utilities and configuration
 ├── tools/                   # Database maintenance and query tools
 └── conf/                    # Configuration files
@@ -252,12 +224,12 @@ smbseek.py                    # Main CLI entry point
 
 ### Database Schema
 
-Core tables store comprehensive scan results:
-- **smb_servers**: Server information (IP, country, authentication method)
-- **scan_sessions**: Individual scanning operation tracking
-- **share_access**: SMB share accessibility results
-- **vulnerabilities**: Security findings and assessments
-- **failure_logs**: Connection failures for analysis
+Core tables store discovery and access results:
+- **smb_servers**: Server metadata (IP, country, authentication method, last seen)
+- **scan_sessions**: Unified workflow executions
+- **share_access**: Share accessibility findings per session
+- **failure_logs**: Connection failures for later analysis
+- **vulnerabilities** / **file_manifests**: Legacy tables retained for backward compatibility
 
 ## Troubleshooting
 
@@ -289,12 +261,12 @@ pip install -r requirements.txt
 # General help
 ./smbseek.py --help
 
-# Command-specific help
-./smbseek.py run --help
-./smbseek.py discover --help
-
 # Verbose output for debugging
-./smbseek.py run --country US --verbose
+./smbseek.py --country US --verbose
+
+# Database tools help
+python tools/db_query.py --help
+python tools/db_maintenance.py --help
 ```
 
 ## Development

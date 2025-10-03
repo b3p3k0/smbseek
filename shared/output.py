@@ -97,6 +97,35 @@ class SMBSeekOutput:
         """Print workflow completion message."""
         self.print_if_not_quiet(f"\n{self.GREEN}🎉 {message}{self.RESET}")
 
+    def print_rollup_summary(self, summary):
+        """
+        Print rollup summary of workflow results.
+
+        Args:
+            summary: WorkflowSummary instance with scan results
+        """
+        self.header("SMBSeek Scan Summary")
+
+        # Display query used
+        if hasattr(summary, 'shodan_query') and summary.shodan_query:
+            self.print_if_not_quiet(f"🌍 Shodan Query: {summary.shodan_query}")
+
+        # Display core statistics
+        self.print_if_not_quiet(f"📊 Hosts Scanned: {getattr(summary, 'hosts_scanned', 0)}")
+        self.print_if_not_quiet(f"🔓 Hosts Accessible: {getattr(summary, 'hosts_accessible', 0)}")
+        self.print_if_not_quiet(f"📁 Accessible Shares: {getattr(summary, 'accessible_shares', 0)}")
+
+        # Display database location
+        self.print_if_not_quiet(f"💾 Results saved to: smbseek.db")
+
+        # Success indicator
+        if getattr(summary, 'accessible_shares', 0) > 0:
+            self.success(f"Scan completed: Found {summary.accessible_shares} accessible shares")
+        elif getattr(summary, 'hosts_accessible', 0) > 0:
+            self.success(f"Scan completed: {summary.hosts_accessible} hosts accessible (no enumerable shares)")
+        else:
+            self.info("Scan completed: No accessible SMB resources found")
+
 
 class SMBSeekReporter:
     """

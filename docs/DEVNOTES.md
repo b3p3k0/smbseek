@@ -2,28 +2,33 @@
 
 **Document Purpose**: Essential reference for AI agents developing new tools and maintaining the SMBSeek security toolkit  
 **Target Audience**: AI assistants working on cybersecurity tool development  
-**Last Updated**: August 20, 2025  
-**Status**: Production-ready toolkit transitioning to unified CLI architecture
+**Last Updated**: October 2, 2025
+**Status**: Production-ready toolkit with streamlined single-command interface (SMBSeek 3.0)
 
 ---
 
 ## Executive Overview
 
+> **Legacy Content Notice**
+> Portions of this guide describe historical SMBSeek components (collect/report subcommands, multi-tool workflows). Those sections are retained for archival reference. When implementing new features in SMBSeek 3.x, follow the single-command architecture described in the "Current Architecture" sections.
+
 ### What SMBSeek Is
 
-SMBSeek is a defensive security toolkit for identifying and analyzing SMB servers with weak authentication. **Architecture is transitioning from separate tools to unified CLI with subcommands** while maintaining database-first data storage.
+SMBSeek is a defensive security toolkit for identifying and analyzing SMB servers with weak authentication. **Architecture has been streamlined to a single-command interface** while maintaining database-first data storage and modular backend components.
 
-**Current Architecture (Legacy)**:
+**Current Architecture (SMBSeek 3.0)**:
 ```
-tools/smb_scan.py → database → tools/smb_peep.py → database → tools/smb_snag.py
+./smbseek.py --country US         # Complete discovery + share enumeration workflow
+python tools/db_query.py         # Database queries and analysis
+python tools/db_maintenance.py   # Database operations and backups
 ```
 
-**Target Architecture (Unified CLI)**:
+**Legacy Components (Deprecated)**:
 ```
-smbseek scan --country US         # Discovery and analysis
-smbseek analyze --vulnerabilities # Vulnerability assessment  
-smbseek collect --download        # File collection
-smbseek report --executive        # Intelligence reporting
+./smbseek.py run --country US     # ⚠️ Deprecated, shows warning
+./smbseek.py discover --country US # ⚠️ Deprecated, shows warning
+./smbseek.py collect              # ⚠️ Removed (functionality discontinued)
+./smbseek.py report               # ⚠️ Removed (use database tools directly)
 ```
 
 ### Critical Success Factors for AI Agents
@@ -47,25 +52,35 @@ smbseek report --executive        # Intelligence reporting
 
 ### Core Architectural Principles
 
-#### 1. Modular Tool Architecture
-**Philosophy**: "Do one thing well" - separate tools for each major function
+#### 1. Unified Interface with Modular Backend
+**Philosophy**: "Simple interface, powerful backend" - single command with modular operation classes
 
 **Implementation Standard**:
 ```python
-# Each tool follows identical structure:
-class ToolName:
-    def __init__(self, config):
-        self.config = load_configuration()
-        self.setup_output_control()
-        self.setup_color_management()
-    
-    def main_operation(self):
-        # Tool-specific functionality
+# SMBSeek 3.0 Architecture:
+# Main entry point with unified interface
+./smbseek.py --country US
+
+# Backend operation classes:
+class DiscoverOperation:
+    def __init__(self, config, output, database, session_id):
+        self.config = config
+        self.output = output
+        self.database = database
+        self.session_id = session_id
+
+    def execute(self, country=None, rescan_all=False, rescan_failed=False):
+        # Discovery functionality
+        return DiscoverResult(...)
+
+class AccessOperation:
+    def __init__(self, config, output, database, session_id):
+        # Same interface pattern
         pass
-    
-    def cleanup_and_exit(self):
-        # Standardized cleanup
-        pass
+
+    def execute(self, target_ips, recent_hours=None):
+        # Access testing functionality
+        return AccessResult(...)
 ```
 
 #### 2. Configuration-Driven Design
@@ -700,18 +715,15 @@ shared/
 
 ### Streamlined by Default, Pauseable if Needed
 
-**Primary Use Case (99%)**: End-to-end workflow execution
+**Primary Use Case (99%)**: Streamlined single command execution
 ```bash
-smbseek scan --country US    # Runs scan → analyze → report automatically
+./smbseek.py --country US    # Runs discovery → share enumeration automatically
 ```
 
-**Advanced Use Case (1%)**: Step-by-step with review
+**Advanced Use Case (1%)**: Verbose output for monitoring
 ```bash
-smbseek scan --country US --pause-between-steps
-# Pauses after scan for review
-# Prompts: "Continue with analysis? [Y/n]"
-# Pauses after analysis for review  
-# Prompts: "Continue with reporting? [Y/n]"
+./smbseek.py --country US --verbose  # Shows detailed progress
+./smbseek.py --country US --quiet    # Minimal output
 ```
 
 **Implementation Pattern**:
@@ -867,7 +879,7 @@ def register_parser(subparsers):
 
 #### 2. Command Line Argument Parsing Bug  
 **Issue**: Global flags (--verbose, --quiet, --no-colors) only worked in global position, not subcommand position  
-**Symptom**: `./smbseek.py run --verbose --country US` failed with "unrecognized arguments"  
+**Symptom**: `./smbseek.py --verbose --country US` failed with "unrecognized arguments"  
 **Root Cause**: Subcommand parsers didn't inherit common arguments  
 **Fix**: Created `add_common_arguments()` helper function and added to all subcommand parsers  
 **Lesson**: Consistent argument inheritance is critical for user experience
@@ -991,14 +1003,15 @@ GROUP BY s.ip_address, s.country, s.auth_method, s.first_seen, s.last_seen;
 
 **CLI Command Answer**:
 ```bash
-# Generate executive report filtered to specific session or timeframe
-smbseek report --detailed --output ip_192.168.1.100_report.json
-
-# Query database directly for immediate results  
-smbseek db query --summary
+# Query database directly for immediate results
+python3 tools/db_query.py --summary
 
 # For advanced users: Use database tools directly
 python3 tools/db_query.py --custom-query "SELECT * FROM smb_servers WHERE ip_address = '192.168.1.100'"
+
+# SMBSeek 3.0: Single command interface with database tools
+./smbseek.py --country US  # Discovery + enumeration
+python3 tools/db_query.py --detailed --output report.json
 ```
 
 **Implementation Note**: This common query pattern should be added as a built-in report option in future versions.
@@ -1015,11 +1028,11 @@ python3 tools/db_query.py --custom-query "SELECT * FROM smb_servers WHERE ip_add
 
 **Problem**: The unified CLI required `--country` argument, violating the "streamlined by default" design principle documented earlier in this guide.
 
-**User Experience Issue**: 
+**User Experience Issue**:
 ```bash
-$ ./smbseek.py run
-usage: smbseek run [-h] --country CODE [options...]
-smbseek run: error: the following arguments are required: --country
+$ ./smbseek.py
+usage: smbseek [-h] --country CODE [options...]
+smbseek: error: the following arguments are required: --country
 ```
 
 **Design Principle Violation**: This contradicted the established "Progressive Disclosure Pattern" - simple interface with sensible defaults that reveals complexity as needed.
@@ -1129,16 +1142,17 @@ db.execute_query('UPDATE smb_servers SET scan_count = 1 WHERE scan_count = "scan
 - No breaking changes to existing config.json structure
 - Graceful handling of missing countries section
 
-#### Database Integration  
+#### Database Integration
 - Session data now records both original argument and resolved countries
 - Audit trail shows whether scan used explicit countries or defaults
+- **Enhanced Country Accuracy**: Individual hosts now store their actual Shodan-derived country data instead of CLI argument, providing precise location information even in multi-country scans
 - Compatible with existing database schema
 
 ### Testing and Validation
 
 #### Behavior Verification
-1. **Default Behavior**: `./smbseek.py run` → Uses config.json countries
-2. **Explicit Override**: `./smbseek.py run --country US` → Uses specified country
+1. **Default Behavior**: `./smbseek.py` → Uses config.json countries or global scan
+2. **Explicit Override**: `./smbseek.py --country US` → Uses specified country
 3. **Global Fallback**: No countries in config → Global scan
 4. **Multiple Countries**: `--country US,GB,CA` → Scans all specified
 

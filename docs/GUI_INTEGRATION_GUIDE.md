@@ -4,6 +4,9 @@
 **Last Updated**: 2025-01-04  
 **SMBSeek Version**: 1.0+  
 
+> **Note**
+> This guide documents the legacy multi-command workflow (SMBSeek 1.x/2.x). Modern SMBSeek (3.x) exposes a single command entry point (`./smbseek.py [--country ...]`). Use this guide only when integrating with historical releases or maintaining backward compatibility.
+
 ## Overview
 
 SMBSeek provides comprehensive share discovery and accessibility data through its database API. This guide covers the enhanced share tracking functionality and provides practical examples for GUI integration.
@@ -49,7 +52,20 @@ database.close()
 Returns all hosts where SMB authentication succeeded (may or may not have accessible shares).
 
 ```python
+# Get all authenticated hosts
 authenticated_hosts = database.get_authenticated_hosts()
+
+# Get authenticated hosts from the last 24 hours
+recent_hosts = database.get_authenticated_hosts(recent_hours=24)
+
+# Get authenticated hosts filtered by specific IP addresses
+filtered_hosts = database.get_authenticated_hosts(ip_filter=['192.168.1.1', '10.0.0.5'])
+
+# Combine time and IP filtering
+specific_recent_hosts = database.get_authenticated_hosts(
+    recent_hours=12,
+    ip_filter=['192.168.1.1']
+)
 # Similar format but includes hosts without accessible shares
 ```
 

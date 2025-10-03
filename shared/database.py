@@ -8,7 +8,7 @@ workflow management, and intelligent scanning logic.
 import sqlite3
 import os
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Iterable
 import sys
 
 # Add tools directory to path for DatabaseManager import
@@ -345,30 +345,46 @@ class SMBSeekWorkflowDatabase:
                 'updated_servers': 0
             }
     
-    def get_authenticated_hosts(self, recent_hours: Optional[int] = None) -> List[Dict]:
+    def get_authenticated_hosts(self, recent_hours: Optional[int] = None,
+                               ip_filter: Optional[Iterable[str]] = None) -> List[Dict]:
         """
         Get hosts that have successful SMB authentication.
-        
+
         Args:
             recent_hours: Only return hosts discovered/scanned in the last N hours
-        
+            ip_filter: Only return hosts with IP addresses in this list
+
         Returns:
             List of host dictionaries with authentication information
         """
         try:
+            # Normalize ip_filter to list of unique non-empty strings
+            if ip_filter is not None:
+                ip_list = [ip.strip() for ip in ip_filter if ip and ip.strip()]
+                ip_list = list(dict.fromkeys(ip_list))  # Remove duplicates while preserving order
+                if not ip_list:
+                    return []  # Early return for empty filter, avoid DB round-trip
+            else:
+                ip_list = None
+
             # Build query with optional time filtering
             base_query = """
                 SELECT DISTINCT s.ip_address, s.country, s.auth_method, s.last_seen,
                        GROUP_CONCAT(sa.share_name) as accessible_shares
                 FROM smb_servers s
-                LEFT JOIN share_access sa ON s.id = sa.server_id 
+                LEFT JOIN share_access sa ON s.id = sa.server_id
                 WHERE s.auth_method IS NOT NULL AND (sa.accessible = 1 OR sa.accessible IS NULL)
             """
-            
+
             params = []
             if recent_hours is not None:
                 base_query += " AND s.last_seen >= datetime('now', 'localtime', '-{} hours')".format(int(recent_hours))
-            
+
+            if ip_list is not None:
+                placeholders = ",".join("?" for _ in ip_list)
+                base_query += f" AND s.ip_address IN ({placeholders})"
+                params.extend(ip_list)
+
             base_query += " GROUP BY s.ip_address, s.country, s.auth_method, s.last_seen"
             
             hosts = self.db_manager.execute_query(base_query, tuple(params))
