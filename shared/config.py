@@ -76,6 +76,12 @@ class SMBSeekConfig:
                 "rate_limit_delay": 3,
                 "share_access_delay": 7
             },
+            "discovery": {
+                "max_concurrent_hosts": 1
+            },
+            "access": {
+                "max_concurrent_hosts": 1
+            },
             "security": {
                 "ransomware_indicators": [
                     "!want_to_cry.txt",
@@ -219,6 +225,24 @@ class SMBSeekConfig:
     def get_share_access_delay(self) -> int:
         """Get delay between share access tests on same host."""
         return self.get("connection", "share_access_delay", 7)
+
+    def get_max_concurrent_hosts(self) -> int:
+        """Get maximum concurrent hosts for access operations with validation."""
+        value = self.get("access", "max_concurrent_hosts", 1)
+        if isinstance(value, int) and value >= 1:
+            return value
+        else:
+            # Fallback to 1 for invalid values (zero, negative, or non-integer)
+            return 1
+
+    def get_max_concurrent_discovery_hosts(self) -> int:
+        """Get maximum concurrent hosts for discovery operations with validation."""
+        value = self.get("discovery", "max_concurrent_hosts", 1)
+        if isinstance(value, int) and value >= 1:
+            return value
+        else:
+            # Fallback to 1 for invalid values (zero, negative, or non-integer)
+            return 1
     
     def resolve_target_countries(self, args_country: Optional[str] = None) -> list:
         """

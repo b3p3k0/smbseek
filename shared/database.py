@@ -228,7 +228,10 @@ class SMBSeekWorkflowDatabase:
                 print(f"  • Recently scanned (skipping): {stats['recently_scanned']}")
             if stats['failed_hosts'] > 0:
                 print(f"  • Previously failed: {stats['failed_hosts']}")
-        
+
+        if stats.get('forced_hosts', 0) > 0:
+            print(f"  • Forced hosts: {stats['forced_hosts']}")
+
         print(f"  • Will scan: {stats['to_scan']}")
         
         if stats['to_scan'] == 0:

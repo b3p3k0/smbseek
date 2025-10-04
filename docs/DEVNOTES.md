@@ -1210,6 +1210,161 @@ This implementation demonstrates successful application of the "streamlined by d
 
 ---
 
+## Forced Host Override Implementation (October 2025)
+
+### Context and Motivation
+
+**Problem**: Operators needed a way to force scanning of specific hosts that would normally be skipped by database filtering (recently scanned hosts, previously failed hosts, etc.) for targeted investigation or verification.
+
+**User Requirement**: "I want to rescan this specific IP even though it was scanned yesterday" - common during incident response or when investigating specific targets.
+
+### Implementation Approach
+
+#### CLI Interface Enhancement
+
+Added `--force-hosts` argument with robust validation:
+
+```bash
+# Basic usage
+./smbseek.py --force-hosts 192.168.1.100
+
+# Multiple IPs (comma-separated)
+./smbseek.py --force-hosts 192.168.1.100,10.0.0.50
+
+# Multiple IPs (repeated flag)
+./smbseek.py --force-hosts 192.168.1.100 --force-hosts 10.0.0.50
+
+# IPv6 support
+./smbseek.py --force-hosts ::1,2001:db8::1
+
+# Combined with other options
+./smbseek.py --country US --force-hosts 192.168.1.100 --verbose
+```
+
+**Input Validation**:
+- IPv4 and IPv6 address validation using `ipaddress.ip_address()`
+- Hostname rejection with clear error message
+- Empty input detection and graceful error handling
+- Automatic whitespace stripping and duplicate removal
+- Support for both comma-separated and repeated flag usage
+
+#### Technical Implementation
+
+**Discovery Bypass Logic**:
+1. **Post-Shodan Union**: Forced hosts added to Shodan results with placeholder metadata
+2. **Database Filter Bypass**: Forced hosts re-added after database filtering to ensure they bypass recency/failure filters
+3. **Metadata Safety**: Placeholder metadata (`country_name: 'Unknown'`) for hosts not in Shodan results
+4. **Stats Tracking**: Forced hosts counted separately and displayed in scan statistics
+
+**Example Output**:
+```
+📊 Scan Planning:
+  • Total from Shodan: 1000
+  • Already known: 150
+  • New discoveries: 850
+  • Recently scanned (skipping): 50
+  • Forced hosts: 2
+  • Will scan: 852
+```
+
+### Key Features and Safeguards
+
+#### 1. Bypass Only Database Filtering
+- **Scope**: Forced hosts bypass database recency/failure filters only
+- **Preserved**: Still subject to rate limiting, exclusion lists, and authentication testing
+- **Security**: Maintains all safety mechanisms except database-driven skipping
+
+#### 2. Metadata Preservation
+- **Shodan Data**: Hosts found in both Shodan and forced list preserve original Shodan metadata
+- **Placeholder Data**: Hosts only in forced list get minimal placeholder metadata
+- **Downstream Safety**: Ensures access stage has sufficient metadata for processing
+
+#### 3. Input Validation and Error Handling
+```python
+def validate_force_hosts(value):
+    """Validate and parse force hosts argument."""
+    if not value.strip():
+        raise argparse.ArgumentTypeError("forced hosts cannot be empty")
+
+    ips = set()
+    for ip_str in value.split(','):
+        ip_str = ip_str.strip()
+        if not ip_str:
+            continue
+        try:
+            ipaddress.ip_address(ip_str)
+            ips.add(ip_str)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"'{ip_str}' is not a valid IP address (hostnames not supported)")
+
+    return ips
+```
+
+#### 4. Legacy Compatibility
+- **Backward Compatibility**: Default behavior unchanged when no forced hosts specified
+- **Legacy Commands**: Updated `DiscoverCommand` to handle forced hosts parameter
+- **Graceful Fallback**: Missing `force_hosts` attribute handled with `getattr(args, 'force_hosts', set())`
+
+### Testing Coverage
+
+#### CLI Validation Tests
+- Valid IPv4/IPv6 addresses
+- Invalid IP formats and helpful error messages
+- Hostname rejection
+- Empty input handling
+- Comma-separated and repeated flag usage
+- Whitespace and duplicate handling
+
+#### Discovery Integration Tests
+- Forced hosts bypass database filtering
+- Placeholder metadata creation for non-Shodan hosts
+- Metadata preservation for hosts in both Shodan and forced lists
+- Stats accuracy with forced hosts included
+- Default behavior when no forced hosts specified
+
+### Usage Examples and Limitations
+
+#### Common Use Cases
+```bash
+# Incident response - rescan suspicious host
+./smbseek.py --force-hosts 192.168.1.suspicious
+
+# Verification after remediation
+./smbseek.py --force-hosts 10.0.0.100 --verbose
+
+# Targeted investigation
+./smbseek.py --country US --force-hosts 172.16.1.50,172.16.1.51
+```
+
+#### Limitations and Guidelines
+- **IP Literals Only**: No hostname resolution support (by design for security)
+- **Rate Limiting**: Still subject to global rate limits configured in `connection.rate_limit_delay`
+- **Exclusion Lists**: Forced hosts may still be excluded if they match exclusion patterns
+- **Authentication Testing**: All forced hosts still go through normal SMB authentication testing
+
+#### Best Practices
+- Use sparingly for targeted investigation rather than bulk rescanning
+- Combine with `--verbose` to see forced host processing details
+- Check scan statistics to verify forced hosts were processed
+- Consider rate limiting impact when forcing many hosts
+
+### Integration Points
+
+#### Workflow Pipeline
+- **CLI Parsing**: `smbseek.py` validates and normalizes forced hosts to set
+- **Workflow Layer**: `workflow.py` passes forced hosts to discovery operation
+- **Discovery Logic**: `commands/discover.py` implements bypass and metadata handling
+- **Database Display**: `shared/database.py` shows forced host count in statistics
+
+#### Code Architecture
+- **Minimal Impact**: No changes to core database filtering logic
+- **Clean Integration**: Forced hosts flow naturally through existing access stage
+- **Consistent Patterns**: Follows established SMBSeek configuration and output patterns
+
+This implementation provides operators with precise control over host scanning while maintaining all security safeguards and integrating cleanly with the existing SMBSeek architecture.
+
+---
+
 ## User Experience Enhancement: Database Filtering Feedback (August 2025)
 
 ### Context and Problem
@@ -1502,6 +1657,92 @@ if org_normalized is not None and isp_normalized is not None:
 4. **Caching**: Cache recent database queries to speed up repeated operations
 
 This enhancement demonstrates the importance of user experience in command-line tools and provides a template for adding feedback to other long-running operations throughout the SMBSeek toolkit.
+
+---
+
+## Performance Tuning and Concurrency Configuration
+
+### Host-Level Concurrency Settings
+
+SMBSeek 3.0 introduces configurable concurrency for both discovery and access phases through dedicated configuration settings:
+
+**Configuration**:
+```json
+{
+  "discovery": {
+    "max_concurrent_hosts": 1
+  },
+  "access": {
+    "max_concurrent_hosts": 1
+  }
+}
+```
+
+**Default Behavior**:
+- Default value: `1` (preserves current sequential behavior)
+- Valid range: Any positive integer ≥ 1
+- Invalid values (zero, negative, non-integer) automatically fall back to 1
+
+### Discovery Phase Concurrency
+
+**Configuration**: `discovery.max_concurrent_hosts` controls parallel host authentication testing during the discovery phase.
+
+**Performance Considerations**:
+- **Rate Limiting Interaction**: Increasing discovery concurrency amplifies total SMB authentication attempts per unit time
+- **Network Load**: Multiple concurrent authentication attempts increase network utilization
+- **Target Impact**: Higher discovery concurrency may overwhelm target SMB servers
+- **Resource Usage**: Each concurrent discovery thread uses memory and network connections
+
+**Critical Scaling Guidance**:
+- **IMPORTANT**: When increasing `discovery.max_concurrent_hosts`, also increase `connection.rate_limit_delay` proportionally
+- **Example**: `discovery.max_concurrent_hosts: 5` should use `connection.rate_limit_delay: 8-15` (vs default 3)
+- **Conservative Start**: Begin with `discovery.max_concurrent_hosts: 2-3` and monitor network/target impact
+- **Monitoring**: Watch for connection failures or timeouts that may indicate excessive load
+
+### Access Phase Concurrency
+
+**Configuration**: `access.max_concurrent_hosts` controls parallel share enumeration and testing during the access phase.
+
+**Performance Considerations**:
+- **Host Count Interplay**: Increasing `max_concurrent_hosts` effectively multiplies share-level requests since each host still sleeps between shares according to `connection.share_access_delay`
+- **Rate Limiting Impact**: With `max_concurrent_hosts=5` and `share_access_delay=7`, five hosts each testing shares will create overlapping delays, effectively increasing total throughput
+- **Resource Usage**: More concurrent hosts increase memory usage and network connections
+- **Target Server Load**: Higher concurrency may impact target servers more significantly
+
+**Scaling Recommendations**:
+- **Conservative Scaling**: Start with 2-3 concurrent hosts and monitor performance
+- **Adjust Delays**: Consider increasing `connection.rate_limit_delay` and `connection.share_access_delay` when using higher concurrency
+- **Network Capacity**: Ensure local network can handle increased concurrent connections
+- **Target Consideration**: Be mindful of impact on target SMB servers
+
+**Thread Safety**:
+- All console output is thread-safe with atomic message printing
+- Database operations remain single-threaded on the main thread
+- Individual host processing is fully isolated between threads
+
+**Example Configurations**:
+```json
+// Conservative scaling
+{
+  "discovery": {"max_concurrent_hosts": 2},
+  "access": {"max_concurrent_hosts": 2},
+  "connection": {"rate_limit_delay": 5, "share_access_delay": 10}
+}
+
+// Moderate scaling
+{
+  "discovery": {"max_concurrent_hosts": 3},
+  "access": {"max_concurrent_hosts": 5},
+  "connection": {"rate_limit_delay": 8, "share_access_delay": 12}
+}
+
+// Aggressive scaling
+{
+  "discovery": {"max_concurrent_hosts": 5},
+  "access": {"max_concurrent_hosts": 10},
+  "connection": {"rate_limit_delay": 15, "share_access_delay": 15}
+}
+```
 
 ---
 
