@@ -530,10 +530,15 @@ class AccessOperation:
                     self.output.success(f"Share {i}/{len(shares)}: {share_name} - accessible")
                 else:
                     message = access_result.get('error', 'not accessible')
-                    if message and 'NT_STATUS_ACCESS_DENIED' in message and 'Access denied - share does not allow anonymous/guest browsing' in message:
-                        self.output.warning(f"Share {i}/{len(shares)}: {share_name} - {message}")
-                    else:
+                    if message and 'NT_STATUS_ACCESS_DENIED' in message:
+                        # All access denied errors = clean yellow warning
+                        self.output.warning(f"Share {i}/{len(shares)}: {share_name} - Access Failed")
+                    elif 'timeout' in message.lower() or 'connection' in message.lower():
+                        # Technical failures = red error with details
                         self.output.error(f"Share {i}/{len(shares)}: {share_name} - {message}")
+                    else:
+                        # Other failures = clean yellow warning
+                        self.output.warning(f"Share {i}/{len(shares)}: {share_name} - Access Failed")
                 
                 # Rate limiting between share tests
                 if share_name != shares[-1]:  # Don't delay after the last share
