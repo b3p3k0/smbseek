@@ -247,10 +247,56 @@ class TestShareParsing(unittest.TestCase):
         self.assertNotIn('Windows Server 2019', shares)
         self.assertNotIn('WORKGROUP', shares)
 
+    def test_share_names_starting_with_headers(self):
+        """Test parsing shares with names starting with header keywords (regression test)."""
+        smbclient_output = """
+        Sharename       Type      Comment
+        ---------       ----      -------
+        Backup          Disk      Backup Files
+        Server          Disk      New Moodle Server
+        Software        Disk      Software Distribution
+        Workgroup       Disk      Department Files
+        Domain          Disk      Domain Storage
+        IPC$            IPC       Remote IPC
+
+        SMB1 disabled -- no workgroup available
+
+        Some random noise here
+        Domain=[EXAMPLE] OS=[Windows] Server=[Windows Server 2019]
+
+        Server               Comment
+        ---------            -------
+        FILE-SERVER         Main File Server
+
+        Workgroup            Master
+        ---------            -------
+        WORKGROUP           FILE-SERVER
+
+        Domain               Controller
+        ---------            -------
+        EXAMPLE.COM         DC01.EXAMPLE.COM
+        """
+
+        shares = self.access_op.parse_share_list(smbclient_output)
+
+        # Should parse all legitimate disk shares in order, including those starting with header keywords
+        expected_shares = ['Backup', 'Server', 'Software', 'Workgroup', 'Domain']
+        self.assertEqual(shares, expected_shares)
+        self.assertEqual(len(shares), 5)
+
+        # Ensure shares starting with header keywords are included
+        self.assertIn('Server', shares)
+        self.assertIn('Workgroup', shares)
+        self.assertIn('Domain', shares)
+
+        # Ensure parser stopped at actual headers and didn't include them
+        self.assertNotIn('FILE-SERVER', shares)
+        self.assertNotIn('DC01.EXAMPLE.COM', shares)
+
 
 class TestShareValidation(unittest.TestCase):
     """Test cases for share validation logic in process_target."""
-    
+
     def setUp(self):
         """Set up test fixtures."""
         # Create mock components for AccessOperation
@@ -289,6 +335,29 @@ class TestShareValidation(unittest.TestCase):
         # Test for shares not in original list
         invalid_shares = [s for s in accessible_shares if s not in shares_found]
         self.assertEqual(invalid_shares, ['share3'])
+
+
+class TestAccessConfiguration(unittest.TestCase):
+    """Test cases for access configuration integration."""
+
+    def test_max_concurrent_hosts_config_integration(self):
+        """Test that AccessOperation properly uses max_concurrent_hosts config."""
+        # This test verifies that the new configuration integrates with existing parsing
+        from shared.config import SMBSeekConfig
+
+        # Test that config contains the new access section
+        config = SMBSeekConfig()
+        access_section = config.get("access")
+        self.assertIsNotNone(access_section, "Should have access configuration section")
+
+        # Test that max_concurrent_hosts is available and defaults to 1
+        max_concurrent = config.get_max_concurrent_hosts()
+        self.assertEqual(max_concurrent, 1, "Should default to 1 concurrent host")
+
+        # Test with custom config
+        config.config["access"]["max_concurrent_hosts"] = 5
+        max_concurrent = config.get_max_concurrent_hosts()
+        self.assertEqual(max_concurrent, 5, "Should return configured value")
 
 
 if __name__ == '__main__':

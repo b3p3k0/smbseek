@@ -499,6 +499,145 @@ class TestDiscoverMetadata(unittest.TestCase):
             # Cache should be cleared
             self.assertEqual(self.discover_op._host_lookup_cache, {})
 
+    def test_forced_hosts_bypass_database_filtering(self):
+        """Test that forced hosts bypass database filtering and appear in results."""
+        # Set up forced hosts
+        force_hosts = {'192.168.1.100', '10.0.0.50'}
+
+        # Mock Shodan to return different IPs
+        mock_shodan_results = {'192.168.1.1', '192.168.1.2'}
+
+        # Mock database filtering to exclude the forced host that's in Shodan results
+        mock_filtered_hosts = {'192.168.1.1'}  # Excludes forced host in Shodan
+        filter_stats = {
+            'total_from_shodan': 2,
+            'new_hosts': 1,
+            'known_hosts': 1,
+            'to_scan': 1,
+            'recently_scanned': 1,
+            'failed_hosts': 0
+        }
+
+        with patch.object(self.discover_op, '_query_shodan', return_value=mock_shodan_results), \
+             patch.object(self.discover_op, '_apply_exclusions', side_effect=lambda x: x), \
+             patch.object(self.discover_op, '_build_targeted_query', return_value="test query"), \
+             patch.object(self.discover_op, '_test_smb_authentication', return_value=[]), \
+             patch.object(self.discover_op, '_save_to_database', return_value=set()), \
+             patch('commands.discover.SMB_AVAILABLE', True):
+
+            # Mock database filtering
+            self.mock_database.get_new_hosts_filter.return_value = (mock_filtered_hosts, filter_stats)
+            self.mock_database.display_scan_statistics = Mock()
+
+            # Execute with forced hosts
+            result = self.discover_op.execute(country='US', force_hosts=force_hosts)
+
+            # Verify forced hosts are added to Shodan results
+            expected_shodan_union = mock_shodan_results.union(force_hosts)
+
+            # Verify both forced hosts have placeholder metadata
+            self.assertIn('192.168.1.100', self.discover_op.shodan_host_metadata)
+            self.assertIn('10.0.0.50', self.discover_op.shodan_host_metadata)
+            self.assertEqual(self.discover_op.shodan_host_metadata['192.168.1.100']['country_name'], 'Unknown')
+            self.assertEqual(self.discover_op.shodan_host_metadata['10.0.0.50']['country_name'], 'Unknown')
+
+            # Verify stats were updated with forced hosts
+            call_args = self.mock_database.display_scan_statistics.call_args
+            updated_stats = call_args[0][0]
+            self.assertEqual(updated_stats['forced_hosts'], 2)
+            self.assertEqual(updated_stats['to_scan'], 3)  # 1 filtered + 2 forced
+
+    def test_forced_hosts_not_in_shodan_results(self):
+        """Test that forced hosts not in Shodan results are still processed."""
+        # Forced host completely separate from Shodan results
+        force_hosts = {'172.16.0.100'}
+
+        # Mock Shodan results
+        mock_shodan_results = {'192.168.1.1', '192.168.1.2'}
+
+        with patch.object(self.discover_op, '_query_shodan', return_value=mock_shodan_results), \
+             patch.object(self.discover_op, '_apply_exclusions', side_effect=lambda x: x), \
+             patch.object(self.discover_op, '_build_targeted_query', return_value="test query"), \
+             patch.object(self.discover_op, '_test_smb_authentication', return_value=[]), \
+             patch.object(self.discover_op, '_save_to_database', return_value=set()), \
+             patch('commands.discover.SMB_AVAILABLE', True):
+
+            # Mock database filtering to return all Shodan results
+            filter_stats = {'total_from_shodan': 2, 'to_scan': 2}
+            self.mock_database.get_new_hosts_filter.return_value = (mock_shodan_results, filter_stats)
+            self.mock_database.display_scan_statistics = Mock()
+
+            # Execute with forced hosts
+            result = self.discover_op.execute(country='US', force_hosts=force_hosts)
+
+            # Verify forced host has placeholder metadata
+            self.assertIn('172.16.0.100', self.discover_op.shodan_host_metadata)
+            self.assertEqual(self.discover_op.shodan_host_metadata['172.16.0.100']['country_name'], 'Unknown')
+
+    def test_forced_hosts_preserve_existing_metadata(self):
+        """Test that forced hosts with existing Shodan metadata preserve that metadata."""
+        # Forced host that's also in Shodan results
+        force_hosts = {'192.168.1.1'}
+
+        # Mock Shodan results with metadata
+        mock_shodan_results = {'192.168.1.1', '192.168.1.2'}
+
+        def mock_query_shodan(country):
+            """Mock that populates metadata like real _query_shodan"""
+            # Populate metadata for Shodan results
+            self.discover_op.shodan_host_metadata['192.168.1.1'] = {
+                'country_name': 'United States',
+                'country_code': 'US'
+            }
+            self.discover_op.shodan_host_metadata['192.168.1.2'] = {
+                'country_name': 'Canada',
+                'country_code': 'CA'
+            }
+            return mock_shodan_results
+
+        with patch.object(self.discover_op, '_query_shodan', side_effect=mock_query_shodan), \
+             patch.object(self.discover_op, '_apply_exclusions', side_effect=lambda x: x), \
+             patch.object(self.discover_op, '_build_targeted_query', return_value="test query"), \
+             patch.object(self.discover_op, '_test_smb_authentication', return_value=[]), \
+             patch.object(self.discover_op, '_save_to_database', return_value=set()), \
+             patch('commands.discover.SMB_AVAILABLE', True):
+
+            # Mock database filtering to exclude the forced host initially
+            mock_filtered_hosts = {'192.168.1.2'}  # Excludes the forced host
+            filter_stats = {'total_from_shodan': 2, 'to_scan': 1}
+            self.mock_database.get_new_hosts_filter.return_value = (mock_filtered_hosts, filter_stats)
+            self.mock_database.display_scan_statistics = Mock()
+
+            # Execute with forced hosts
+            result = self.discover_op.execute(country='US', force_hosts=force_hosts)
+
+            # Verify forced host preserves original Shodan metadata (not replaced with Unknown)
+            self.assertEqual(self.discover_op.shodan_host_metadata['192.168.1.1']['country_name'], 'United States')
+            self.assertEqual(self.discover_op.shodan_host_metadata['192.168.1.1']['country_code'], 'US')
+
+    def test_no_forced_hosts_default_behavior(self):
+        """Test that when no forced hosts provided, behavior is unchanged."""
+        mock_shodan_results = {'192.168.1.1', '192.168.1.2'}
+
+        with patch.object(self.discover_op, '_query_shodan', return_value=mock_shodan_results), \
+             patch.object(self.discover_op, '_apply_exclusions', side_effect=lambda x: x), \
+             patch.object(self.discover_op, '_build_targeted_query', return_value="test query"), \
+             patch.object(self.discover_op, '_test_smb_authentication', return_value=[]), \
+             patch.object(self.discover_op, '_save_to_database', return_value=set()), \
+             patch('commands.discover.SMB_AVAILABLE', True):
+
+            filter_stats = {'total_from_shodan': 2, 'to_scan': 2}
+            self.mock_database.get_new_hosts_filter.return_value = (mock_shodan_results, filter_stats)
+            self.mock_database.display_scan_statistics = Mock()
+
+            # Execute without forced hosts
+            result = self.discover_op.execute(country='US')
+
+            # Verify no forced_hosts key in stats
+            call_args = self.mock_database.display_scan_statistics.call_args
+            updated_stats = call_args[0][0]
+            self.assertNotIn('forced_hosts', updated_stats)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -13,6 +13,7 @@ import time
 import sys
 import os
 import socket
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from contextlib import redirect_stderr
@@ -148,10 +149,45 @@ class AccessOperation:
         self.total_targets = len(authenticated_hosts)
         self.output.info(f"Testing share access on {self.total_targets} authenticated hosts")
 
-        # Process each authenticated host
-        for host in authenticated_hosts:
-            target_result = self.process_target(host)
-            self.results.append(target_result)
+        # Get concurrency setting and clamp pool size
+        max_concurrent = self.config.get_max_concurrent_hosts()
+        max_workers = min(max_concurrent, len(authenticated_hosts) or 1)
+
+        # Preallocate results array for deterministic ordering
+        results_by_index = [None] * len(authenticated_hosts)
+
+        # Process hosts with controlled concurrency
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks with index tracking
+            future_to_index = {}
+            for index, host in enumerate(authenticated_hosts):
+                future = executor.submit(self.process_target, host)
+                future_to_index[future] = index
+
+            # Collect results in deterministic order
+            for future in future_to_index:
+                index = future_to_index[future]
+                try:
+                    result = future.result()
+                    results_by_index[index] = result
+                except Exception as e:
+                    # Create error result with same structure as process_target
+                    host = authenticated_hosts[index]
+                    error_result = {
+                        'ip_address': host.get('ip_address', 'unknown'),
+                        'country': host.get('country', 'unknown'),
+                        'auth_method': host.get('auth_method', 'unknown'),
+                        'timestamp': get_standard_timestamp(),
+                        'error': f"Processing failed: {str(e)}",
+                        'shares_found': [],
+                        'accessible_shares': [],
+                        'share_details': []
+                    }
+                    results_by_index[index] = error_result
+                    self.output.error(f"Failed to process {host.get('ip_address', 'unknown')}: {str(e)}")
+
+        # Store results maintaining original order
+        self.results = results_by_index
 
         # Save results to database using session_id and compute summary
         accessible_hosts, accessible_shares, share_details = self._save_and_summarize_results()
@@ -217,13 +253,29 @@ class AccessOperation:
         
         return []
     
+    def _is_section_header(self, line):
+        """Check if line is an actual smbclient section header, not a share name."""
+        line_lower = line.strip().lower()
+
+        # Check for actual section headers with required keywords
+        if line_lower.startswith("server") and "comment" in line_lower:
+            return True
+        elif line_lower.startswith("workgroup") and "master" in line_lower:
+            return True
+        elif line_lower.startswith("domain") and "controller" in line_lower:
+            return True
+        elif line_lower.startswith("session request"):
+            return True
+
+        return False
+
     def parse_share_list(self, smbclient_output):
         """Parse smbclient -L output to extract non-administrative share names."""
         shares = []
         lines = smbclient_output.split('\n')
         in_share_section = False
         share_section_ended = False
-        
+
         self.output.print_if_verbose("Parsing smbclient share list output")
         
         for line_num, line in enumerate(lines):
@@ -246,23 +298,22 @@ class AccessOperation:
             
             # Detect end of shares section - more robust logic
             if in_share_section:
-                # Empty line followed by non-share content indicates end
+                # Empty line followed by section header indicates end
                 if line == "":
-                    # Check if next non-empty line looks like end of shares
+                    # Check if next non-empty line is a section header
                     for next_line in lines[line_num + 1:line_num + 3]:  # Check next 2 lines
                         next_line = next_line.strip()
-                        if next_line and (next_line.startswith("Server") or 
-                                        next_line.startswith("Workgroup") or
-                                        next_line.startswith("Domain")):
-                            share_section_ended = True
-                            if True:  # verbose check handled by output methods
-                                self.output.print_if_verbose(f"Detected end of shares section at line {line_num + 1}")
-                            break
+                        if next_line:  # Skip empty lines when scanning ahead
+                            if self._is_section_header(next_line):
+                                share_section_ended = True
+                                if True:  # verbose check handled by output methods
+                                    self.output.print_if_verbose(f"Detected end of shares section at line {line_num + 1}")
+                                break
+                            break  # Stop at first non-empty line
                     continue
-                
+
                 # Direct detection of section end markers
-                elif (line.startswith("Server") or line.startswith("Workgroup") or 
-                      line.startswith("Domain") or line.startswith("session request")):
+                elif self._is_section_header(line):
                     share_section_ended = True
                     if True:  # verbose check handled by output methods
                         self.output.print_if_verbose(f"Found section end marker at line {line_num + 1}: {line[:30]}...")
@@ -286,7 +337,7 @@ class AccessOperation:
                         shares.append(share_name)
                         if True:  # verbose check handled by output methods
                             self.output.print_if_verbose(f"Added share: {share_name}")
-                    elif self.args.verbose and share_name.endswith('$'):
+                    elif share_name.endswith('$'):
                         self.output.print_if_verbose(f"Skipped administrative share: {share_name}")
                     elif True:  # verbose check handled by output methods
                         self.output.print_if_verbose(f"Skipped non-disk share: {share_name} ({share_type})")
@@ -346,11 +397,16 @@ class AccessOperation:
                 access_result['error'] = friendly_msg
 
                 if True:  # verbose check handled by output methods
-                    # Include raw context in brackets if it differs from the friendly message
-                    if raw_context and raw_context != friendly_msg:
-                        self.output.error(f"Share '{share_name}' - {friendly_msg} [{raw_context}]")
+                    is_expected_denial = raw_context is None and 'NT_STATUS_ACCESS_DENIED' in friendly_msg
+
+                    if is_expected_denial:
+                        self.output.warning(f"Share '{share_name}' - {friendly_msg}")
                     else:
-                        self.output.error(f"Share '{share_name}' - {friendly_msg}")
+                        # Include raw context in brackets if it differs from the friendly message
+                        if raw_context and raw_context != friendly_msg:
+                            self.output.error(f"Share '{share_name}' - {friendly_msg} [{raw_context}]")
+                        else:
+                            self.output.error(f"Share '{share_name}' - {friendly_msg}")
                 
         except subprocess.TimeoutExpired:
             access_result['error'] = "Connection timeout"
@@ -393,6 +449,13 @@ class AccessOperation:
 
         # Look for NT_STATUS codes using regex
         nt_status_match = re.search(r'(NT_STATUS_[A-Z_]+)', combined_output)
+
+        # Friendly formatting for expected anonymous/guest access denials
+        if nt_status_match and nt_status_match.group(1) == 'NT_STATUS_ACCESS_DENIED':
+            combined_lower = combined_output.lower()
+            if 'tree connect failed' in combined_lower and 'anonymous login successful' in combined_lower:
+                friendly_msg = 'Access denied - share does not allow anonymous/guest browsing (NT_STATUS_ACCESS_DENIED)'
+                return (friendly_msg, None)
 
         if nt_status_match:
             status_code = nt_status_match.group(1)
@@ -466,7 +529,11 @@ class AccessOperation:
                     target_result['accessible_shares'].append(share_name)
                     self.output.success(f"Share {i}/{len(shares)}: {share_name} - accessible")
                 else:
-                    self.output.error(f"Share {i}/{len(shares)}: {share_name} - {access_result.get('error', 'not accessible')}")
+                    message = access_result.get('error', 'not accessible')
+                    if message and 'NT_STATUS_ACCESS_DENIED' in message and 'Access denied - share does not allow anonymous/guest browsing' in message:
+                        self.output.warning(f"Share {i}/{len(shares)}: {share_name} - {message}")
+                    else:
+                        self.output.error(f"Share {i}/{len(shares)}: {share_name} - {message}")
                 
                 # Rate limiting between share tests
                 if share_name != shares[-1]:  # Don't delay after the last share

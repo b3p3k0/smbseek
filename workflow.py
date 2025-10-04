@@ -159,7 +159,8 @@ class UnifiedWorkflow:
             discover_result = discover_op.execute(
                 country=getattr(args, 'country', None),
                 rescan_all=getattr(args, 'rescan_all', False),
-                rescan_failed=getattr(args, 'rescan_failed', False)
+                rescan_failed=getattr(args, 'rescan_failed', False),
+                force_hosts=getattr(args, 'force_hosts', set())
             )
 
             self.output.success(f"Discovery completed: {discover_result.total_hosts} hosts processed, {len(discover_result.host_ips)} authenticated")

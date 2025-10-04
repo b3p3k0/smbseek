@@ -155,6 +155,56 @@ def test_unified_interface():
     return all(results)
 
 
+def test_force_hosts_parsing():
+    """Test --force-hosts argument parsing and validation."""
+    print("\n🔍 Testing Force Hosts Parsing")
+
+    def check_force_hosts_parsing(cmd, expect_success):
+        """Check if force hosts parsing works as expected."""
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            success = result.returncode == 0
+
+            if success == expect_success:
+                print(f"✅ PASS: {' '.join(cmd)}")
+                return True
+            else:
+                print(f"❌ FAIL: {' '.join(cmd)}")
+                if result.stderr:
+                    print(f"   Error: {result.stderr.strip()}")
+                return False
+
+        except subprocess.TimeoutExpired:
+            print(f"⏰ TIMEOUT: {' '.join(cmd)}")
+            return False
+        except Exception as e:
+            print(f"💥 ERROR: {' '.join(cmd)} - {e}")
+            return False
+
+    tests = [
+        # Valid IP addresses
+        (["./smbseek.py", "--force-hosts", "192.168.1.1", "--help"], True),
+        (["./smbseek.py", "--force-hosts", "192.168.1.1,10.0.0.1", "--help"], True),
+        (["./smbseek.py", "--force-hosts", "192.168.1.1, 10.0.0.1", "--help"], True),  # Spaces
+        (["./smbseek.py", "--force-hosts", "::1", "--help"], True),  # IPv6
+        (["./smbseek.py", "--force-hosts", "::1,2001:db8::1", "--help"], True),  # IPv6 list
+        (["./smbseek.py", "--force-hosts", "192.168.1.1", "--force-hosts", "10.0.0.1", "--help"], True),  # Repeated
+
+        # Invalid inputs
+        (["./smbseek.py", "--force-hosts", "", "--help"], False),  # Empty
+        (["./smbseek.py", "--force-hosts", "invalid", "--help"], False),  # Invalid IP
+        (["./smbseek.py", "--force-hosts", "google.com", "--help"], False),  # Hostname
+        (["./smbseek.py", "--force-hosts", "192.168.1.256", "--help"], False),  # Invalid IPv4
+        (["./smbseek.py", "--force-hosts", "192.168.1.1,invalid", "--help"], False),  # Mixed valid/invalid
+    ]
+
+    results = []
+    for cmd, expect_success in tests:
+        results.append(check_force_hosts_parsing(cmd, expect_success))
+
+    return all(results)
+
+
 def test_standalone_deprecated_scripts():
     """Test standalone deprecated command scripts."""
     print("\n🔍 Testing Standalone Deprecated Scripts")
@@ -208,6 +258,7 @@ def main():
         ("Global Flags", test_global_flags),
         ("Deprecation Warnings", test_deprecation_warnings),
         ("Unified Interface", test_unified_interface),
+        ("Force Hosts Parsing", test_force_hosts_parsing),
         ("Standalone Scripts", test_standalone_deprecated_scripts),
     ]
 

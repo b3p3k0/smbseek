@@ -7,6 +7,7 @@ for the unified SMBSeek CLI.
 
 import os
 import json
+import threading
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 import sys
@@ -27,7 +28,7 @@ class SMBSeekOutput:
     def __init__(self, config, quiet: bool = False, verbose: bool = False, no_colors: bool = False):
         """
         Initialize output manager.
-        
+
         Args:
             config: SMBSeekConfig instance
             quiet: Suppress output to screen
@@ -37,7 +38,10 @@ class SMBSeekOutput:
         self.config = config
         self.quiet = quiet
         self.verbose = verbose
-        
+
+        # Protect console output across threads
+        self._print_lock = threading.Lock()
+
         # Color management
         colors_enabled = config.get("output", "colors_enabled", True) and not no_colors
         if colors_enabled:
@@ -56,12 +60,14 @@ class SMBSeekOutput:
     def print_if_not_quiet(self, message: str):
         """Print message unless in quiet mode."""
         if not self.quiet:
-            print(message)
-    
+            with self._print_lock:
+                print(message)
+
     def print_if_verbose(self, message: str):
         """Print message only in verbose mode (and not quiet)."""
         if self.verbose and not self.quiet:
-            print(message)
+            with self._print_lock:
+                print(message)
     
     def success(self, message: str):
         """Print success message with green color."""

@@ -12,11 +12,13 @@ import time
 import uuid
 import socket
 import subprocess
+import threading
 from datetime import datetime
 from dataclasses import dataclass
 from typing import Set, List, Dict, Optional
 from contextlib import redirect_stderr
 from io import StringIO
+from concurrent.futures import ThreadPoolExecutor
 
 # Add project paths for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -75,6 +77,13 @@ class DiscoverOperation:
         # Initialize memoization cache for API calls (cleared per operation)
         self._host_lookup_cache = {}
 
+        # Initialize thread-safe rate limiting for discovery concurrency
+        self._auth_rate_lock = threading.Lock()
+        self._last_auth_attempt = 0
+
+        # Initialize SMBClient authentication cache for fallback outcomes
+        self._smbclient_auth_cache = {}
+
         # Initialize Shodan API
         try:
             api_key = self.config.get_shodan_api_key()
@@ -103,7 +112,7 @@ class DiscoverOperation:
             'total_processed': 0
         }
 
-    def execute(self, country=None, rescan_all=False, rescan_failed=False) -> DiscoverResult:
+    def execute(self, country=None, rescan_all=False, rescan_failed=False, force_hosts=None) -> DiscoverResult:
         """
         Execute the discover operation.
 
@@ -111,6 +120,7 @@ class DiscoverOperation:
             country: Target country code for Shodan search
             rescan_all: Force rescan of all discovered hosts
             rescan_failed: Include previously failed hosts for rescanning
+            force_hosts: Set of IP addresses to force scan regardless of filters
 
         Returns:
             DiscoverResult with discovery statistics
@@ -127,13 +137,31 @@ class DiscoverOperation:
         # Clear metadata and cache from any previous runs to prevent stale data leakage
         self.shodan_host_metadata = {}
         self._host_lookup_cache = {}
+        self._smbclient_auth_cache = {}
+
+        # Initialize force_hosts to empty set if None
+        if force_hosts is None:
+            force_hosts = set()
 
         self.output.print_if_verbose("Starting discovery operation...")
+        if force_hosts:
+            self.output.print_if_verbose(f"Forced hosts specified: {', '.join(sorted(force_hosts))}")
 
         # Query Shodan
         shodan_results = self._query_shodan(country)
+
+        # Add forced hosts to results and create placeholder metadata
+        if force_hosts:
+            forced_hosts_added = force_hosts - shodan_results
+            if forced_hosts_added:
+                self.output.print_if_verbose(f"Adding {len(forced_hosts_added)} forced hosts not in Shodan results")
+                for ip in forced_hosts_added:
+                    # Create minimal placeholder metadata for forced hosts
+                    self.shodan_host_metadata[ip] = {'country_name': 'Unknown'}
+            shodan_results = shodan_results.union(force_hosts)
+
         if not shodan_results:
-            self.output.warning("No results from Shodan query")
+            self.output.warning("No results from Shodan query and no forced hosts")
             return DiscoverResult(
                 query_used="",
                 total_hosts=0,
@@ -156,7 +184,18 @@ class DiscoverOperation:
             output_manager=self.output
         )
 
+        # Re-add forced hosts after database filtering (bypass filters)
+        if force_hosts:
+            forced_hosts_bypassed = force_hosts - hosts_to_scan
+            if forced_hosts_bypassed:
+                self.output.print_if_verbose(f"Adding {len(forced_hosts_bypassed)} forced hosts (bypassing database filters)")
+                hosts_to_scan = hosts_to_scan.union(force_hosts)
+                # Update stats to reflect forced hosts
+                filter_stats['forced_hosts'] = len(force_hosts)
+                filter_stats['to_scan'] = len(hosts_to_scan)
+
         # Trim metadata to only hosts that will be scanned to maintain alignment
+        # Keep forced host metadata even if minimal
         self.shodan_host_metadata = {
             ip: self.shodan_host_metadata[ip]
             for ip in hosts_to_scan
@@ -471,16 +510,85 @@ class DiscoverOperation:
     def _check_smbclient_availability(self) -> bool:
         """Check if smbclient command is available on the system."""
         try:
-            result = subprocess.run(['smbclient', '--help'], 
-                                  capture_output=True, 
+            result = subprocess.run(['smbclient', '--help'],
+                                  capture_output=True,
                                   timeout=5)
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
             return False
-    
+
+    def _throttled_auth_wait(self) -> None:
+        """
+        Thread-safe rate limiting for discovery authentication attempts.
+
+        Enforces global rate limiting across concurrent threads by maintaining
+        shared timestamp tracking with proper locking.
+        """
+        with self._auth_rate_lock:
+            current_time = time.monotonic()
+
+            # First run: establish baseline without sleeping
+            if self._last_auth_attempt == 0:
+                self._last_auth_attempt = current_time
+                return
+
+            # Calculate time since last attempt and sleep remainder if needed
+            time_elapsed = current_time - self._last_auth_attempt
+            rate_delay = self.config.get_rate_limit_delay()
+
+            if time_elapsed < rate_delay:
+                sleep_time = rate_delay - time_elapsed
+                time.sleep(sleep_time)
+
+            # Update timestamp for next thread
+            self._last_auth_attempt = time.monotonic()
+
+    def _test_single_host_concurrent(self, ip: str, country=None) -> Dict:
+        """
+        Thread-safe wrapper for _test_single_host that returns structured results.
+
+        Args:
+            ip: IP address to test
+            country: Country code for metadata
+
+        Returns:
+            Dictionary with result, success/failed flags, and metadata
+        """
+        try:
+            # Apply thread-safe rate limiting before each host attempt
+            self._throttled_auth_wait()
+
+            # Test the host using existing logic
+            result = self._test_single_host(ip, country)
+
+            if result:
+                return {
+                    "result": result,
+                    "success": True,
+                    "failed": False,
+                    "metadata": {}
+                }
+            else:
+                return {
+                    "result": None,
+                    "success": False,
+                    "failed": True,
+                    "metadata": {}
+                }
+
+        except Exception as e:
+            return {
+                "ip": ip,
+                "error": str(e),
+                "success": False,
+                "failed": True,
+                "result": None,
+                "metadata": {}
+            }
+
     def _test_smb_authentication(self, ip_addresses: Set[str], country=None) -> List[Dict]:
         """
-        Test SMB authentication on IP addresses.
+        Test SMB authentication on IP addresses with configurable concurrency.
 
         Args:
             ip_addresses: Set of IP addresses to test
@@ -489,34 +597,119 @@ class DiscoverOperation:
         Returns:
             List of successful authentication results
         """
-        self.output.info(f"Testing SMB authentication on {len(ip_addresses)} hosts...")
-        
-        successful_hosts = []
+        if not ip_addresses:
+            return []
+
         total_hosts = len(ip_addresses)
-        
-        for i, ip in enumerate(ip_addresses, 1):
+        self.output.info(f"Testing SMB authentication on {total_hosts} hosts...")
+
+        # Get concurrency setting and size executor appropriately
+        max_concurrent_hosts = self.config.get_max_concurrent_discovery_hosts()
+        max_workers = min(max_concurrent_hosts, total_hosts)
+
+        # Convert to list for deterministic ordering
+        ip_list = list(ip_addresses)
+
+        # If max_concurrent_hosts is 1, use sequential processing (preserve existing behavior)
+        if max_workers == 1:
+            return self._test_smb_authentication_sequential(ip_list, country)
+
+        # Concurrent processing with ThreadPoolExecutor
+        successful_hosts = []
+        results_by_index = [None] * total_hosts
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_index = {
+                executor.submit(self._test_single_host_concurrent, ip, country): i
+                for i, ip in enumerate(ip_list)
+            }
+
+            # Collect results as they complete
+            for future in future_to_index:
+                index = future_to_index[future]
+                ip = ip_list[index]
+
+                try:
+                    result_data = future.result()
+                    results_by_index[index] = result_data
+
+                    # Handle error results
+                    if "error" in result_data:
+                        self.output.error(f"Authentication failed for {result_data['ip']}: {result_data['error']}")
+
+                except Exception as e:
+                    # Future itself failed
+                    error_result = {
+                        "ip": ip,
+                        "error": str(e),
+                        "success": False,
+                        "failed": True,
+                        "result": None
+                    }
+                    results_by_index[index] = error_result
+                    self.output.error(f"Authentication failed for {ip}: {e}")
+
+        # Process results in original order and aggregate statistics
+        success_count = 0
+        failed_count = 0
+
+        for i, result_data in enumerate(results_by_index):
+            if result_data and result_data["success"] and result_data["result"]:
+                successful_hosts.append(result_data["result"])
+                success_count += 1
+                self.output.print_if_verbose(f"  ✓ {ip_list[i]}: {result_data['result']['auth_method']}")
+            else:
+                failed_count += 1
+
+        # Update statistics once after processing all results
+        self.stats['successful_auth'] = success_count
+        self.stats['failed_auth'] = failed_count
+        self.stats['total_processed'] = total_hosts
+
+        # Post-processing progress report with final counts
+        self.output.info(f"📊 Authentication complete: {total_hosts} hosts | Success: {success_count}, Failed: {failed_count}")
+
+        return successful_hosts
+
+    def _test_smb_authentication_sequential(self, ip_list: List[str], country=None) -> List[Dict]:
+        """
+        Sequential SMB authentication testing (preserved original behavior for max_concurrent_hosts=1).
+
+        Args:
+            ip_list: List of IP addresses to test
+            country: Country code for metadata
+
+        Returns:
+            List of successful authentication results
+        """
+        successful_hosts = []
+        total_hosts = len(ip_list)
+
+        for i, ip in enumerate(ip_list, 1):
             # Show progress every 25 hosts or at significant milestones
             if i % 25 == 0 or i == 1 or i == total_hosts:
                 progress_pct = (i / total_hosts) * 100
-                success_count = self.stats['successful_auth']
-                failed_count = self.stats['failed_auth']
+                success_count = len(successful_hosts)
+                failed_count = i - 1 - success_count
                 self.output.info(f"📊 Progress: {i}/{total_hosts} ({progress_pct:.1f}%) | Success: {success_count}, Failed: {failed_count}")
-            
+
             self.output.print_if_verbose(f"[{i}/{total_hosts}] Testing {ip}...")
-            
+
             result = self._test_single_host(ip, country)
             if result:
                 successful_hosts.append(result)
-                self.stats['successful_auth'] += 1
                 self.output.print_if_verbose(f"  ✓ {ip}: {result['auth_method']}")
-            else:
-                self.stats['failed_auth'] += 1
-            
-            # Rate limiting
+
+            # Rate limiting between hosts (original behavior)
             if i < total_hosts:
                 time.sleep(self.config.get_rate_limit_delay())
-        
+
+        # Update statistics
+        self.stats['successful_auth'] = len(successful_hosts)
+        self.stats['failed_auth'] = total_hosts - len(successful_hosts)
         self.stats['total_processed'] = total_hosts
+
         return successful_hosts
     
     def _test_single_host(self, ip: str, country=None) -> Optional[Dict]:
@@ -649,37 +842,45 @@ class DiscoverOperation:
     
     def _test_smb_alternative(self, ip: str) -> Optional[str]:
         """
-        Alternative testing method using smbclient as fallback.
-        
+        Alternative testing method using smbclient as fallback with caching.
+
         Args:
             ip: IP address to test
-            
+
         Returns:
             Authentication method name if successful, None otherwise
         """
         if not self.smbclient_available:
             return None
-        
+
+        # Check cache first
+        if ip in self._smbclient_auth_cache:
+            return self._smbclient_auth_cache[ip]
+
         # Test commands matching legacy system
         test_commands = [
             ("Anonymous", ["smbclient", "-L", f"//{ip}", "-N"]),
             ("Guest/Blank", ["smbclient", "-L", f"//{ip}", "--user", "guest%"]),
             ("Guest/Guest", ["smbclient", "-L", f"//{ip}", "--user", "guest%guest"])
         ]
-        
+
         stderr_buffer = StringIO()
         for method_name, cmd in test_commands:
             try:
                 with redirect_stderr(stderr_buffer):
-                    result = subprocess.run(cmd, capture_output=True, text=True, 
+                    result = subprocess.run(cmd, capture_output=True, text=True,
                                           timeout=10, stdin=subprocess.DEVNULL)
                     if result.returncode == 0 or "Sharename" in result.stdout:
+                        # Cache successful result
+                        self._smbclient_auth_cache[ip] = method_name
                         return method_name
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 continue
             except Exception:
                 continue
-        
+
+        # Cache failed result to prevent retries
+        self._smbclient_auth_cache[ip] = None
         return None
     
     
@@ -778,7 +979,8 @@ class DiscoverCommand:
             result = operation.execute(
                 country=getattr(self.args, 'country', None),
                 rescan_all=getattr(self.args, 'rescan_all', False),
-                rescan_failed=getattr(self.args, 'rescan_failed', False)
+                rescan_failed=getattr(self.args, 'rescan_failed', False),
+                force_hosts=getattr(self.args, 'force_hosts', set())
             )
 
             # Update session

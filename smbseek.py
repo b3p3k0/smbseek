@@ -18,10 +18,44 @@ Version: 3.0.0
 import argparse
 import sys
 import os
+import ipaddress
 from typing import Optional
 
 # Add current directory to Python path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+
+def validate_force_hosts(value):
+    """
+    Validate and parse force hosts argument.
+
+    Args:
+        value: Comma-separated IP addresses string
+
+    Returns:
+        Set of validated IP address strings
+
+    Raises:
+        argparse.ArgumentTypeError: If any IP is invalid
+    """
+    if not value.strip():
+        raise argparse.ArgumentTypeError("forced hosts cannot be empty")
+
+    ips = set()
+    for ip_str in value.split(','):
+        ip_str = ip_str.strip()
+        if not ip_str:
+            continue
+        try:
+            ipaddress.ip_address(ip_str)
+            ips.add(ip_str)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"'{ip_str}' is not a valid IP address (hostnames not supported)")
+
+    if not ips:
+        raise argparse.ArgumentTypeError("no valid IP addresses provided")
+
+    return ips
 
 
 def detect_deprecated_usage(argv):
@@ -79,7 +113,6 @@ The tool performs two main operations:
 Results are automatically saved to smbseek.db database.
 
 Documentation: docs/USER_GUIDE.md
-Migration Guide: docs/xsmbseek_migration.md
 """
     )
 
@@ -114,6 +147,13 @@ Migration Guide: docs/xsmbseek_migration.md
         help='Disable colored output'
     )
     parser.add_argument(
+        '--force-hosts',
+        type=validate_force_hosts,
+        action='append',
+        metavar='IPS',
+        help='Force scanning of specific hosts (comma-separated IPs) even if recently processed or previously failed'
+    )
+    parser.add_argument(
         '--version',
         action='version',
         version='SMBSeek 3.0.0'
@@ -138,6 +178,15 @@ def main():
     if args.quiet and args.verbose:
         print("Error: Cannot use both --quiet and --verbose options")
         return 1
+
+    # Process force_hosts argument (combine multiple uses into single set)
+    if hasattr(args, 'force_hosts') and args.force_hosts:
+        force_hosts_combined = set()
+        for host_set in args.force_hosts:
+            force_hosts_combined.update(host_set)
+        args.force_hosts = force_hosts_combined
+    else:
+        args.force_hosts = set()
 
     try:
         # Import workflow components
