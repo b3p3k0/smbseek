@@ -168,18 +168,21 @@ def run_access_on_servers(self, ip_list):
 ```python
 def _parse_progress_indicators(self, output_line):
     """Parse SMBSeek progress with recent filtering awareness."""
-    # Progress pattern: "📊 Progress: 25/100 (25.0%) | Success: 5, Failed: 20"
-    progress_match = re.search(r'📊 Progress: (\d+)/(\d+) \((\d+(?:\.\d+)?)\%\)', output_line)
-    
+    # Progress pattern: "📊 Progress: 25/100 (25.0%) | Success: 5, Failed: 20 (20%)"
+    progress_match = re.search(
+        r'📊 Progress: (\d+)/(\d+) \((\d+(?:\.\d+)?)%\) \| Success: (\d+), Failed: (\d+) \((\d+)%\)',
+        output_line
+    )
+
     if progress_match:
-        current, total, percentage = progress_match.groups()
-        
+        current, total, percentage, success_count, failed_count, success_pct = progress_match.groups()
+
         # Enhanced context for recent filtering
         if "recent" in output_line.lower():
-            status = f"Testing recent hosts: {current}/{total}"
+            status = f"Testing recent hosts: {current}/{total} (success rate {success_pct}%)"
         else:
-            status = f"Testing hosts: {current}/{total}"
-        
+            status = f"Testing hosts: {current}/{total} (success rate {success_pct}%)"
+
         return float(percentage), status
     
     return None, None

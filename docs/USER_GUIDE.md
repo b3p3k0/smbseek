@@ -224,7 +224,7 @@ SMBSeek provides detailed progress information throughout the scanning process:
 #### During Authentication Testing
 ```bash
 ℹ Testing SMB authentication on 900 hosts...
-ℹ 📊 Progress: 225/900 (25.0%) | Success: 12, Failed: 213
+ℹ 📊 Progress: 225/900 (25.0%) | Success: 12, Failed: 213 (5%)
 [225/900] Testing 192.168.1.100...
   ✓ 192.168.1.100: Anonymous (smbclient)
 ```

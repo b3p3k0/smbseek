@@ -27,6 +27,13 @@
     "rate_limit_delay": 1,
     "share_access_delay": 1
   },
+  "discovery": {
+    "max_concurrent_hosts": 1
+  },
+  "access": {
+    "max_concurrent_hosts": 1
+  },
+  "exclusion_progress_interval": 100,
   "security": {
     "ransomware_indicators": [
       "!want_to_cry.txt",
