@@ -386,7 +386,7 @@ class AccessOperation:
                 if "NT_STATUS" not in result.stderr and len(result.stdout.strip()) > 0:
                     access_result['accessible'] = True
                     if True:  # verbose check handled by output methods
-                        self.output.success(f"Share '{share_name}' is accessible")
+                        self.output.print_if_verbose(f"Share '{share_name}' is accessible")
                 else:
                     access_result['error'] = f"Access denied or empty share"
                     if True:  # verbose check handled by output methods

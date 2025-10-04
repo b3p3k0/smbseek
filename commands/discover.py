@@ -668,7 +668,11 @@ class DiscoverOperation:
         self.stats['total_processed'] = total_hosts
 
         # Post-processing progress report with final counts
-        self.output.info(f"📊 Authentication complete: {total_hosts} hosts | Success: {success_count}, Failed: {failed_count}")
+        success_percent = int((success_count / total_hosts) * 100) if total_hosts else 0
+        self.output.info(
+            f"📊 Authentication complete: {total_hosts} hosts | "
+            f"Success: {success_count}, Failed: {failed_count} ({success_percent}%)"
+        )
 
         return successful_hosts
 
@@ -692,7 +696,12 @@ class DiscoverOperation:
                 progress_pct = (i / total_hosts) * 100
                 success_count = len(successful_hosts)
                 failed_count = i - 1 - success_count
-                self.output.info(f"📊 Progress: {i}/{total_hosts} ({progress_pct:.1f}%) | Success: {success_count}, Failed: {failed_count}")
+                processed = success_count + failed_count
+                success_percent = int((success_count / processed) * 100) if processed else 0
+                self.output.info(
+                    f"📊 Progress: {i}/{total_hosts} ({progress_pct:.1f}%) | "
+                    f"Success: {success_count}, Failed: {failed_count} ({success_percent}%)"
+                )
 
             self.output.print_if_verbose(f"[{i}/{total_hosts}] Testing {ip}...")
 

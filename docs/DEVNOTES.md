@@ -1570,7 +1570,7 @@ The discovery process exclusion filtering was optimized to eliminate redundant S
 - **Complete Resolution Marking**: Cache even empty strings to mark IPs as "fully resolved"
 
 #### 4. Configuration-Based Progress Throttling
-- **Configurable Interval**: Support `exclusion_progress_interval` config (default 100 vs previous 50)
+- **Configurable Interval**: Support `exclusion_progress_interval` config (default 100 vs previous 50, now reflected in `conf/config.json.example`)
 - **Safe Integer Conversion**: Handle string config values gracefully with try/except fallback
 - **Reduced I/O Overhead**: Less frequent progress logging improves performance
 
