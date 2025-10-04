@@ -1746,4 +1746,40 @@ SMBSeek 3.0 introduces configurable concurrency for both discovery and access ph
 
 ---
 
+## Critical Bug Fixes and Regressions
+
+### Database Storage Regression (October 2025)
+
+**Issue**: Accessible shares appeared in console output but weren't stored in database, leading to misleading "0" counts in database records.
+
+**Root Cause**: During workflow unification (commit e27ff3f), the new `AccessOperation._save_and_summarize_results()` method incorrectly passed individual share records to `store_share_access_result()` instead of complete host results, causing database validation failures.
+
+**Original Working Pattern** (legacy `save_results()` method):
+```python
+# Correct: Pass complete host result
+for result in self.results:
+    self.database.store_share_access_result(session_id, result)
+```
+
+**Broken Pattern** (introduced in workflow unification):
+```python
+# Incorrect: Pass individual share records
+for share_name in accessible_shares:
+    share_record = {'ip_address': ip, 'share_name': share_name, 'accessible': True}
+    self.database.store_share_access_result(session_id, share_record)  # FAILS validation
+```
+
+**Fix**: Replaced broken method with proven working storage logic, maintaining backward compatibility and existing interfaces.
+
+**Prevention**: Added regression test (`test_regression_fix.py`) that verifies console output matches database storage.
+
+**Timeline**:
+- Originally fixed: August 2025 (commit 02d35a7)
+- Regression introduced: October 2025 (commit e27ff3f - workflow unification)
+- Regression fixed: October 2025 (this commit)
+
+**Lesson**: When refactoring working code, prefer calling existing proven methods over reimplementing storage logic. Test data integrity, not just functional behavior.
+
+---
+
 This architectural evolution demonstrates effective human-AI collaboration in software design, balancing technical maintainability with user experience optimization while learning from actual implementation challenges.

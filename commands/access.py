@@ -580,15 +580,33 @@ class AccessOperation:
         """
         Save results to database using session_id and compute summary statistics.
 
+        Uses the proven working storage logic from save_results() method to avoid
+        the regression introduced during workflow unification.
+
         Returns:
             Tuple of (accessible_hosts, accessible_shares, share_details)
         """
         try:
-            # Save results to database using the workflow's session_id
-            from db_manager import SMBSeekDataAccessLayer
-            dal = SMBSeekDataAccessLayer(self.database.db_manager)
-
+            # Store results using the proven working logic from save_results()
+            # Save to database - exclude results with errors or validation issues
             stored_count = 0
+            validation_errors = 0
+
+            for result in self.results:
+                # Skip results with errors or validation problems
+                if 'error' in result or 'validation_error' in result:
+                    if 'validation_error' in result:
+                        validation_errors += 1
+                        self.output.print_if_verbose(f"Skipping storage of {result.get('ip_address', 'unknown')} due to validation error")
+                    continue
+
+                # Use the complete result structure (not individual shares) - this is the key fix
+                if self.database.store_share_access_result(self.session_id, result):
+                    stored_count += 1
+                else:
+                    self.output.print_if_verbose(f"Failed to store results for {result.get('ip_address', 'unknown')}")
+
+            # Compute summary statistics from the stored results
             accessible_hosts = set()
             total_accessible_shares = 0
             share_details = []
@@ -599,35 +617,25 @@ class AccessOperation:
                     continue
 
                 ip_address = result.get('ip_address')
-                if not ip_address:
-                    continue
-
-                # Store share access results using the session_id
                 accessible_shares = result.get('accessible_shares', [])
+
                 if accessible_shares:
                     accessible_hosts.add(ip_address)
                     total_accessible_shares += len(accessible_shares)
 
-                    # Store each accessible share in database
+                    # Add to details list for workflow summary
                     for share_name in accessible_shares:
-                        share_record = {
-                            'ip_address': ip_address,
-                            'share_name': share_name,
-                            'accessible': True,
-                            'session_id': self.session_id
-                        }
-                        # Store in database
-                        if self.database.store_share_access_result(self.session_id, share_record):
-                            stored_count += 1
-
-                        # Add to details list
                         share_details.append({
                             'ip_address': ip_address,
                             'share_name': share_name,
                             'accessible': True
                         })
 
-            self.output.print_if_verbose(f"Stored {stored_count} share access results to database")
+            valid_results_count = len([r for r in self.results if 'error' not in r and 'validation_error' not in r])
+            self.output.print_if_verbose(f"Stored {stored_count}/{valid_results_count} valid results to database")
+
+            if validation_errors > 0:
+                self.output.warning(f"Excluded {validation_errors} results due to validation errors")
 
             return len(accessible_hosts), total_accessible_shares, share_details
 
