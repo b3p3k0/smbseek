@@ -41,10 +41,11 @@ class TestDiscoverMetadata(unittest.TestCase):
         self.mock_config.resolve_target_countries.return_value = ['US']
         self.mock_config.get.return_value = {}
 
-        # Create DiscoverOperation with mocks
+        # Create DiscoverOperation with mocks and empty exclusion file
         with patch('commands.discover.shodan.Shodan'), \
              patch('commands.discover.subprocess.run'), \
-             patch('commands.discover.SMB_AVAILABLE', True):
+             patch('commands.discover.SMB_AVAILABLE', True), \
+             patch('builtins.open', unittest.mock.mock_open(read_data='')):
             self.discover_op = DiscoverOperation(
                 config=self.mock_config,
                 output=self.mock_output,
@@ -92,7 +93,7 @@ class TestDiscoverMetadata(unittest.TestCase):
         expected_ips = {'192.168.1.1', '192.168.1.2', '192.168.1.3', '192.168.1.4'}
         self.assertEqual(result_ips, expected_ips)
 
-        # Verify metadata was captured correctly
+        # Verify metadata was captured correctly including org/ISP
         expected_metadata = {
             '192.168.1.1': {
                 'country_name': 'United States',
@@ -297,6 +298,206 @@ class TestDiscoverMetadata(unittest.TestCase):
 
             # Metadata should be cleared even if no new results
             self.assertEqual(self.discover_op.shodan_host_metadata, {})
+
+    def test_org_isp_metadata_capture_from_shodan(self):
+        """Test that org/ISP metadata is captured from Shodan results with safe normalization."""
+        mock_shodan_results = {
+            'matches': [
+                {
+                    'ip_str': '192.168.1.1',
+                    'org': 'Example Corp',
+                    'isp': 'Internet Service Provider'
+                },
+                {
+                    'ip_str': '192.168.1.2',
+                    'org': None,  # Test None handling
+                    'isp': 'Another ISP'
+                },
+                {
+                    'ip_str': '192.168.1.3'
+                    # No org/ISP fields at all
+                }
+            ]
+        }
+
+        self.discover_op.shodan_api.search.return_value = mock_shodan_results
+        result_ips = self.discover_op._query_shodan('US')
+
+        # Verify org/ISP metadata was captured with safe normalization
+        expected_metadata = {
+            '192.168.1.1': {
+                'org': 'Example Corp',
+                'org_normalized': 'example corp',
+                'isp': 'Internet Service Provider',
+                'isp_normalized': 'internet service provider'
+            },
+            '192.168.1.2': {
+                'isp': 'Another ISP',
+                'isp_normalized': 'another isp'
+            },
+            '192.168.1.3': {}
+        }
+        self.assertEqual(self.discover_op.shodan_host_metadata, expected_metadata)
+
+    def test_dual_exclusion_storage(self):
+        """Test that exclusions are stored in both original and normalized forms."""
+        # Mock exclusion file content
+        with patch('builtins.open', unittest.mock.mock_open(read_data='Example Corp\nAnother ISP\n# Comment\n')):
+            exclusions = self.discover_op._load_exclusions()
+            # Manually update the instance variable since the method returned the list
+            self.discover_op.exclusions = exclusions
+
+        # Verify original exclusions preserved
+        self.assertEqual(exclusions, ['Example Corp', 'Another ISP'])
+        self.assertEqual(self.discover_op.exclusions, ['Example Corp', 'Another ISP'])
+
+        # Verify normalized patterns created
+        self.assertEqual(self.discover_op.exclusion_patterns, ['example corp', 'another isp'])
+
+    def test_should_exclude_ip_api_unavailable(self):
+        """Test that _should_exclude_ip returns False when API unavailable."""
+        self.discover_op.shodan_api = None
+        result = self.discover_op._should_exclude_ip('192.168.1.1')
+        self.assertFalse(result)
+
+    def test_should_exclude_ip_uses_cached_metadata(self):
+        """Test that _should_exclude_ip uses cached metadata without API calls."""
+        # Set up exclusion patterns
+        self.discover_op.exclusion_patterns = ['example corp', 'test isp']
+
+        # Set up cached metadata
+        self.discover_op.shodan_host_metadata = {
+            '192.168.1.1': {
+                'org_normalized': 'example corp inc',  # Should match 'example corp'
+                'isp_normalized': 'safe provider'
+            },
+            '192.168.1.2': {
+                'org_normalized': 'safe company',
+                'isp_normalized': 'clean provider'
+            },
+            '192.168.1.3': {
+                'org_normalized': '',  # Empty but present
+                'isp_normalized': ''
+            }
+        }
+
+        with patch.object(self.discover_op.shodan_api, 'host') as mock_api:
+            # Test exclusion match
+            result1 = self.discover_op._should_exclude_ip('192.168.1.1')
+            self.assertTrue(result1)
+
+            # Test no exclusion match
+            result2 = self.discover_op._should_exclude_ip('192.168.1.2')
+            self.assertFalse(result2)
+
+            # Test empty strings (should not exclude)
+            result3 = self.discover_op._should_exclude_ip('192.168.1.3')
+            self.assertFalse(result3)
+
+            # Verify API was never called
+            mock_api.assert_not_called()
+
+    def test_should_exclude_ip_memoization(self):
+        """Test that API calls are memoized and not repeated."""
+        self.discover_op.exclusion_patterns = ['badcorp']
+
+        with patch.object(self.discover_op.shodan_api, 'host') as mock_api:
+            # First call - API returns data
+            mock_api.return_value = {'org': 'GoodCorp', 'isp': 'CleanISP'}
+
+            result1 = self.discover_op._should_exclude_ip('192.168.1.1')
+            self.assertFalse(result1)
+
+            # Second call to same IP - should use cache
+            result2 = self.discover_op._should_exclude_ip('192.168.1.1')
+            self.assertFalse(result2)
+
+            # Verify API was called only once
+            self.assertEqual(mock_api.call_count, 1)
+
+            # Verify both caches were updated
+            self.assertIn('192.168.1.1', self.discover_op._host_lookup_cache)
+            self.assertIn('org_normalized', self.discover_op.shodan_host_metadata['192.168.1.1'])
+
+    def test_should_exclude_ip_api_failure_memoization(self):
+        """Test that API failures are cached to prevent retry loops."""
+        self.discover_op.exclusion_patterns = ['badcorp']
+
+        with patch.object(self.discover_op.shodan_api, 'host') as mock_api:
+            # First call - API fails
+            mock_api.side_effect = Exception("API Error")
+
+            result1 = self.discover_op._should_exclude_ip('192.168.1.1')
+            self.assertFalse(result1)  # Fail open
+
+            # Second call to same IP - should use cached failure
+            mock_api.side_effect = None
+            mock_api.return_value = {'org': 'BadCorp', 'isp': 'BadISP'}
+
+            result2 = self.discover_op._should_exclude_ip('192.168.1.1')
+            self.assertFalse(result2)  # Still uses cached failure
+
+            # Verify API was called only once (failure cached)
+            self.assertEqual(mock_api.call_count, 1)
+            self.assertEqual(self.discover_op._host_lookup_cache['192.168.1.1'], None)
+
+    def test_should_exclude_ip_safe_normalization(self):
+        """Test safe normalization handles None values from API."""
+        self.discover_op.exclusion_patterns = ['badcorp']
+
+        with patch.object(self.discover_op.shodan_api, 'host') as mock_api:
+            # API returns None values
+            mock_api.return_value = {'org': None, 'isp': None}
+
+            result = self.discover_op._should_exclude_ip('192.168.1.1')
+            self.assertFalse(result)
+
+            # Verify empty strings were stored (safe normalization)
+            metadata = self.discover_op.shodan_host_metadata['192.168.1.1']
+            self.assertEqual(metadata['org_normalized'], '')
+            self.assertEqual(metadata['isp_normalized'], '')
+
+    def test_exclusions_preserve_original_casing_for_query_building(self):
+        """Test that original exclusion casing is preserved for Shodan query building."""
+        self.discover_op.exclusions = ['Example Corp', 'Another-ISP']
+
+        # Test that _build_targeted_query uses original casing
+        query = self.discover_op._build_targeted_query(['US'])
+
+        # Should contain original casing in org exclusions
+        self.assertIn('-org:"Example Corp"', query)
+        self.assertIn('-org:"Another-ISP"', query)
+
+    def test_apply_exclusions_configurable_progress_interval(self):
+        """Test configurable progress interval with safe integer conversion."""
+        # Test default interval
+        self.mock_config.get.return_value = None
+        filtered_ips = self.discover_op._apply_exclusions({'192.168.1.1'})
+        # Should not raise exception
+
+        # Test string interval (should convert safely)
+        self.mock_config.get.return_value = "50"
+        filtered_ips = self.discover_op._apply_exclusions({'192.168.1.1'})
+        # Should not raise exception
+
+        # Test invalid interval (should use default)
+        self.mock_config.get.return_value = "invalid"
+        filtered_ips = self.discover_op._apply_exclusions({'192.168.1.1'})
+        # Should not raise exception
+
+    def test_memoization_cache_cleared_per_operation(self):
+        """Test that memoization cache is cleared at start of each execute call."""
+        # Set up stale cache data
+        self.discover_op._host_lookup_cache = {'192.168.1.99': {'org': 'Stale'}}
+
+        with patch.object(self.discover_op, '_query_shodan', return_value=set()), \
+             patch.object(self.discover_op, '_build_targeted_query', return_value="test"), \
+             patch('commands.discover.SMB_AVAILABLE', True):
+
+            self.discover_op.execute(country='US')
+
+            # Cache should be cleared
+            self.assertEqual(self.discover_op._host_lookup_cache, {})
 
 
 if __name__ == '__main__':

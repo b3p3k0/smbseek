@@ -72,6 +72,9 @@ class DiscoverOperation:
         # Initialize Shodan host metadata tracking
         self.shodan_host_metadata = {}
 
+        # Initialize memoization cache for API calls (cleared per operation)
+        self._host_lookup_cache = {}
+
         # Initialize Shodan API
         try:
             api_key = self.config.get_shodan_api_key()
@@ -80,8 +83,9 @@ class DiscoverOperation:
             self.shodan_api = None
             self.output.error(str(e))
 
-        # Load exclusion list
+        # Load exclusion list and normalized patterns
         self.exclusions = self._load_exclusions()
+        # Note: self.exclusion_patterns is set by _load_exclusions()
 
         # Check smbclient availability for fallback authentication
         self.smbclient_available = self._check_smbclient_availability()
@@ -120,8 +124,9 @@ class DiscoverOperation:
         if not self.shodan_api:
             raise RuntimeError("Shodan API not available")
 
-        # Clear metadata from any previous runs to prevent stale data leakage
+        # Clear metadata and cache from any previous runs to prevent stale data leakage
         self.shodan_host_metadata = {}
+        self._host_lookup_cache = {}
 
         self.output.print_if_verbose("Starting discovery operation...")
 
@@ -217,7 +222,7 @@ class DiscoverOperation:
             max_results = shodan_config['query_limits']['max_results']
             results = self.shodan_api.search(query, limit=max_results)
             
-            # Extract IP addresses and capture country metadata
+            # Extract IP addresses and capture metadata for exclusion optimization
             ip_addresses = set()
             for result in results['matches']:
                 ip = result['ip_str']
@@ -228,14 +233,25 @@ class DiscoverOperation:
                 country_name = location.get('country_name') or result.get('country_name')
                 country_code = location.get('country_code') or result.get('country_code')
 
-                # Store metadata using "first complete record wins" strategy
-                if ip not in self.shodan_host_metadata:
-                    self.shodan_host_metadata[ip] = {}
+                # Extract org/ISP metadata for exclusion filtering performance
+                org = result.get('org', '')
+                isp = result.get('isp', '')
 
-                if country_name and not self.shodan_host_metadata[ip].get('country_name'):
-                    self.shodan_host_metadata[ip]['country_name'] = country_name
-                if country_code and not self.shodan_host_metadata[ip].get('country_code'):
-                    self.shodan_host_metadata[ip]['country_code'] = country_code
+                # Store metadata using "first complete record wins" strategy
+                metadata = self.shodan_host_metadata.setdefault(ip, {})
+
+                if country_name and not metadata.get('country_name'):
+                    metadata['country_name'] = country_name
+                if country_code and not metadata.get('country_code'):
+                    metadata['country_code'] = country_code
+
+                # Cache org/ISP with safe normalization to avoid repeated API calls during exclusions
+                if org and not metadata.get('org_normalized') and isinstance(org, str):
+                    metadata['org'] = org
+                    metadata['org_normalized'] = org.lower()
+                if isp and not metadata.get('isp_normalized') and isinstance(isp, str):
+                    metadata['isp'] = isp
+                    metadata['isp_normalized'] = isp.lower()
 
             self.stats['shodan_results'] = len(ip_addresses)
             self.output.success(f"Found {len(ip_addresses)} SMB servers in Shodan database")
@@ -320,11 +336,17 @@ class DiscoverOperation:
         excluded_count = 0
         processed_count = 0
         
+        # Get configurable progress interval with safe integer conversion
+        try:
+            progress_interval = int(self.config.get("exclusion_progress_interval", 100))
+        except (ValueError, TypeError):
+            progress_interval = 100
+
         for ip in ip_addresses:
             processed_count += 1
-            
-            # Show progress every 50 IPs or at key milestones
-            if processed_count % 50 == 0 or processed_count == 1 or processed_count == total_ips:
+
+            # Show progress at configurable intervals or key milestones
+            if processed_count % progress_interval == 0 or processed_count == 1 or processed_count == total_ips:
                 progress_pct = (processed_count / total_ips) * 100
                 self.output.info(f"🔍 Filtering progress: {processed_count}/{total_ips} ({progress_pct:.1f}%) | Excluded: {excluded_count}")
             
@@ -344,52 +366,106 @@ class DiscoverOperation:
     
     def _should_exclude_ip(self, ip: str) -> bool:
         """
-        Check if IP should be excluded based on organization.
-        
+        Check if IP should be excluded based on organization using cached metadata.
+
         Args:
             ip: IP address to check
-            
+
         Returns:
             True if IP should be excluded
         """
-        try:
-            # Get organization info from Shodan
-            host_info = self.shodan_api.host(ip)
-            org = host_info.get('org', '').lower()
-            isp = host_info.get('isp', '').lower()
-            
-            # Check against exclusion patterns
-            for exclusion in self.exclusions:
-                if exclusion.lower() in org or exclusion.lower() in isp:
-                    return True
-            
+        # Fail open if API unavailable
+        if not self.shodan_api:
             return False
-        
-        except:
-            # If we can't get org info, don't exclude
+
+        # Check if we already have normalized org/ISP metadata cached
+        metadata = self.shodan_host_metadata.get(ip, {})
+        org_normalized = metadata.get('org_normalized')
+        isp_normalized = metadata.get('isp_normalized')
+
+        # If we have cached normalized data, use it directly
+        if org_normalized is not None and isp_normalized is not None:
+            for pattern in self.exclusion_patterns:
+                if pattern in org_normalized or pattern in isp_normalized:
+                    return True
+            return False
+
+        # Check memoization cache before making API call
+        if ip in self._host_lookup_cache:
+            cached_result = self._host_lookup_cache[ip]
+            if cached_result is None:
+                # Previous API call failed, don't retry
+                return False
+
+            # Use cached API result
+            org_normalized = cached_result.get('org_normalized', '')
+            isp_normalized = cached_result.get('isp_normalized', '')
+
+            for pattern in self.exclusion_patterns:
+                if pattern in org_normalized or pattern in isp_normalized:
+                    return True
+            return False
+
+        # Need to make API call - get fresh org/ISP data
+        try:
+            host_info = self.shodan_api.host(ip)
+            org = host_info.get('org', '')
+            isp = host_info.get('isp', '')
+
+            # Safe normalization with type checking
+            org_normalized = org.lower() if isinstance(org, str) else ''
+            isp_normalized = isp.lower() if isinstance(isp, str) else ''
+
+            # Cache results in both locations to mark IP as fully resolved
+            api_result = {
+                'org': org,
+                'isp': isp,
+                'org_normalized': org_normalized,
+                'isp_normalized': isp_normalized
+            }
+            self._host_lookup_cache[ip] = api_result
+
+            # Update metadata cache with complete org/ISP info
+            metadata = self.shodan_host_metadata.setdefault(ip, {})
+            metadata.update(api_result)
+
+            # Check against exclusion patterns
+            for pattern in self.exclusion_patterns:
+                if pattern in org_normalized or pattern in isp_normalized:
+                    return True
+            return False
+
+        except Exception:
+            # Cache failure to prevent retry loops
+            self._host_lookup_cache[ip] = None
             return False
     
     def _load_exclusions(self) -> List[str]:
         """
-        Load exclusion list from file.
-        
+        Load exclusion list from file and prepare normalized patterns.
+
         Returns:
-            List of exclusion patterns
+            List of exclusion patterns (original casing for Shodan query building)
         """
         exclusion_file = self.config.get_exclusion_file_path()
-        
+
         try:
             with open(exclusion_file, 'r', encoding='utf-8') as f:
                 exclusions = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-            
+
+            # Create normalized patterns for fast substring matching during exclusions
+            self.exclusion_patterns = [pattern.lower() for pattern in exclusions]
+
             self.output.print_if_verbose(f"Loaded {len(exclusions)} exclusion patterns")
             return exclusions
-        
+
         except FileNotFoundError:
             self.output.warning(f"Exclusion file not found: {exclusion_file}")
+            self.exclusion_patterns = []
             return []
         except Exception as e:
             self.output.warning(f"Error loading exclusion file: {e}")
+            self.exclusion_patterns = []
             return []
     
     def _check_smbclient_availability(self) -> bool:
