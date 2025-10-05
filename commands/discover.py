@@ -56,7 +56,7 @@ class DiscoverOperation:
     with intelligent host filtering and database integration.
     """
 
-    def __init__(self, config, output, database, session_id, risky_mode=False):
+    def __init__(self, config, output, database, session_id, cautious_mode=False):
         """
         Initialize discover operation.
 
@@ -65,13 +65,13 @@ class DiscoverOperation:
             output: SMBSeekOutput instance
             database: SMBSeekWorkflowDatabase instance
             session_id: Database session ID for this operation
-            risky_mode: Enable legacy insecure SMB settings if True
+            cautious_mode: Enable modern security hardening if True
         """
         self.config = config
         self.output = output
         self.database = database
         self.session_id = session_id
-        self.risky_mode = risky_mode
+        self.cautious_mode = cautious_mode
 
         # Initialize Shodan host metadata tracking
         self.shodan_host_metadata = {}
@@ -868,7 +868,7 @@ class DiscoverOperation:
     
     def _test_smb_auth(self, ip: str, username: str, password: str) -> bool:
         """
-        Test SMB authentication with security hardening based on risky_mode.
+        Test SMB authentication with security hardening based on cautious_mode.
 
         Args:
             ip: IP address
@@ -882,13 +882,13 @@ class DiscoverOperation:
         connection = None
         session = None
 
-        # Determine security settings based on risky_mode
-        require_signing = not self.risky_mode
+        # Determine security settings based on cautious_mode
+        require_signing = self.cautious_mode
         require_encryption = False  # Never require encryption to avoid false negatives
         dialects = None
 
-        # Try to set SMB dialect restrictions in safe mode
-        if not self.risky_mode:
+        # Try to set SMB dialect restrictions in cautious mode
+        if self.cautious_mode:
             try:
                 from smbprotocol.connection import Dialect
                 # Include SMB2+ (not just SMB3) - SMB2.0/2.1 still benefit from signing
@@ -907,7 +907,7 @@ class DiscoverOperation:
                 except TypeError:
                     # Fallback for older smbprotocol versions that don't support dialects parameter
                     connection = Connection(conn_uuid, ip, 445, require_signing=require_signing)
-                    if not self.risky_mode:
+                    if self.cautious_mode:
                         self.output.print_if_verbose("SMB dialect restriction not supported by library - enforcing signing only")
 
                 connection.connect(timeout=self.config.get_connection_timeout())
@@ -925,13 +925,13 @@ class DiscoverOperation:
                 return True
 
         except SMBException as e:
-            # In safe mode, provide actionable error messages for rejected connections
-            if not self.risky_mode:
+            # In cautious mode, provide informational messages for rejected connections
+            if self.cautious_mode:
                 error_msg = str(e).lower()
                 if 'signing' in error_msg or 'unsigned' in error_msg:
-                    self.output.print_if_verbose(f"Host {ip} requires unsigned SMB; rerun with --risky if you accept that risk")
+                    self.output.print_if_verbose(f"Host {ip} requires unsigned SMB - rejected in cautious mode")
                 elif 'smb' in error_msg and ('version' in error_msg or 'dialect' in error_msg):
-                    self.output.print_if_verbose(f"Host {ip} requires SMB1 or unsupported protocol; rerun with --risky if you accept that risk")
+                    self.output.print_if_verbose(f"Host {ip} requires SMB1 or unsupported protocol - rejected in cautious mode")
             return False
         except Exception:
             return False

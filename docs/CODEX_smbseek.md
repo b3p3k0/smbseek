@@ -24,7 +24,7 @@ Project-specific guidance for Codex when collaborating on the smbseek backend. R
 - Output summary or rollup modifications must stay in lockstep with automation that scrapes the wording (tests, reporting scripts, docs).
 
 ## Testing Expectations
-- Run targeted suites: `python3 tests/test_cli_flags.py`, `python3 tests/test_access_parsing.py`, `python3 tests/test_database_filtering.py`, and `python3 tests/test_discover_metadata.py` when they touch the affected area.
+- Run targeted suites: `python3 tests/test_cli_flags.py`, `python3 tests/test_cautious_flag.py`, `python3 tests/test_access_parsing.py`, `python3 tests/test_database_filtering.py`, and `python3 tests/test_discover_metadata.py` when they touch the affected area.
 - Record manual verifications for network-dependent paths (Shodan lookups, smbclient share access); note when sandboxing blocks full runs.
 - For share parsing or database filtering changes, craft unit fixtures that cover Samba vs Windows variants; keep regression scenarios from docs alive.
 - When tests cannot execute locally, spell out remote/real-world steps teammates should run and the expected outputs.

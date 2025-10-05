@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-SMBSeek Risky Flag Testing Script
+SMBSeek Cautious Flag Testing Script
 
-Tests the --risky flag functionality and smbclient command builder
+Tests the --cautious flag functionality and smbclient command builder
 to ensure security options are correctly applied or omitted.
 """
 
@@ -15,8 +15,8 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
-class TestRiskyFlag(unittest.TestCase):
-    """Test risky flag functionality and command building."""
+class TestCautiousFlag(unittest.TestCase):
+    """Test cautious flag functionality and command building."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -26,19 +26,19 @@ class TestRiskyFlag(unittest.TestCase):
         self.mock_database = Mock()
         self.session_id = 1
 
-    def test_access_operation_command_builder_safe_mode(self):
-        """Test that safe mode includes security flags in smbclient commands."""
+    def test_access_operation_command_builder_cautious_mode(self):
+        """Test that cautious mode includes security flags in smbclient commands."""
         # Patch smbclient availability check so constructor does not call subprocess
         with patch('commands.access.AccessOperation.check_smbclient_availability', return_value=True):
             from commands.access import AccessOperation
 
-            # Create AccessOperation in safe mode (risky_mode=False)
+            # Create AccessOperation in cautious mode (cautious_mode=True)
             access_op = AccessOperation(
                 self.mock_config,
                 self.mock_output,
                 self.mock_database,
                 self.session_id,
-                risky_mode=False
+                cautious_mode=True
             )
 
             # Test enumerate command building
@@ -58,19 +58,19 @@ class TestRiskyFlag(unittest.TestCase):
             self.assertIn("-L", cmd)
             self.assertIn("//192.168.1.1", cmd)
 
-    def test_access_operation_command_builder_risky_mode(self):
-        """Test that risky mode omits security flags in smbclient commands."""
+    def test_access_operation_command_builder_legacy_mode(self):
+        """Test that legacy mode (default) omits security flags in smbclient commands."""
         # Patch smbclient availability check
         with patch('commands.access.AccessOperation.check_smbclient_availability', return_value=True):
             from commands.access import AccessOperation
 
-            # Create AccessOperation in risky mode (risky_mode=True)
+            # Create AccessOperation in legacy mode (cautious_mode=False)
             access_op = AccessOperation(
                 self.mock_config,
                 self.mock_output,
                 self.mock_database,
                 self.session_id,
-                risky_mode=True
+                cautious_mode=False
             )
 
             # Test enumerate command building
@@ -99,7 +99,7 @@ class TestRiskyFlag(unittest.TestCase):
                 self.mock_output,
                 self.mock_database,
                 self.session_id,
-                risky_mode=False
+                cautious_mode=True
             )
 
             # Test access command building
@@ -108,36 +108,36 @@ class TestRiskyFlag(unittest.TestCase):
             # Should include share path
             self.assertIn("//192.168.1.1/testshare", cmd)
 
-            # Should include security flags (safe mode)
+            # Should include security flags (cautious mode)
             self.assertIn("--client-protection=sign", cmd)
 
             # Should include anonymous auth
             self.assertIn("-N", cmd)
 
-    def test_discover_operation_risky_mode_parameter(self):
-        """Test that DiscoverOperation accepts and stores risky_mode parameter."""
+    def test_discover_operation_cautious_mode_parameter(self):
+        """Test that DiscoverOperation accepts and stores cautious_mode parameter."""
         with patch('commands.discover.DiscoverOperation._check_smbclient_availability', return_value=True):
             from commands.discover import DiscoverOperation
 
-            # Test safe mode
-            discover_op_safe = DiscoverOperation(
+            # Test legacy mode
+            discover_op_legacy = DiscoverOperation(
                 self.mock_config,
                 self.mock_output,
                 self.mock_database,
                 self.session_id,
-                risky_mode=False
+                cautious_mode=False
             )
-            self.assertFalse(discover_op_safe.risky_mode)
+            self.assertFalse(discover_op_legacy.cautious_mode)
 
-            # Test risky mode
-            discover_op_risky = DiscoverOperation(
+            # Test cautious mode
+            discover_op_cautious = DiscoverOperation(
                 self.mock_config,
                 self.mock_output,
                 self.mock_database,
                 self.session_id,
-                risky_mode=True
+                cautious_mode=True
             )
-            self.assertTrue(discover_op_risky.risky_mode)
+            self.assertTrue(discover_op_cautious.cautious_mode)
 
     def test_credential_handling_in_command_builder(self):
         """Test various credential scenarios in command builder."""
@@ -149,7 +149,7 @@ class TestRiskyFlag(unittest.TestCase):
                 self.mock_output,
                 self.mock_database,
                 self.session_id,
-                risky_mode=True  # Use risky mode to focus on credentials, not security flags
+                cautious_mode=False  # Use legacy mode to focus on credentials, not security flags
             )
 
             # Test anonymous
@@ -171,11 +171,11 @@ class TestRiskyFlag(unittest.TestCase):
 
 def main():
     """Run the test suite."""
-    print("🧪 SMBSeek Risky Flag Unit Tests")
+    print("🧪 SMBSeek Cautious Flag Unit Tests")
     print("=" * 40)
 
     # Create test suite
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestRiskyFlag)
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestCautiousFlag)
 
     # Run tests
     runner = unittest.TextTestRunner(verbosity=2)

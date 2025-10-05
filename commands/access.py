@@ -76,7 +76,7 @@ class AccessOperation:
         'NT_STATUS_INSUFFICIENT_RESOURCES': 'Insufficient server resources'
     }
 
-    def __init__(self, config, output, database, session_id, risky_mode=False):
+    def __init__(self, config, output, database, session_id, cautious_mode=False):
         """
         Initialize access operation.
 
@@ -85,13 +85,13 @@ class AccessOperation:
             output: SMBSeekOutput instance
             database: SMBSeekWorkflowDatabase instance
             session_id: Database session ID for this operation
-            risky_mode: Enable legacy insecure SMB settings if True
+            cautious_mode: Enable modern security hardening if True
         """
         self.config = config
         self.output = output
         self.database = database
         self.session_id = session_id
-        self.risky_mode = risky_mode
+        self.cautious_mode = cautious_mode
         
         # Check smbclient availability for share enumeration
         self.smbclient_available = self.check_smbclient_availability()
@@ -100,7 +100,6 @@ class AccessOperation:
 
         self.results = []
         self.total_targets = 0
-        self.current_target = 0
     
     def check_smbclient_availability(self):
         """Check if smbclient command is available on the system."""
@@ -128,8 +127,8 @@ class AccessOperation:
         """
         cmd = ["smbclient"]
 
-        if not self.risky_mode:
-            # Safe mode: Try modern flags first, with fallback detection during execution
+        if self.cautious_mode:
+            # Cautious mode: Apply security hardening flags
             cmd.extend([
                 "--client-protection=sign",  # Require signing (Samba 4.11+)
                 "--max-protocol=SMB3",       # Allow SMB2/3, block SMB1
@@ -172,7 +171,7 @@ class AccessOperation:
             result = subprocess.run(cmd, **kwargs)
             return result
         except subprocess.CalledProcessError as e:
-            if not self.risky_mode and "Unknown option" in (e.stderr or ""):
+            if self.cautious_mode and "Unknown option" in (e.stderr or ""):
                 # Fallback: remove modern security flags and retry with older syntax
                 fallback_cmd = [arg for arg in cmd if not arg.startswith("--client-protection")]
 
@@ -234,15 +233,16 @@ class AccessOperation:
 
         # Process hosts with controlled concurrency
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks with index tracking
-            future_to_index = {}
+            # Submit all tasks with index and host position tracking
+            future_to_metadata = {}
             for index, host in enumerate(authenticated_hosts):
-                future = executor.submit(self.process_target, host)
-                future_to_index[future] = index
+                host_position = index + 1
+                future = executor.submit(self.process_target, host, host_position)
+                future_to_metadata[future] = (index, host_position)
 
             # Collect results in deterministic order
-            for future in future_to_index:
-                index = future_to_index[future]
+            for future in future_to_metadata:
+                index, _host_position = future_to_metadata[future]
                 try:
                     result = future.result()
                     results_by_index[index] = result
@@ -312,10 +312,10 @@ class AccessOperation:
                 shares = self.parse_share_list(result.stdout)
                 self.output.print_if_verbose(f"Found {len(shares)} non-admin shares")
                 return shares
-            elif not self.risky_mode and result.returncode != 0:
-                # In safe mode, provide actionable error message for failures
+            elif self.cautious_mode and result.returncode != 0:
+                # In cautious mode, provide informational message for failures
                 if "NT_STATUS" in result.stderr:
-                    self.output.print_if_verbose(f"Share enumeration failed on {ip}: rerun with --risky if you accept insecure access")
+                    self.output.print_if_verbose(f"Share enumeration failed on {ip}: rejected in cautious mode")
 
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
             self.output.print_if_verbose(f"Share enumeration failed: {str(e)}")
@@ -454,10 +454,10 @@ class AccessOperation:
                 friendly_msg, raw_context = self._format_smbclient_error(result)
                 access_result['error'] = friendly_msg
 
-                # In safe mode, provide actionable error message for security-related failures
-                if not self.risky_mode and "NT_STATUS" in friendly_msg:
+                # In cautious mode, provide informational message for security-related failures
+                if self.cautious_mode and "NT_STATUS" in friendly_msg:
                     if "ACCESS_DENIED" in friendly_msg or "LOGON_FAILURE" in friendly_msg:
-                        self.output.print_if_verbose(f"Share '{share_name}' requires insecure access; rerun with --risky if you accept that risk")
+                        self.output.print_if_verbose(f"Share '{share_name}' access denied - security restrictions in cautious mode")
 
                 if True:  # verbose check handled by output methods
                     # Consider ACCESS_DENIED as expected regardless of raw context
@@ -543,14 +543,14 @@ class AccessOperation:
             trimmed_output = combined_output[:160] + "..." if len(combined_output) > 160 else combined_output
             return (f"smbclient error: {trimmed_output}", combined_output)
 
-    def process_target(self, host_record):
+    def process_target(self, host_record, host_position):
         """Process a single host target for share access testing."""
         ip = host_record['ip_address']
         country = host_record.get('country', 'Unknown')
         auth_method = host_record['auth_method']
-        
-        self.current_target += 1
-        self.output.info(f"[{self.current_target}/{self.total_targets}] Testing {ip} ({country})...")
+
+        host_label = f"Host {host_position}/{self.total_targets}"
+        self.output.info(f"[{host_position}/{self.total_targets}] Testing {ip} ({country})...")
         
         # Parse authentication method
         username, password = self.parse_auth_method(auth_method)
@@ -590,21 +590,29 @@ class AccessOperation:
             for i, share_name in enumerate(shares, 1):
                 access_result = self.test_share_access(ip, share_name, username, password)
                 target_result['share_details'].append(access_result)
-                
+
                 if access_result['accessible']:
                     target_result['accessible_shares'].append(share_name)
-                    self.output.success(f"Share {i}/{len(shares)}: {share_name} - accessible")
+                    self.output.success(
+                        f"{host_label}: Share {i}/{len(shares)}: {share_name} - accessible"
+                    )
                 else:
                     message = access_result.get('error', 'not accessible')
                     if message and 'NT_STATUS_ACCESS_DENIED' in message:
                         # All access denied errors = clean yellow warning
-                        self.output.warning(f"Share {i}/{len(shares)}: {share_name} - Access Failed")
+                        self.output.warning(
+                            f"{host_label}: Share {i}/{len(shares)}: {share_name} - Access Failed"
+                        )
                     elif 'timeout' in message.lower() or 'connection' in message.lower():
                         # Technical failures = red error with details
-                        self.output.error(f"Share {i}/{len(shares)}: {share_name} - {message}")
+                        self.output.error(
+                            f"{host_label}: Share {i}/{len(shares)}: {share_name} - {message}"
+                        )
                     else:
                         # Other failures = clean yellow warning
-                        self.output.warning(f"Share {i}/{len(shares)}: {share_name} - Access Failed")
+                        self.output.warning(
+                            f"{host_label}: Share {i}/{len(shares)}: {share_name} - Access Failed"
+                        )
                 
                 # Rate limiting between share tests
                 if share_name != shares[-1]:  # Don't delay after the last share
