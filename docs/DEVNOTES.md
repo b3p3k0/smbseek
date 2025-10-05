@@ -1044,8 +1044,10 @@ smbseek: error: the following arguments are required: --country
 Implemented hierarchical fallback system:
 
 1. **Tier 1**: Use `--country` flag if provided (explicit user intent)
-2. **Tier 2**: Use `countries` section from `config.json` if exists (configured defaults)  
+2. **Tier 2**: ~~Use `countries` section from `config.json` if exists~~ (REMOVED - see note below)
 3. **Tier 3**: Fall back to global scan with no country filter (maximum flexibility)
+
+**Note**: As of the global scanning fix, the `countries` section has been removed from config.json to ensure true global scanning behavior when no --country flag is specified.
 
 #### Technical Implementation Details
 
@@ -1771,7 +1773,7 @@ for share_name in accessible_shares:
 
 **Fix**: Replaced broken method with proven working storage logic, maintaining backward compatibility and existing interfaces.
 
-**Prevention**: Added regression test (`test_regression_fix.py`) that verifies console output matches database storage.
+**Prevention**: Added regression test (`tests/test_regression_fix.py`) that verifies console output matches database storage.
 
 **Timeline**:
 - Originally fixed: August 2025 (commit 02d35a7)

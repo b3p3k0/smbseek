@@ -225,7 +225,7 @@ python tools/db_maintenance.py --help
 
 - Check `./smbseek.py --help` for latest syntax
 - Review database operations with `python tools/db_query.py --help`
-- Test compatibility with `python test_cli_flags.py`
+- Test compatibility with `python tests/test_cli_flags.py`
 
 ### Rollback Procedure
 

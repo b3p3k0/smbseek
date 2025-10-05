@@ -17,14 +17,14 @@ Project-specific guidance for Codex when collaborating on the smbseek backend. R
 - Coordinate on any change that shifts session management or database schema—`UnifiedWorkflow` expects current contracts.
 
 ## Breadth Checks Before Editing
-- CLI or flag tweaks demand syncs across docs (`README.md`, `docs/USER_GUIDE.md`), `test_cli_flags.py`, and help text embedded in `smbseek.py`.
+- CLI or flag tweaks demand syncs across docs (`README.md`, `docs/USER_GUIDE.md`), `tests/test_cli_flags.py`, and help text embedded in `smbseek.py`.
 - Config schema updates must align defaults in `shared/config`, validation logic, `conf/config.json`, and onboarding guidance in `docs/DEVNOTES.md`.
 - Database changes require schema migrations (`tools/db_manager.py`, `docs/DATABASE_MIGRATION_GUIDE.md`) plus audits of DAL helpers.
-- Adjustments to share parsing or smbclient flows need corresponding updates in `commands/access.py`, parser helpers, and `test_access_parsing.py`.
+- Adjustments to share parsing or smbclient flows need corresponding updates in `commands/access.py`, parser helpers, and `tests/test_access_parsing.py`.
 - Output summary or rollup modifications must stay in lockstep with automation that scrapes the wording (tests, reporting scripts, docs).
 
 ## Testing Expectations
-- Run targeted suites: `python3 test_cli_flags.py`, `python3 test_access_parsing.py`, `python3 test_database_filtering.py`, and `python3 test_discover_metadata.py` when they touch the affected area.
+- Run targeted suites: `python3 tests/test_cli_flags.py`, `python3 tests/test_access_parsing.py`, `python3 tests/test_database_filtering.py`, and `python3 tests/test_discover_metadata.py` when they touch the affected area.
 - Record manual verifications for network-dependent paths (Shodan lookups, smbclient share access); note when sandboxing blocks full runs.
 - For share parsing or database filtering changes, craft unit fixtures that cover Samba vs Windows variants; keep regression scenarios from docs alive.
 - When tests cannot execute locally, spell out remote/real-world steps teammates should run and the expected outputs.
