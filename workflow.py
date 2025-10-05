@@ -54,7 +54,7 @@ class UnifiedWorkflow:
     and provides structured summary output.
     """
 
-    def __init__(self, config, output, database):
+    def __init__(self, config, output, database, risky_mode=False):
         """
         Initialize unified workflow.
 
@@ -62,10 +62,12 @@ class UnifiedWorkflow:
             config: SMBSeekConfig instance
             output: SMBSeekOutput instance
             database: SMBSeekWorkflowDatabase instance
+            risky_mode: Enable legacy insecure SMB settings if True
         """
         self.config = config
         self.output = output
         self.database = database
+        self.risky_mode = risky_mode
         self.session_id = None
 
     def run(self, args) -> WorkflowSummary:
@@ -96,6 +98,12 @@ class UnifiedWorkflow:
 
             # Execute workflow steps
             self.output.header("SMBSeek Unified Security Assessment")
+
+            # Display security mode banner
+            if self.risky_mode:
+                self.output.warning("⚠️  RISKY MODE: Using legacy insecure SMB settings (unsigned, SMB1 allowed)")
+            else:
+                self.output.info("🔒 Safe mode: Requiring signed SMB sessions, SMB2+/3 only, encryption preferred")
 
             # Step 1: Discovery
             discover_result = self._execute_discovery(args)
@@ -152,7 +160,8 @@ class UnifiedWorkflow:
                 self.config,
                 self.output,
                 self.database,
-                self.session_id
+                self.session_id,
+                self.risky_mode
             )
 
             # Execute discovery with parsed arguments
@@ -192,7 +201,8 @@ class UnifiedWorkflow:
                 self.config,
                 self.output,
                 self.database,
-                self.session_id
+                self.session_id,
+                self.risky_mode
             )
 
             # Execute access verification with parsed arguments
@@ -232,4 +242,4 @@ def create_unified_workflow(args) -> UnifiedWorkflow:
 
     database = create_workflow_database(config, getattr(args, 'verbose', False))
 
-    return UnifiedWorkflow(config, output, database)
+    return UnifiedWorkflow(config, output, database, getattr(args, 'risky', False))

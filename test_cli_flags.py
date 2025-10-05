@@ -73,6 +73,10 @@ def test_global_flags():
         # Version flag
         (["./smbseek.py", "--version"], True),
 
+        # Risky flag
+        (["./smbseek.py", "--risky", "--help"], True),
+        (["./smbseek.py", "--help", "--risky"], True),
+
         # Invalid arguments should fail
         (["./smbseek.py", "--invalid-flag"], False),
 
