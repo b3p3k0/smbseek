@@ -154,9 +154,9 @@ Documentation: docs/USER_GUIDE.md
         help='Force scanning of specific hosts (comma-separated IPs) even if recently processed or previously failed'
     )
     parser.add_argument(
-        '--risky',
+        '--cautious',
         action='store_true',
-        help='Enable legacy insecure SMB settings (unsigned sessions, SMB1 allowed). Default is safe mode with signing required and SMB2+/3 only.'
+        help='Enable modern security hardening (signed SMB sessions, SMB2+/3 only). Default is legacy compatibility mode.'
     )
     parser.add_argument(
         '--version',

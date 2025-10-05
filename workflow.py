@@ -44,6 +44,7 @@ class WorkflowSummary:
     hosts_accessible: int
     accessible_shares: int
     session_id: int
+    cautious_mode: bool
 
 
 class UnifiedWorkflow:
@@ -54,7 +55,7 @@ class UnifiedWorkflow:
     and provides structured summary output.
     """
 
-    def __init__(self, config, output, database, risky_mode=False):
+    def __init__(self, config, output, database, cautious_mode=False):
         """
         Initialize unified workflow.
 
@@ -62,12 +63,12 @@ class UnifiedWorkflow:
             config: SMBSeekConfig instance
             output: SMBSeekOutput instance
             database: SMBSeekWorkflowDatabase instance
-            risky_mode: Enable legacy insecure SMB settings if True
+            cautious_mode: Enable modern security hardening if True
         """
         self.config = config
         self.output = output
         self.database = database
-        self.risky_mode = risky_mode
+        self.cautious_mode = cautious_mode
         self.session_id = None
 
     def run(self, args) -> WorkflowSummary:
@@ -100,10 +101,8 @@ class UnifiedWorkflow:
             self.output.header("SMBSeek Unified Security Assessment")
 
             # Display security mode banner
-            if self.risky_mode:
-                self.output.warning("⚠️  RISKY MODE: Using legacy insecure SMB settings (unsigned, SMB1 allowed)")
-            else:
-                self.output.info("🔒 Safe mode: Requiring signed SMB sessions, SMB2+/3 only, encryption preferred")
+            if self.cautious_mode:
+                self.output.info("🔒 Cautious mode enabled: requiring signed SMB sessions, SMB2+/3 only")
 
             # Step 1: Discovery
             discover_result = self._execute_discovery(args)
@@ -125,7 +124,8 @@ class UnifiedWorkflow:
                 hosts_scanned=discover_result.total_hosts,
                 hosts_accessible=access_result.accessible_hosts,
                 accessible_shares=access_result.accessible_shares,
-                session_id=self.session_id
+                session_id=self.session_id,
+                cautious_mode=self.cautious_mode
             )
 
             self.output.success("Workflow completed successfully")
@@ -161,7 +161,7 @@ class UnifiedWorkflow:
                 self.output,
                 self.database,
                 self.session_id,
-                self.risky_mode
+                self.cautious_mode
             )
 
             # Execute discovery with parsed arguments
@@ -202,7 +202,7 @@ class UnifiedWorkflow:
                 self.output,
                 self.database,
                 self.session_id,
-                self.risky_mode
+                self.cautious_mode
             )
 
             # Execute access verification with parsed arguments
@@ -242,4 +242,4 @@ def create_unified_workflow(args) -> UnifiedWorkflow:
 
     database = create_workflow_database(config, getattr(args, 'verbose', False))
 
-    return UnifiedWorkflow(config, output, database, getattr(args, 'risky', False))
+    return UnifiedWorkflow(config, output, database, getattr(args, 'cautious', False))

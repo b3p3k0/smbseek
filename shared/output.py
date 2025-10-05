@@ -132,6 +132,11 @@ class SMBSeekOutput:
         else:
             self.info("Scan completed: No accessible SMB resources found")
 
+            # Show cautious mode tip when no results found
+            if getattr(summary, 'cautious_mode', False):
+                self.print_if_not_quiet("")
+                self.info("💡 Tip: Default mode may discover more hosts. Cautious mode prioritizes security over compatibility.")
+
 
 class SMBSeekReporter:
     """

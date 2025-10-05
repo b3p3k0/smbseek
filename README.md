@@ -290,47 +290,47 @@ SMBSeek represents a successful AI-human collaboration where Claude (Anthropic's
 
 ## Operational Safety
 
-SMBSeek 3.0+ implements **safe-by-default** security measures to protect against honeypots and reduce attack surface during defensive security assessments.
+SMBSeek 3.0+ implements **compatibility-by-default** to maximize discovery while providing optional security hardening for untrusted environments.
 
-### Default Security Protections
+### Default Compatibility Mode
 
-**Safe Mode (Default Behavior):**
-- **Signed SMB sessions required** - Prevents session tampering and honeypot engagement
-- **SMB2+/3 protocols only** - Blocks SMB1 connections that often indicate honeypots
-- **Encryption preferred when available** - Uses encrypted connections where supported
-- **Modern security flags** - Leverages latest smbclient security options with fallbacks
+**Default Behavior (Legacy Compatible):**
+- **Unsigned SMB sessions allowed** - Compatible with legacy/insecure servers
+- **SMB1 protocol enabled** - Can connect to very old Windows systems
+- **Maximum compatibility** - Works with all SMB protocol versions
+- **Legacy system support** - Connects to older Windows and Samba implementations
 
 ```bash
-# Default safe mode - recommended for production use
+# Default compatibility mode - maximum SMB server support
 ./smbseek.py --country US
 ```
 
-### Legacy Compatibility Mode
+### Enhanced Security Mode
 
-**Risky Mode (--risky flag required):**
-- **Unsigned SMB sessions allowed** - Compatible with legacy/insecure servers
-- **SMB1 protocol enabled** - Can connect to very old Windows systems
-- **Unencrypted connections** - Falls back to plaintext when necessary
-- **Minimal security restrictions** - Maximum compatibility with legacy infrastructure
+**Cautious Mode (--cautious flag required):**
+- **Signed SMB sessions required** - Rejects unsigned/insecure connections
+- **SMB2+/3 protocols only** - Blocks legacy SMB1 connections
+- **Modern security flags** - Uses latest smbclient hardening options
+- **Enhanced authentication validation** - Stricter connection requirements
 
 ```bash
-# Legacy mode - use only when safe mode blocks legitimate targets
-./smbseek.py --country US --risky
+# Enhanced security mode - use for untrusted environments
+./smbseek.py --country US --cautious
 ```
 
 ### When to Use Each Mode
 
-**Use Safe Mode (default) when:**
-- Performing routine security assessments
+**Use Default Mode when:**
+- Performing comprehensive security assessments
+- Scanning internal corporate networks
+- Working with mixed legacy/modern infrastructure
+- Prioritizing maximum compatibility and discovery
+
+**Use Cautious Mode (--cautious) when:**
 - Scanning unknown or untrusted networks
 - Working from disposable/isolated environments
 - Prioritizing security over maximum compatibility
-
-**Use Risky Mode (--risky) when:**
-- Safe mode blocks legitimate legacy servers you need to assess
-- Working with known internal infrastructure that requires SMB1
-- Troubleshooting connectivity issues during authorized assessments
-- You explicitly need to test SMB1/unsigned configurations
+- You need to enforce modern SMB security standards
 
 ### Operational Hygiene
 
@@ -354,31 +354,31 @@ SMBSeek 3.0+ implements **safe-by-default** security measures to protect against
 
 ### Expected Behavior Differences
 
-**Safe Mode May Skip:**
+**Cautious Mode May Skip:**
 - Very old Windows 2000/XP systems that only support SMB1
 - Legacy Samba configurations with signing disabled
 - Industrial control systems using outdated SMB implementations
 - Network attached storage (NAS) devices with basic SMB support
 
-**This is acceptable for defensive security** because:
+**This trade-off is beneficial for high-security environments** because:
 - Such systems indicate significant security debt requiring separate remediation
 - Honeypots commonly masquerade as vulnerable legacy systems
 - Modern infrastructure should support signed SMB2+/3 connections
-- Defense-focused scanning prioritizes current threats over legacy edge cases
+- Security-focused scanning prioritizes current threats over legacy edge cases
 
-### Recovery Examples
+### Mode Selection Examples
 
-If safe mode blocks legitimate targets, use specific syntax to re-enable access:
+Use default mode for comprehensive discovery, cautious mode for secure environments:
 
 ```bash
-# If initial scan finds fewer hosts than expected
-./smbseek.py --country US --verbose  # Check logs for "rerun with --risky" messages
+# Default comprehensive scan
+./smbseek.py --country US --verbose
 
-# Re-scan specific hosts with risky mode
-./smbseek.py --country US --risky --force-hosts 192.168.1.100,192.168.1.200
+# Enhanced security scan for untrusted networks
+./smbseek.py --country US --cautious --force-hosts 192.168.1.100,192.168.1.200
 
-# Full risky mode scan (use sparingly)
-./smbseek.py --country US --risky --verbose
+# Targeted security scan for specific hosts
+./smbseek.py --country US --cautious --verbose
 ```
 
 ### Smbclient Compatibility
