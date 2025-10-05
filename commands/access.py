@@ -452,7 +452,12 @@ class AccessOperation:
             else:
                 # Format error using new helper
                 friendly_msg, raw_context = self._format_smbclient_error(result)
-                access_result['error'] = friendly_msg
+                share_missing = 'NT_STATUS_BAD_NETWORK_NAME' in friendly_msg
+
+                if share_missing:
+                    access_result['error'] = "Share not found on server (server reported NT_STATUS_BAD_NETWORK_NAME)"
+                else:
+                    access_result['error'] = friendly_msg
 
                 # In cautious mode, provide informational message for security-related failures
                 if self.cautious_mode and "NT_STATUS" in friendly_msg:
@@ -460,11 +465,11 @@ class AccessOperation:
                         self.output.print_if_verbose(f"Share '{share_name}' access denied - security restrictions in cautious mode")
 
                 if True:  # verbose check handled by output methods
-                    # Consider ACCESS_DENIED as expected regardless of raw context
+                    # Consider ACCESS_DENIED and missing shares as expected outcomes
                     is_expected_denial = 'NT_STATUS_ACCESS_DENIED' in friendly_msg
 
-                    if is_expected_denial:
-                        # Suppress detailed output for expected access denials
+                    if is_expected_denial or share_missing:
+                        # Suppress detailed output for expected access denials/missing shares
                         # Let the summary processing handle all user-facing output
                         pass
                     else:
@@ -544,7 +549,12 @@ class AccessOperation:
             return (f"smbclient error: {trimmed_output}", combined_output)
 
     def process_target(self, host_record, host_position):
-        """Process a single host target for share access testing."""
+        """Process a single host target for share access testing.
+
+        Args:
+            host_record: Database record for the target host
+            host_position: 1-based index of the host within the current batch
+        """
         ip = host_record['ip_address']
         country = host_record.get('country', 'Unknown')
         auth_method = host_record['auth_method']
@@ -602,6 +612,14 @@ class AccessOperation:
                         # All access denied errors = clean yellow warning
                         self.output.warning(
                             f"{host_label}: Share {i}/{len(shares)}: {share_name} - Access Failed"
+                        )
+                    elif message and (
+                        'NT_STATUS_BAD_NETWORK_NAME' in message
+                        or 'share not found' in message.lower()
+                    ):
+                        # Shares that no longer exist should show a human-friendly warning
+                        self.output.warning(
+                            f"{host_label}: Share {i}/{len(shares)}: {share_name} - {message}"
                         )
                     elif 'timeout' in message.lower() or 'connection' in message.lower():
                         # Technical failures = red error with details

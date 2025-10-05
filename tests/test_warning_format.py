@@ -81,6 +81,8 @@ class TestWarningFormat(unittest.TestCase):
             session_id=self.session_id
         )
 
+        access_op.total_targets = 1
+
         # Create mock result with access denied error
         test_result = {
             'ip_address': '192.168.1.100',
@@ -102,30 +104,67 @@ class TestWarningFormat(unittest.TestCase):
 
         # Mock the individual share processing part that generates user output
         shares = ['test_share']
+        host_label = "Host 1/1"
         with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
             # Simulate the share testing loop from process_target()
             for i, share_name in enumerate(shares, 1):
                 access_result = test_result['share_details'][0]
                 if access_result['accessible']:
-                    access_op.output.success(f"Share {i}/{len(shares)}: {share_name} - accessible")
+                    access_op.output.success(
+                        f"{host_label}: Share {i}/{len(shares)}: {share_name} - accessible"
+                    )
                 else:
                     message = access_result.get('error', 'not accessible')
                     if message and 'NT_STATUS_ACCESS_DENIED' in message:
                         # All access denied errors = clean yellow warning
-                        access_op.output.warning(f"Share {i}/{len(shares)}: {share_name} - Access Failed")
+                        access_op.output.warning(
+                            f"{host_label}: Share {i}/{len(shares)}: {share_name} - Access Failed"
+                        )
                     elif 'timeout' in message.lower() or 'connection' in message.lower():
                         # Technical failures = red error with details
-                        access_op.output.error(f"Share {i}/{len(shares)}: {share_name} - {message}")
+                        access_op.output.error(
+                            f"{host_label}: Share {i}/{len(shares)}: {share_name} - {message}"
+                        )
                     else:
                         # Other failures = clean yellow warning
-                        access_op.output.warning(f"Share {i}/{len(shares)}: {share_name} - Access Failed")
+                        access_op.output.warning(
+                            f"{host_label}: Share {i}/{len(shares)}: {share_name} - Access Failed"
+                        )
 
             console_output = mock_stdout.getvalue().strip()
 
         # Verify the output format
         self.assertTrue(console_output.startswith("⚠ "), "Should use warning emoji")
-        self.assertIn("Share 1/1: test_share - Access Failed", console_output, "Should show simplified message")
+        self.assertIn("Host 1/1: Share 1/1: test_share - Access Failed", console_output, "Should show simplified message")
         self.assertNotIn("NT_STATUS_ACCESS_DENIED", console_output, "Should not show technical details in console")
+
+    def test_missing_share_shows_pretty_warning(self):
+        """Ensure missing shares emit a human-friendly warning instead of a raw error."""
+        output = SMBSeekOutput(self.config, quiet=False, verbose=False, no_colors=True)
+        access_op = AccessOperation(
+            config=self.config,
+            output=output,
+            database=self.database,
+            session_id=self.session_id
+        )
+
+        access_op.total_targets = 1
+        host_label = "Host 1/1"
+
+        shares = ['ghost_share']
+        message = "Share not found on server (server reported NT_STATUS_BAD_NETWORK_NAME)"
+
+        with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+            access_op.output.warning(
+                f"{host_label}: Share 1/{len(shares)}: {shares[0]} - {message}"
+            )
+
+            console_output = mock_stdout.getvalue().strip()
+
+        self.assertTrue(console_output.startswith("⚠ "), "Missing shares should show as warnings")
+        self.assertIn("Share 1/1", console_output)
+        self.assertIn("Share not found on server", console_output)
+        self.assertIn("NT_STATUS_BAD_NETWORK_NAME", console_output)
 
     def test_technical_errors_show_as_errors(self):
         """Test that technical errors (timeouts, connections) still show as red errors with details."""
@@ -137,13 +176,19 @@ class TestWarningFormat(unittest.TestCase):
             session_id=self.session_id
         )
 
+        access_op.total_targets = 1
+
+        host_label = "Host 1/1"
+
         shares = ['test_share']
 
         # Test timeout error
         with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
             message = "Connection timeout"
             if 'timeout' in message.lower() or 'connection' in message.lower():
-                access_op.output.error(f"Share 1/{len(shares)}: test_share - {message}")
+                access_op.output.error(
+                    f"{host_label}: Share 1/{len(shares)}: test_share - {message}"
+                )
 
             console_output = mock_stdout.getvalue().strip()
 
