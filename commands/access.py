@@ -76,7 +76,7 @@ class AccessOperation:
         'NT_STATUS_INSUFFICIENT_RESOURCES': 'Insufficient server resources'
     }
 
-    def __init__(self, config, output, database, session_id):
+    def __init__(self, config, output, database, session_id, risky_mode=False):
         """
         Initialize access operation.
 
@@ -85,11 +85,13 @@ class AccessOperation:
             output: SMBSeekOutput instance
             database: SMBSeekWorkflowDatabase instance
             session_id: Database session ID for this operation
+            risky_mode: Enable legacy insecure SMB settings if True
         """
         self.config = config
         self.output = output
         self.database = database
         self.session_id = session_id
+        self.risky_mode = risky_mode
         
         # Check smbclient availability for share enumeration
         self.smbclient_available = self.check_smbclient_availability()
@@ -103,12 +105,86 @@ class AccessOperation:
     def check_smbclient_availability(self):
         """Check if smbclient command is available on the system."""
         try:
-            result = subprocess.run(['smbclient', '--help'], 
-                                  capture_output=True, 
+            result = subprocess.run(['smbclient', '--help'],
+                                  capture_output=True,
                                   timeout=5)
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
             return False
+
+    def _build_smbclient_cmd(self, operation_type, target, username="", password="", **kwargs):
+        """
+        Build complete smbclient command with security options and credentials.
+
+        Args:
+            operation_type: Type of operation ("enumerate" or "access")
+            target: Target IP address
+            username: Username for authentication
+            password: Password for authentication
+            **kwargs: Additional parameters (e.g., share for access operations)
+
+        Returns:
+            List containing complete smbclient command
+        """
+        cmd = ["smbclient"]
+
+        if not self.risky_mode:
+            # Safe mode: Try modern flags first, with fallback detection during execution
+            cmd.extend([
+                "--client-protection=sign",  # Require signing (Samba 4.11+)
+                "--max-protocol=SMB3",       # Allow SMB2/3, block SMB1
+                "--option=client min protocol=SMB2",
+                "--option=client smb encrypt=desired"  # Prefer but don't require encryption
+            ])
+
+        # Add operation-specific parts
+        if operation_type == "enumerate":
+            cmd.extend(["-L", f"//{target}"])
+        elif operation_type == "access":
+            share = kwargs.get('share')
+            cmd.extend([f"//{target}/{share}"])
+
+        # Add credentials (after security options)
+        if username == "" and password == "":
+            cmd.append("-N")  # Anonymous
+        elif username == "guest":
+            if password == "":
+                cmd.extend(["--user", "guest%"])
+            else:
+                cmd.extend(["--user", f"guest%{password}"])
+        else:
+            cmd.extend(["--user", f"{username}%{password}"])
+
+        return cmd
+
+    def _execute_with_fallback(self, cmd, **kwargs):
+        """
+        Execute smbclient command with fallback for unsupported security flags.
+
+        Args:
+            cmd: smbclient command list
+            **kwargs: Additional arguments for subprocess.run
+
+        Returns:
+            subprocess.CompletedProcess result
+        """
+        try:
+            result = subprocess.run(cmd, **kwargs)
+            return result
+        except subprocess.CalledProcessError as e:
+            if not self.risky_mode and "Unknown option" in (e.stderr or ""):
+                # Fallback: remove modern security flags and retry with older syntax
+                fallback_cmd = [arg for arg in cmd if not arg.startswith("--client-protection")]
+
+                # Add older signing syntax if the modern flag was removed
+                if "--client-protection=sign" in cmd:
+                    # Insert after 'smbclient' but before target/operation flags
+                    insert_pos = 1
+                    fallback_cmd.insert(insert_pos, "--option=client signing=required")
+
+                self.output.print_if_verbose("Falling back to older smbclient syntax for security options")
+                return subprocess.run(fallback_cmd, **kwargs)
+            raise
     
     def execute(self, target_ips: Set[str], recent_hours=None) -> AccessResult:
         """
@@ -220,37 +296,30 @@ class AccessOperation:
         """Enumerate available SMB shares on the target server."""
         if not self.smbclient_available:
             return []
-        
+
         try:
-            # Use smbclient command to list shares
-            cmd = ["smbclient", "-L", f"//{ip}"]
-            
-            # Add authentication based on credentials
-            if username == "" and password == "":
-                cmd.append("-N")  # No password (anonymous)
-            elif username == "guest":
-                if password == "":
-                    cmd.extend(["--user", "guest%"])
-                else:
-                    cmd.extend(["--user", f"guest%{password}"])
-            else:
-                cmd.extend(["--user", f"{username}%{password}"])
-            
+            # Build smbclient command with security options
+            cmd = self._build_smbclient_cmd("enumerate", ip, username, password)
+
             self.output.print_if_verbose(f"Enumerating shares: {' '.join(cmd)}")
 
-            # Run command with timeout, prevent password prompts
-            result = subprocess.run(cmd, capture_output=True, text=True,
-                                  timeout=15, stdin=subprocess.DEVNULL)
+            # Run command with timeout and fallback handling, prevent password prompts
+            result = self._execute_with_fallback(cmd, capture_output=True, text=True,
+                                               timeout=15, stdin=subprocess.DEVNULL)
 
             # Parse shares from output
             if result.returncode == 0 or "Sharename" in result.stdout:
                 shares = self.parse_share_list(result.stdout)
                 self.output.print_if_verbose(f"Found {len(shares)} non-admin shares")
                 return shares
+            elif not self.risky_mode and result.returncode != 0:
+                # In safe mode, provide actionable error message for failures
+                if "NT_STATUS" in result.stderr:
+                    self.output.print_if_verbose(f"Share enumeration failed on {ip}: rerun with --risky if you accept insecure access")
 
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
             self.output.print_if_verbose(f"Share enumeration failed: {str(e)}")
-        
+
         return []
     
     def _is_section_header(self, line):
@@ -354,32 +423,21 @@ class AccessOperation:
             'accessible': False,
             'error': None
         }
-        
+
         try:
-            # Use smbclient to test if we can list the share contents
-            cmd = ["smbclient", f"//{ip}/{share_name}"]
-            
-            # Add authentication based on credentials
-            if username == "" and password == "":
-                cmd.append("-N")  # No password (anonymous)
-            elif username == "guest":
-                if password == "":
-                    cmd.extend(["--user", "guest%"])
-                else:
-                    cmd.extend(["--user", f"guest%{password}"])
-            else:
-                cmd.extend(["--user", f"{username}%{password}"])
-            
+            # Build smbclient command with security options
+            cmd = self._build_smbclient_cmd("access", ip, username, password, share=share_name)
+
             # Add command to list directory (test read access)
             cmd.extend(["-c", "ls"])
-            
+
             if True:  # verbose check handled by output methods
                 self.output.print_if_verbose(f"Testing access: {' '.join(cmd)}")
-            
-            # Run command with timeout
-            result = subprocess.run(cmd, capture_output=True, text=True, 
-                                  timeout=15, stdin=subprocess.DEVNULL)
-            
+
+            # Run command with timeout and fallback handling
+            result = self._execute_with_fallback(cmd, capture_output=True, text=True,
+                                               timeout=15, stdin=subprocess.DEVNULL)
+
             # Check if listing was successful
             if result.returncode == 0:
                 # Additional check: ensure we got actual file listing output
@@ -396,18 +454,26 @@ class AccessOperation:
                 friendly_msg, raw_context = self._format_smbclient_error(result)
                 access_result['error'] = friendly_msg
 
+                # In safe mode, provide actionable error message for security-related failures
+                if not self.risky_mode and "NT_STATUS" in friendly_msg:
+                    if "ACCESS_DENIED" in friendly_msg or "LOGON_FAILURE" in friendly_msg:
+                        self.output.print_if_verbose(f"Share '{share_name}' requires insecure access; rerun with --risky if you accept that risk")
+
                 if True:  # verbose check handled by output methods
-                    is_expected_denial = raw_context is None and 'NT_STATUS_ACCESS_DENIED' in friendly_msg
+                    # Consider ACCESS_DENIED as expected regardless of raw context
+                    is_expected_denial = 'NT_STATUS_ACCESS_DENIED' in friendly_msg
 
                     if is_expected_denial:
-                        self.output.warning(f"Share '{share_name}' - {friendly_msg}")
+                        # Suppress detailed output for expected access denials
+                        # Let the summary processing handle all user-facing output
+                        pass
                     else:
-                        # Include raw context in brackets if it differs from the friendly message
+                        # Show detailed red errors only for genuine technical failures
                         if raw_context and raw_context != friendly_msg:
                             self.output.error(f"Share '{share_name}' - {friendly_msg} [{raw_context}]")
                         else:
                             self.output.error(f"Share '{share_name}' - {friendly_msg}")
-                
+
         except subprocess.TimeoutExpired:
             access_result['error'] = "Connection timeout"
             if True:  # verbose check handled by output methods
@@ -416,7 +482,7 @@ class AccessOperation:
             access_result['error'] = f"Test error: {str(e)}"
             if True:  # verbose check handled by output methods
                 self.output.error(f"Share '{share_name}' - test error")
-        
+
         return access_result
 
     def _format_smbclient_error(self, result):

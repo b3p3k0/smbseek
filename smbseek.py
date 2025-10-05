@@ -121,7 +121,7 @@ Documentation: docs/USER_GUIDE.md
         '--country',
         type=str,
         metavar='CODE',
-        help='Country code for Shodan search (US, GB, CA, etc.). If not specified, uses countries from config.json or global scan if none configured.'
+        help='Country code for Shodan search (US, GB, CA, etc.). If not specified, performs global scan with no country filter.'
     )
 
     # Global options
@@ -152,6 +152,11 @@ Documentation: docs/USER_GUIDE.md
         action='append',
         metavar='IPS',
         help='Force scanning of specific hosts (comma-separated IPs) even if recently processed or previously failed'
+    )
+    parser.add_argument(
+        '--risky',
+        action='store_true',
+        help='Enable legacy insecure SMB settings (unsigned sessions, SMB1 allowed). Default is safe mode with signing required and SMB2+/3 only.'
     )
     parser.add_argument(
         '--version',

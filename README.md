@@ -288,6 +288,108 @@ SMBSeek represents a successful AI-human collaboration where Claude (Anthropic's
 3. Test thoroughly against real SMB servers
 4. Submit a pull request
 
+## Operational Safety
+
+SMBSeek 3.0+ implements **safe-by-default** security measures to protect against honeypots and reduce attack surface during defensive security assessments.
+
+### Default Security Protections
+
+**Safe Mode (Default Behavior):**
+- **Signed SMB sessions required** - Prevents session tampering and honeypot engagement
+- **SMB2+/3 protocols only** - Blocks SMB1 connections that often indicate honeypots
+- **Encryption preferred when available** - Uses encrypted connections where supported
+- **Modern security flags** - Leverages latest smbclient security options with fallbacks
+
+```bash
+# Default safe mode - recommended for production use
+./smbseek.py --country US
+```
+
+### Legacy Compatibility Mode
+
+**Risky Mode (--risky flag required):**
+- **Unsigned SMB sessions allowed** - Compatible with legacy/insecure servers
+- **SMB1 protocol enabled** - Can connect to very old Windows systems
+- **Unencrypted connections** - Falls back to plaintext when necessary
+- **Minimal security restrictions** - Maximum compatibility with legacy infrastructure
+
+```bash
+# Legacy mode - use only when safe mode blocks legitimate targets
+./smbseek.py --country US --risky
+```
+
+### When to Use Each Mode
+
+**Use Safe Mode (default) when:**
+- Performing routine security assessments
+- Scanning unknown or untrusted networks
+- Working from disposable/isolated environments
+- Prioritizing security over maximum compatibility
+
+**Use Risky Mode (--risky) when:**
+- Safe mode blocks legitimate legacy servers you need to assess
+- Working with known internal infrastructure that requires SMB1
+- Troubleshooting connectivity issues during authorized assessments
+- You explicitly need to test SMB1/unsigned configurations
+
+### Operational Hygiene
+
+**Network Isolation:**
+- Use VPN connections to trusted networks when possible
+- Deploy from disposable virtual machines for unknown network scanning
+- Avoid running from privileged network segments or production systems
+- Consider network segmentation to isolate scanning activities
+
+**Environment Management:**
+- **Use dedicated scanning VMs** that can be wiped after assessment
+- **Limit credential exposure** - avoid running with domain administrator privileges
+- **Monitor for detection** - scanning may trigger security alerts in target environments
+- **Coordinate with defenders** - notify SOC teams of authorized scanning activities
+
+**Data Handling:**
+- Review database contents (`smbseek.db`) before copying to persistent storage
+- Use `--quiet` mode in automated deployments to reduce log exposure
+- Consider encrypted storage for assessment results containing sensitive findings
+- Implement secure deletion procedures for temporary scanning environments
+
+### Expected Behavior Differences
+
+**Safe Mode May Skip:**
+- Very old Windows 2000/XP systems that only support SMB1
+- Legacy Samba configurations with signing disabled
+- Industrial control systems using outdated SMB implementations
+- Network attached storage (NAS) devices with basic SMB support
+
+**This is acceptable for defensive security** because:
+- Such systems indicate significant security debt requiring separate remediation
+- Honeypots commonly masquerade as vulnerable legacy systems
+- Modern infrastructure should support signed SMB2+/3 connections
+- Defense-focused scanning prioritizes current threats over legacy edge cases
+
+### Recovery Examples
+
+If safe mode blocks legitimate targets, use specific syntax to re-enable access:
+
+```bash
+# If initial scan finds fewer hosts than expected
+./smbseek.py --country US --verbose  # Check logs for "rerun with --risky" messages
+
+# Re-scan specific hosts with risky mode
+./smbseek.py --country US --risky --force-hosts 192.168.1.100,192.168.1.200
+
+# Full risky mode scan (use sparingly)
+./smbseek.py --country US --risky --verbose
+```
+
+### Smbclient Compatibility
+
+SMBSeek automatically detects smbclient version capabilities and falls back gracefully:
+
+- **Modern Samba (4.11+):** Uses `--client-protection=sign` and advanced options
+- **Legacy Samba:** Falls back to `--option=client signing=required` syntax
+- **Missing smbclient:** Provides degraded functionality with clear warnings
+- **Unsupported flags:** Automatically retries with compatible option syntax
+
 ## Security Considerations
 
 ### Intended Use
@@ -296,6 +398,7 @@ SMBSeek represents a successful AI-human collaboration where Claude (Anthropic's
 - Educational purposes in controlled environments
 
 ### Built-in Safeguards
+- **Safe-by-default SMB security** with optional legacy compatibility
 - Organization exclusion lists to avoid scanning infrastructure providers
 - Rate limiting to prevent aggressive scanning behavior
 - Read-only operations (no modification of target systems)

@@ -56,7 +56,7 @@ class DiscoverOperation:
     with intelligent host filtering and database integration.
     """
 
-    def __init__(self, config, output, database, session_id):
+    def __init__(self, config, output, database, session_id, risky_mode=False):
         """
         Initialize discover operation.
 
@@ -65,11 +65,13 @@ class DiscoverOperation:
             output: SMBSeekOutput instance
             database: SMBSeekWorkflowDatabase instance
             session_id: Database session ID for this operation
+            risky_mode: Enable legacy insecure SMB settings if True
         """
         self.config = config
         self.output = output
         self.database = database
         self.session_id = session_id
+        self.risky_mode = risky_mode
 
         # Initialize Shodan host metadata tracking
         self.shodan_host_metadata = {}
@@ -174,6 +176,8 @@ class DiscoverOperation:
         query_used = self._build_targeted_query(target_countries)
 
         # Apply exclusions
+        # Debug trace before exclusion filtering
+        self.output.print_if_verbose(f"DEBUG: Before exclusions - shodan_host_metadata type: {type(self.shodan_host_metadata)}, len: {len(self.shodan_host_metadata) if isinstance(self.shodan_host_metadata, dict) else 'N/A'}")
         filtered_results = self._apply_exclusions(shodan_results)
 
         # Filter for new hosts
@@ -196,11 +200,30 @@ class DiscoverOperation:
 
         # Trim metadata to only hosts that will be scanned to maintain alignment
         # Keep forced host metadata even if minimal
-        self.shodan_host_metadata = {
-            ip: self.shodan_host_metadata[ip]
-            for ip in hosts_to_scan
-            if ip in self.shodan_host_metadata
-        }
+        # Defensive type check before dictionary comprehension
+        if not isinstance(self.shodan_host_metadata, dict):
+            self.output.error(f"CRITICAL: shodan_host_metadata corrupted before trimming - expected dict, got {type(self.shodan_host_metadata)}: {self.shodan_host_metadata}")
+            self.shodan_host_metadata = {}
+
+        # Additional type safety checks for the comprehension inputs
+        if not isinstance(hosts_to_scan, (set, list, tuple)):
+            self.output.error(f"CRITICAL: hosts_to_scan has unexpected type - expected set/list/tuple, got {type(hosts_to_scan)}: {hosts_to_scan}")
+            hosts_to_scan = set()
+
+        try:
+            # Safe dictionary comprehension with error handling
+            new_metadata = {}
+            for ip in hosts_to_scan:
+                if ip in self.shodan_host_metadata:
+                    if isinstance(self.shodan_host_metadata[ip], dict):
+                        new_metadata[ip] = self.shodan_host_metadata[ip]
+                    else:
+                        self.output.warning(f"Skipping corrupted metadata for IP {ip}: expected dict, got {type(self.shodan_host_metadata[ip])}")
+
+            self.shodan_host_metadata = new_metadata
+        except Exception as e:
+            self.output.error(f"CRITICAL: Error during metadata trimming: {e}")
+            self.shodan_host_metadata = {}
 
         # Display scan statistics
         self.database.display_scan_statistics(filter_stats, hosts_to_scan)
@@ -239,6 +262,8 @@ class DiscoverOperation:
         Returns:
             Set of IP addresses from Shodan results
         """
+        # Debug trace at start of Shodan query
+        self.output.print_if_verbose(f"DEBUG: At start of _query_shodan - shodan_host_metadata type: {type(self.shodan_host_metadata)}, len: {len(self.shodan_host_metadata) if isinstance(self.shodan_host_metadata, dict) else 'N/A'}")
         # Resolve target countries using 3-tier fallback logic
         target_countries = self.config.resolve_target_countries(country)
         
@@ -277,6 +302,11 @@ class DiscoverOperation:
                 isp = result.get('isp', '')
 
                 # Store metadata using "first complete record wins" strategy
+                # Defensive type check before setdefault operation
+                if not isinstance(self.shodan_host_metadata, dict):
+                    self.output.error(f"CRITICAL: shodan_host_metadata corrupted during Shodan result processing - expected dict, got {type(self.shodan_host_metadata)}: {self.shodan_host_metadata}")
+                    self.shodan_host_metadata = {}
+
                 metadata = self.shodan_host_metadata.setdefault(ip, {})
 
                 if country_name and not metadata.get('country_name'):
@@ -358,13 +388,18 @@ class DiscoverOperation:
     def _apply_exclusions(self, ip_addresses: Set[str]) -> Set[str]:
         """
         Apply exclusion filters to IP addresses.
-        
+
         Args:
             ip_addresses: Set of IP addresses to filter
-            
+
         Returns:
             Filtered set of IP addresses
         """
+        # Defensive type check at start of exclusion filtering
+        if not isinstance(self.shodan_host_metadata, dict):
+            self.output.error(f"CRITICAL: shodan_host_metadata corrupted at start of exclusion filtering - expected dict, got {type(self.shodan_host_metadata)}: {self.shodan_host_metadata}")
+            self.shodan_host_metadata = {}
+
         if not self.exclusions:
             return ip_addresses
         
@@ -377,7 +412,7 @@ class DiscoverOperation:
         
         # Get configurable progress interval with safe integer conversion
         try:
-            progress_interval = int(self.config.get("exclusion_progress_interval", 100))
+            progress_interval = int(self.config.get("exclusions", "progress_interval", 100))
         except (ValueError, TypeError):
             progress_interval = 100
 
@@ -418,6 +453,12 @@ class DiscoverOperation:
             return False
 
         # Check if we already have normalized org/ISP metadata cached
+        # Defensive type check to prevent "int has no attribute get" error
+        if not isinstance(self.shodan_host_metadata, dict):
+            self.output.error(f"CRITICAL: shodan_host_metadata corrupted - expected dict, got {type(self.shodan_host_metadata)}: {self.shodan_host_metadata}")
+            # Reset to empty dict to continue operation
+            self.shodan_host_metadata = {}
+
         metadata = self.shodan_host_metadata.get(ip, {})
         org_normalized = metadata.get('org_normalized')
         isp_normalized = metadata.get('isp_normalized')
@@ -465,6 +506,11 @@ class DiscoverOperation:
             self._host_lookup_cache[ip] = api_result
 
             # Update metadata cache with complete org/ISP info
+            # Defensive type check before setdefault operation
+            if not isinstance(self.shodan_host_metadata, dict):
+                self.output.error(f"CRITICAL: shodan_host_metadata corrupted during API call processing - expected dict, got {type(self.shodan_host_metadata)}: {self.shodan_host_metadata}")
+                self.shodan_host_metadata = {}
+
             metadata = self.shodan_host_metadata.setdefault(ip, {})
             metadata.update(api_result)
 
@@ -618,6 +664,11 @@ class DiscoverOperation:
         successful_hosts = []
         results_by_index = [None] * total_hosts
 
+        # Progress tracking counters
+        completed_count = 0
+        progress_success_count = 0
+        progress_failed_count = 0
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
             future_to_index = {
@@ -649,6 +700,22 @@ class DiscoverOperation:
                     }
                     results_by_index[index] = error_result
                     self.output.error(f"Authentication failed for {ip}: {e}")
+
+                # Update progress counters
+                completed_count += 1
+                if index < len(results_by_index) and results_by_index[index] and results_by_index[index].get("success"):
+                    progress_success_count += 1
+                else:
+                    progress_failed_count += 1
+
+                # Show progress every 25 completions or at significant milestones
+                if completed_count % 25 == 0 or completed_count == 1 or completed_count == total_hosts:
+                    progress_pct = (completed_count / total_hosts) * 100
+                    success_percent = int((progress_success_count / completed_count) * 100) if completed_count else 0
+                    self.output.info(
+                        f"📊 Progress: {completed_count}/{total_hosts} ({progress_pct:.1f}%) | "
+                        f"Success: {progress_success_count}, Failed: {progress_failed_count} ({success_percent}%)"
+                    )
 
         # Process results in original order and aggregate statistics
         success_count = 0
@@ -801,41 +868,70 @@ class DiscoverOperation:
     
     def _test_smb_auth(self, ip: str, username: str, password: str) -> bool:
         """
-        Test SMB authentication.
-        
+        Test SMB authentication with security hardening based on risky_mode.
+
         Args:
             ip: IP address
             username: Username for authentication
             password: Password for authentication
-            
+
         Returns:
             True if authentication successful
         """
         conn_uuid = str(uuid.uuid4())
         connection = None
         session = None
-        
+
+        # Determine security settings based on risky_mode
+        require_signing = not self.risky_mode
+        require_encryption = False  # Never require encryption to avoid false negatives
+        dialects = None
+
+        # Try to set SMB dialect restrictions in safe mode
+        if not self.risky_mode:
+            try:
+                from smbprotocol.connection import Dialect
+                # Include SMB2+ (not just SMB3) - SMB2.0/2.1 still benefit from signing
+                dialects = [Dialect.SMB_2_0_2, Dialect.SMB_2_1, Dialect.SMB_3_0_2, Dialect.SMB_3_1_1]
+            except ImportError:
+                dialects = None
+                self.output.print_if_verbose("SMB dialect restriction unavailable - using library defaults with signing")
+
         try:
             # Suppress stderr output
             stderr_buffer = StringIO()
             with redirect_stderr(stderr_buffer):
-                # Create connection
-                connection = Connection(conn_uuid, ip, 445, require_signing=False)
+                # Create connection with security settings
+                try:
+                    connection = Connection(conn_uuid, ip, 445, require_signing=require_signing, dialects=dialects)
+                except TypeError:
+                    # Fallback for older smbprotocol versions that don't support dialects parameter
+                    connection = Connection(conn_uuid, ip, 445, require_signing=require_signing)
+                    if not self.risky_mode:
+                        self.output.print_if_verbose("SMB dialect restriction not supported by library - enforcing signing only")
+
                 connection.connect(timeout=self.config.get_connection_timeout())
-                
+
                 # Create session
                 session = Session(
                     connection,
                     username=username,
                     password=password,
-                    require_encryption=False,
+                    require_encryption=require_encryption,
                     auth_protocol="ntlm"
                 )
                 session.connect()
-                
+
                 return True
-        
-        except SMBException:
+
+        except SMBException as e:
+            # In safe mode, provide actionable error messages for rejected connections
+            if not self.risky_mode:
+                error_msg = str(e).lower()
+                if 'signing' in error_msg or 'unsigned' in error_msg:
+                    self.output.print_if_verbose(f"Host {ip} requires unsigned SMB; rerun with --risky if you accept that risk")
+                elif 'smb' in error_msg and ('version' in error_msg or 'dialect' in error_msg):
+                    self.output.print_if_verbose(f"Host {ip} requires SMB1 or unsupported protocol; rerun with --risky if you accept that risk")
             return False
         except Exception:
             return False
