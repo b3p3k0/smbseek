@@ -47,6 +47,7 @@ coverage.xml
 # SMBSeek specific files
 .claude
 CLAUDE.md
+CODEX.md
 
 # Configuration files with sensitive data
 conf/config.json
