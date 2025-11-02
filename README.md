@@ -269,6 +269,19 @@ python tools/db_query.py --help
 python tools/db_maintenance.py --help
 ```
 
+## Related Projects
+
+### xsmbseek - GUI Interface
+
+[xsmbseek](https://github.com/b3p3k0/xsmbseek) provides a graphical user interface for SMBSeek, making it easier to visualize and interact with scan results. It offers:
+
+- Interactive GUI for SMBSeek operations
+- Visual representation of discovered SMB servers
+- Simplified workflow for users who prefer graphical tools
+- Real-time monitoring of scan progress
+
+Check out the [xsmbseek repository](https://github.com/b3p3k0/xsmbseek) for installation and usage instructions.
+
 ## Development
 
 ### AI-Driven Development
