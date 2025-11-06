@@ -293,8 +293,20 @@ class SMBSeekConfig:
         if self.get("workflow", "rescan_after_days", 30) < 1:
             issues.append("rescan_after_days must be at least 1")
         
-        if self.get("connection", "timeout", 30) < 5:
-            issues.append("connection timeout should be at least 5 seconds")
+        # Validate timeout ranges
+        connection_timeout = self.get("connection", "timeout", 30)
+        port_check_timeout = self.get("connection", "port_check_timeout", 8)
+
+        if connection_timeout < 3:
+            issues.append("connection timeout should be at least 3 seconds")
+        elif connection_timeout < 10:
+            print("⚠ Warning: connection timeout < 10 seconds may cause false negatives on high-latency networks")
+
+        if port_check_timeout < 1:
+            issues.append("port_check_timeout should be at least 1 second")
+
+        if port_check_timeout > connection_timeout:
+            issues.append("port_check_timeout should not exceed connection timeout")
         
         if issues:
             print("⚠ Configuration validation issues:")

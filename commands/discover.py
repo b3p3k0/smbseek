@@ -86,6 +86,12 @@ class DiscoverOperation:
         # Initialize SMBClient authentication cache for fallback outcomes
         self._smbclient_auth_cache = {}
 
+        # Initialize Shodan API rate limiting (1 req/sec compliance)
+        self._api_rate_lock = threading.Lock()
+        self._last_api_call = 0
+        self._api_error_count = 0
+        self._api_circuit_breaker_active = False
+
         # Initialize Shodan API
         try:
             api_key = self.config.get_shodan_api_key()
@@ -596,7 +602,60 @@ class DiscoverOperation:
             self.output.warning(f"Error loading exclusion file: {e}")
             self.exclusion_patterns = []
             return []
-    
+
+    def _api_rate_limited_call(self, ip: str) -> Optional[Dict]:
+        """
+        Make rate-limited Shodan API call with circuit breaker protection.
+
+        Enforces Shodan's 1 request/second rate limit and implements circuit breaker
+        pattern to prevent hitting API limits that cause temporary bans.
+
+        Args:
+            ip: IP address to lookup
+
+        Returns:
+            Shodan host data dictionary or None if failed/circuit breaker active
+        """
+        # Check circuit breaker
+        if self._api_circuit_breaker_active:
+            self.output.print_if_verbose(f"API circuit breaker active, skipping lookup for {ip}")
+            return None
+
+        # Thread-safe rate limiting - enforce 1 request/second
+        with self._api_rate_lock:
+            current_time = time.time()
+            if self._last_api_call > 0:
+                elapsed = current_time - self._last_api_call
+                if elapsed < 1.0:
+                    sleep_time = 1.0 - elapsed
+                    self.output.print_if_verbose(f"Rate limiting: sleeping {sleep_time:.2f}s before API call")
+                    time.sleep(sleep_time)
+
+            try:
+                # Make the API call
+                host_info = self.shodan_api.host(ip)
+                self._last_api_call = time.time()
+                self._api_error_count = 0  # Reset error count on success
+                return host_info
+
+            except Exception as e:
+                self._last_api_call = time.time()  # Still update to maintain rate limiting
+                self._api_error_count += 1
+
+                # Activate circuit breaker after multiple consecutive errors
+                if self._api_error_count >= 3:
+                    self._api_circuit_breaker_active = True
+                    self.output.warning("Shodan API rate limit reached, activating circuit breaker")
+                    self.output.warning("Remaining uncached IPs will be processed without exclusion filtering")
+
+                error_str = str(e).lower()
+                if 'rate limit' in error_str or '429' in error_str:
+                    self.output.print_if_verbose(f"API rate limit hit for {ip}: {e}")
+                else:
+                    self.output.print_if_verbose(f"API error for {ip}: {e}")
+
+                return None
+
     def _check_smbclient_availability(self) -> bool:
         """Check if smbclient command is available on the system."""
         try:
@@ -891,7 +950,7 @@ class DiscoverOperation:
         """
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1.0)  # Aggressive 1s timeout for pre-screening
+            sock.settimeout(3.0)  # Balanced 3s timeout for pre-screening
             result = sock.connect_ex((ip, 445))
             sock.close()
             return result == 0
@@ -920,12 +979,59 @@ class DiscoverOperation:
     
     def _test_smb_auth(self, ip: str, username: str, password: str) -> bool:
         """
-        Test SMB authentication with security hardening based on cautious_mode.
+        Test SMB authentication with retry logic and extended timeouts for timeout errors.
 
         Args:
             ip: IP address
             username: Username for authentication
             password: Password for authentication
+
+        Returns:
+            True if authentication successful
+        """
+        max_attempts = 2
+
+        for attempt in range(1, max_attempts + 1):
+            # Calculate timeout for this attempt
+            base_timeout = self.config.get_connection_timeout()
+            if attempt == 2:
+                timeout = int(base_timeout * 1.5)  # 50% longer timeout for retry
+                self.output.print_if_verbose(f"Timeout on {ip} (attempt {attempt-1}), retrying with extended timeout ({timeout}s)")
+            else:
+                timeout = base_timeout
+
+            try:
+                result = self._attempt_smb_connection(ip, username, password, timeout)
+                if result or attempt == max_attempts:
+                    return result
+            except Exception as e:
+                # Import ErrorClassifier at top level would be better, but adding here for isolation
+                from shared.output import ErrorClassifier
+
+                # Check if this is a retryable error using enhanced classification
+                error_str = str(e)
+                is_retryable = ErrorClassifier.is_retryable_error(error_str)
+
+                if is_retryable and attempt < max_attempts:
+                    # Continue to next attempt for retryable errors
+                    error_category = ErrorClassifier.classify_error(error_str)
+                    self.output.print_if_verbose(f"Retryable {error_category} error on {ip}: {ErrorClassifier.get_user_friendly_message(error_str)}")
+                    continue
+                else:
+                    # Return False for non-retryable errors or final attempt
+                    return False
+
+        return False
+
+    def _attempt_smb_connection(self, ip: str, username: str, password: str, timeout: int) -> bool:
+        """
+        Single SMB connection attempt with specified timeout.
+
+        Args:
+            ip: IP address
+            username: Username for authentication
+            password: Password for authentication
+            timeout: Connection timeout in seconds
 
         Returns:
             True if authentication successful
@@ -962,7 +1068,8 @@ class DiscoverOperation:
                     if self.cautious_mode:
                         self.output.print_if_verbose("SMB dialect restriction not supported by library - enforcing signing only")
 
-                connection.connect(timeout=self.config.get_connection_timeout())
+                # Connection attempt with specified timeout
+                connection.connect(timeout=timeout)
 
                 # Create session
                 session = Session(

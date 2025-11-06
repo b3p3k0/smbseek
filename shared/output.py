@@ -453,3 +453,102 @@ def create_reporter(database_manager, output_manager) -> SMBSeekReporter:
         SMBSeekReporter instance
     """
     return SMBSeekReporter(database_manager, output_manager)
+
+
+class ErrorClassifier:
+    """
+    Utility for classifying and categorizing SMB connection errors.
+    """
+
+    # Timeout-related error patterns
+    TIMEOUT_PATTERNS = [
+        'timeout', 'timed out', 'connection timed out',
+        'nt_status_io_timeout', 'nt_status_timeout',
+        'operation timed out', 'request timeout'
+    ]
+
+    # Network-level error patterns
+    NETWORK_PATTERNS = [
+        'connection refused', 'connection reset', 'connection failed',
+        'network unreachable', 'host unreachable', 'connection dropped',
+        'no route to host', 'connection aborted'
+    ]
+
+    # SMB protocol error patterns
+    PROTOCOL_PATTERNS = [
+        'nt_status_invalid_parameter', 'nt_status_not_supported',
+        'smb', 'dialect', 'protocol', 'authentication failed',
+        'access denied', 'invalid credentials', 'signing required'
+    ]
+
+    @staticmethod
+    def classify_error(error_message: str) -> str:
+        """
+        Classify an error message into categories.
+
+        Args:
+            error_message: Error message string
+
+        Returns:
+            Error category: 'timeout', 'network', 'protocol', 'authentication', 'unknown'
+        """
+        error_lower = error_message.lower()
+
+        # Check for timeout errors first
+        if any(pattern in error_lower for pattern in ErrorClassifier.TIMEOUT_PATTERNS):
+            return 'timeout'
+
+        # Check for network errors
+        if any(pattern in error_lower for pattern in ErrorClassifier.NETWORK_PATTERNS):
+            return 'network'
+
+        # Check for authentication-specific errors
+        auth_patterns = ['access denied', 'invalid credentials', 'authentication failed', 'logon failure']
+        if any(pattern in error_lower for pattern in auth_patterns):
+            return 'authentication'
+
+        # Check for protocol errors
+        if any(pattern in error_lower for pattern in ErrorClassifier.PROTOCOL_PATTERNS):
+            return 'protocol'
+
+        return 'unknown'
+
+    @staticmethod
+    def is_retryable_error(error_message: str) -> bool:
+        """
+        Determine if an error is potentially retryable.
+
+        Args:
+            error_message: Error message string
+
+        Returns:
+            True if the error might succeed on retry
+        """
+        error_category = ErrorClassifier.classify_error(error_message)
+
+        # Timeout and network errors are potentially retryable
+        # Authentication and protocol errors usually are not
+        return error_category in ['timeout', 'network']
+
+    @staticmethod
+    def get_user_friendly_message(error_message: str) -> str:
+        """
+        Get a user-friendly version of an error message.
+
+        Args:
+            error_message: Raw error message
+
+        Returns:
+            User-friendly error description
+        """
+        error_category = ErrorClassifier.classify_error(error_message)
+
+        friendly_messages = {
+            'timeout': 'Connection timed out (target may be slow to respond)',
+            'network': 'Network connection failed (target may be down)',
+            'authentication': 'Access denied (credentials invalid or not accepted)',
+            'protocol': 'SMB protocol incompatible (target may require different settings)',
+            'unknown': 'Connection failed'
+        }
+
+        return friendly_messages.get(error_category, 'Connection failed')
