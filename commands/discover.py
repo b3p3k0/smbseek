@@ -278,13 +278,29 @@ class DiscoverOperation:
             self.output.info("Querying Shodan for SMB servers globally (no country filter)")
         
         try:
-            # Build targeted Shodan query 
+            # Build targeted Shodan query
             query = self._build_targeted_query(target_countries)
-            
+
             # Execute query with configured limit
             shodan_config = self.config.get_shodan_config()
             max_results = shodan_config['query_limits']['max_results']
+            timeout = shodan_config.get('query_limits', {}).get('timeout', 1)
+
+            # Debug logging for troubleshooting
+            self.output.print_if_verbose(f"DEBUG: Executing Shodan query: {query}")
+            self.output.print_if_verbose(f"DEBUG: Max results: {max_results}, Timeout: {timeout}s")
+            self.output.print_if_verbose(f"DEBUG: API key configured: {'Yes' if self.shodan_api else 'No'}")
+
             results = self.shodan_api.search(query, limit=max_results)
+
+            # Debug logging for results
+            total_matches = results.get('total', 0)
+            actual_matches = len(results.get('matches', []))
+            self.output.print_if_verbose(f"DEBUG: Shodan returned {actual_matches} matches out of {total_matches} total")
+
+            if actual_matches == 0:
+                self.output.warning(f"Shodan query returned 0 results. Query was: {query}")
+                self.output.print_if_verbose(f"DEBUG: Full Shodan response: {results}")
             
             # Extract IP addresses and capture metadata for exclusion optimization
             ip_addresses = set()
@@ -330,9 +346,23 @@ class DiscoverOperation:
         
         except shodan.APIError as e:
             self.output.error(f"Shodan API error: {e}")
+            self.output.print_if_verbose(f"DEBUG: API error type: {type(e).__name__}")
+            self.output.print_if_verbose(f"DEBUG: Query that failed: {query}")
+
+            # Check for common API issues
+            error_str = str(e).lower()
+            if 'quota' in error_str or 'credits' in error_str:
+                self.output.error("API quota exhausted - check your Shodan account limits")
+            elif 'unauthorized' in error_str or 'invalid api key' in error_str:
+                self.output.error("API key authentication failed - verify your API key is correct")
+            elif 'timeout' in error_str:
+                self.output.error(f"Query timeout (current: {timeout}s) - consider increasing timeout in config")
+
             return set()
         except Exception as e:
             self.output.error(f"Shodan query failed: {e}")
+            self.output.print_if_verbose(f"DEBUG: Exception type: {type(e).__name__}")
+            self.output.print_if_verbose(f"DEBUG: Query that failed: {query}")
             return set()
     
     def _build_targeted_query(self, countries: list) -> str:
@@ -350,10 +380,14 @@ class DiscoverOperation:
         
         # Base query components (configurable)
         base_query = query_config.get("base_query", "smb authentication: disabled")
-        product_filter = query_config.get("product_filter", 'product:"Samba"')
-        
+        product_filter = query_config.get("product_filter", None)
+
         # Start with base components
-        query_parts = [base_query, product_filter]
+        query_parts = [base_query]
+
+        # Add optional product filter if specified in config
+        if product_filter:
+            query_parts.append(product_filter)
         
         # Add country filter only if countries specified
         if countries:
@@ -565,29 +599,18 @@ class DiscoverOperation:
 
     def _throttled_auth_wait(self) -> None:
         """
-        Thread-safe rate limiting for discovery authentication attempts.
+        Discovery-specific rate limiting for authentication attempts.
 
-        Enforces global rate limiting across concurrent threads by maintaining
-        shared timestamp tracking with proper locking.
+        Applies minimal per-thread rate limiting to allow true parallelization
+        while preventing aggressive connection patterns. This enables the
+        configured concurrency (max_concurrent_hosts) to work effectively.
         """
-        with self._auth_rate_lock:
-            current_time = time.monotonic()
+        # Get discovery-specific rate limit delay (much lower than general rate limiting)
+        discovery_delay = self.config.get_discovery_rate_limit_delay()
 
-            # First run: establish baseline without sleeping
-            if self._last_auth_attempt == 0:
-                self._last_auth_attempt = current_time
-                return
-
-            # Calculate time since last attempt and sleep remainder if needed
-            time_elapsed = current_time - self._last_auth_attempt
-            rate_delay = self.config.get_rate_limit_delay()
-
-            if time_elapsed < rate_delay:
-                sleep_time = rate_delay - time_elapsed
-                time.sleep(sleep_time)
-
-            # Update timestamp for next thread
-            self._last_auth_attempt = time.monotonic()
+        if discovery_delay > 0:
+            # Apply per-thread delay without global locking for true parallelization
+            time.sleep(discovery_delay)
 
     def _test_single_host_concurrent(self, ip: str, country=None) -> Dict:
         """
@@ -790,7 +813,7 @@ class DiscoverOperation:
     
     def _test_single_host(self, ip: str, country=None) -> Optional[Dict]:
         """
-        Test SMB authentication on a single host.
+        Test SMB authentication on a single host with optimized strategy.
 
         Args:
             ip: IP address to test
@@ -799,20 +822,20 @@ class DiscoverOperation:
         Returns:
             Authentication result dictionary or None if failed
         """
-        # Test port 445 availability first
-        if not self._check_port(ip, 445):
+        # Fast pre-screening to eliminate obviously dead hosts
+        if not self._quick_connectivity_check(ip):
             return None
-        
-        # Test authentication methods in order
+
+        # Test authentication methods in optimized order (highest success probability first)
         auth_methods = [
-            ("Anonymous", "", ""),
-            ("Guest/Blank", "guest", ""),
-            ("Guest/Guest", "guest", "guest")
+            ("Anonymous", "", ""),           # Most common on vulnerable SMB servers
+            ("Guest/Guest", "guest", "guest"), # Common on misconfigured systems
+            ("Guest/Blank", "guest", "")    # Least common in practice
         ]
-        
+
         for method_name, username, password in auth_methods:
             if self._test_smb_auth(ip, username, password):
-                # Use metadata lookup with CLI fallback
+                # Early exit on first successful authentication
                 metadata = self.shodan_host_metadata.get(ip, {})
                 country_name = metadata.get('country_name') or country or 'Unknown'
                 country_code = metadata.get('country_code')
@@ -846,20 +869,39 @@ class DiscoverOperation:
         
         return None
     
+    def _quick_connectivity_check(self, ip: str) -> bool:
+        """
+        Ultra-fast connectivity pre-screening to eliminate obviously dead hosts.
+
+        Args:
+            ip: IP address to test
+
+        Returns:
+            True if host shows any signs of life on port 445
+        """
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1.0)  # Aggressive 1s timeout for pre-screening
+            result = sock.connect_ex((ip, 445))
+            sock.close()
+            return result == 0
+        except:
+            return False
+
     def _check_port(self, ip: str, port: int) -> bool:
         """
-        Check if port is open.
-        
+        Check if port is open with optimized timeout handling.
+
         Args:
             ip: IP address
             port: Port number
-            
+
         Returns:
             True if port is open
         """
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(self.config.get("connection", "port_check_timeout", 10))
+            sock.settimeout(self.config.get("connection", "port_check_timeout", 2))
             result = sock.connect_ex((ip, port))
             sock.close()
             return result == 0

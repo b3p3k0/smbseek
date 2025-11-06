@@ -59,7 +59,6 @@ class SMBSeekConfig:
                 },
                 "query_components": {
                     "base_query": "smb authentication: disabled",
-                    "product_filter": "product:\"Samba\"",
                     "additional_exclusions": ["-\"DSL\""],
                     "use_organization_exclusions": True
                 }
@@ -71,13 +70,14 @@ class SMBSeekConfig:
                 "skip_failed_hosts": True
             },
             "connection": {
-                "timeout": 30,
-                "port_check_timeout": 10,
+                "timeout": 5,
+                "port_check_timeout": 2,
                 "rate_limit_delay": 3,
                 "share_access_delay": 7
             },
             "discovery": {
-                "max_concurrent_hosts": 1
+                "max_concurrent_hosts": 50,
+                "rate_limit_delay": 0.1
             },
             "access": {
                 "max_concurrent_hosts": 1
@@ -225,6 +225,10 @@ class SMBSeekConfig:
     def get_share_access_delay(self) -> int:
         """Get delay between share access tests on same host."""
         return self.get("connection", "share_access_delay", 7)
+
+    def get_discovery_rate_limit_delay(self) -> float:
+        """Get discovery-specific rate limit delay for authentication testing."""
+        return self.get("discovery", "rate_limit_delay", 0.1)
 
     def get_max_concurrent_hosts(self) -> int:
         """Get maximum concurrent hosts for access operations with validation."""
