@@ -8,6 +8,8 @@
     "query_components": {
       "base_query": "smb authentication: disabled",
       "product_filter": "product:\"Samba\"",
+      "string_filters": [],
+      "string_combination": "OR",
       "additional_exclusions": [
         "-\"DSL\""
       ],

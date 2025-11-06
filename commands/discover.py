@@ -114,7 +114,7 @@ class DiscoverOperation:
             'total_processed': 0
         }
 
-    def execute(self, country=None, rescan_all=False, rescan_failed=False, force_hosts=None) -> DiscoverResult:
+    def execute(self, country=None, rescan_all=False, rescan_failed=False, force_hosts=None, custom_strings=None) -> DiscoverResult:
         """
         Execute the discover operation.
 
@@ -123,6 +123,7 @@ class DiscoverOperation:
             rescan_all: Force rescan of all discovered hosts
             rescan_failed: Include previously failed hosts for rescanning
             force_hosts: Set of IP addresses to force scan regardless of filters
+            custom_strings: List of search strings to include in Shodan query
 
         Returns:
             DiscoverResult with discovery statistics
@@ -150,7 +151,7 @@ class DiscoverOperation:
             self.output.print_if_verbose(f"Forced hosts specified: {', '.join(sorted(force_hosts))}")
 
         # Query Shodan
-        shodan_results = self._query_shodan(country)
+        shodan_results = self._query_shodan(country, custom_strings)
 
         # Add forced hosts to results and create placeholder metadata
         if force_hosts:
@@ -173,7 +174,7 @@ class DiscoverOperation:
 
         # Build the query string for summary display
         target_countries = self.config.resolve_target_countries(country)
-        query_used = self._build_targeted_query(target_countries)
+        query_used = self._build_targeted_query(target_countries, custom_strings)
 
         # Apply exclusions
         # Debug trace before exclusion filtering
@@ -252,12 +253,13 @@ class DiscoverOperation:
             host_ips=authenticated_ips
         )
     
-    def _query_shodan(self, country=None) -> Set[str]:
+    def _query_shodan(self, country=None, custom_strings=None) -> Set[str]:
         """
-        Query Shodan for SMB servers in specified country.
+        Query Shodan for SMB servers in specified country with optional string filters.
 
         Args:
             country: Target country code for search
+            custom_strings: List of search strings to include in query
 
         Returns:
             Set of IP addresses from Shodan results
@@ -279,7 +281,7 @@ class DiscoverOperation:
         
         try:
             # Build targeted Shodan query
-            query = self._build_targeted_query(target_countries)
+            query = self._build_targeted_query(target_countries, custom_strings)
 
             # Execute query with configured limit
             shodan_config = self.config.get_shodan_config()
@@ -365,13 +367,14 @@ class DiscoverOperation:
             self.output.print_if_verbose(f"DEBUG: Query that failed: {query}")
             return set()
     
-    def _build_targeted_query(self, countries: list) -> str:
+    def _build_targeted_query(self, countries: list, custom_strings: list = None) -> str:
         """
         Build a targeted Shodan query for vulnerable SMB servers.
-        
+
         Args:
             countries: List of country codes for search (empty list for global)
-            
+            custom_strings: List of custom search strings to include in query
+
         Returns:
             Formatted Shodan query string
         """
@@ -388,7 +391,14 @@ class DiscoverOperation:
         # Add optional product filter if specified in config
         if product_filter:
             query_parts.append(product_filter)
-        
+
+        # Add custom search strings if provided
+        if custom_strings:
+            self.output.print_if_verbose(f"Adding {len(custom_strings)} custom string filters to query")
+            for search_string in custom_strings:
+                query_parts.append(search_string)
+                self.output.print_if_verbose(f"  String filter: {search_string}")
+
         # Add country filter only if countries specified
         if countries:
             if len(countries) == 1:

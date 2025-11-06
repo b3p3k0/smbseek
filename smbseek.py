@@ -58,6 +58,65 @@ def validate_force_hosts(value):
     return ips
 
 
+def validate_and_format_strings(string_list):
+    """
+    Validate and format search strings for Shodan queries.
+
+    Args:
+        string_list: List of search strings from command line
+
+    Returns:
+        List of formatted strings ready for Shodan query
+
+    Raises:
+        ValueError: If any string is invalid
+    """
+    if not string_list:
+        return []
+
+    formatted_strings = []
+
+    for search_string in string_list:
+        # Basic validation
+        if not search_string.strip():
+            continue
+
+        # Limit string length to reasonable bounds
+        if len(search_string) > 100:
+            raise ValueError(f"Search string too long (max 100 chars): '{search_string[:50]}...'")
+
+        # Check for suspicious characters that might break Shodan queries
+        suspicious_chars = ['&', '|', ';', '(', ')', '[', ']', '{', '}']
+        if any(char in search_string for char in suspicious_chars):
+            raise ValueError(f"Search string contains unsupported characters: '{search_string}'")
+
+        # Format for Shodan query
+        formatted_string = format_string_for_shodan(search_string.strip())
+        formatted_strings.append(formatted_string)
+
+    return formatted_strings
+
+
+def format_string_for_shodan(search_string):
+    """
+    Format a search string for inclusion in Shodan query.
+
+    Args:
+        search_string: Raw search string from user
+
+    Returns:
+        Properly formatted string for Shodan query
+    """
+    # Escape internal quotes
+    escaped_string = search_string.replace('"', '\\"')
+
+    # Quote strings containing spaces or special characters
+    if ' ' in escaped_string or any(char in escaped_string for char in ['-', ':']):
+        return f'"{escaped_string}"'
+    else:
+        return escaped_string
+
+
 def detect_deprecated_usage(argv):
     """Detect and handle deprecated subcommand usage"""
     deprecated_subcommands = {'run', 'discover', 'access', 'collect', 'analyze', 'report', 'db'}
@@ -104,11 +163,16 @@ def create_main_parser() -> argparse.ArgumentParser:
 Examples:
   smbseek --country US                        # Complete scan (discovery + share enumeration)
   smbseek --country US --verbose              # Same with detailed output
+  smbseek --country US --string Documents     # Search for "Documents" in SMB banners
+  smbseek --string "My Documents" --verbose   # Search for multi-word strings (global)
   smbseek --help                              # Show help
 
 The tool performs two main operations:
   1. Discovery: Query Shodan and test SMB authentication
   2. Share Access: Enumerate accessible shares on authenticated hosts
+
+String searches target specific text content in SMB banners (e.g., share names).
+Multiple --string options create OR searches for any of the specified terms.
 
 Results are automatically saved to smbseek.db database.
 
@@ -154,6 +218,13 @@ Documentation: docs/USER_GUIDE.md
         help='Force scanning of specific hosts (comma-separated IPs) even if recently processed or previously failed'
     )
     parser.add_argument(
+        '--string',
+        type=str,
+        action='append',
+        metavar='TERM',
+        help='Search for specific strings in SMB banners (e.g., --string Documents --string "My Documents"). Can be specified multiple times.'
+    )
+    parser.add_argument(
         '--cautious',
         action='store_true',
         help='Enable modern security hardening (signed SMB sessions, SMB2+/3 only). Default is legacy compatibility mode.'
@@ -192,6 +263,16 @@ def main():
         args.force_hosts = force_hosts_combined
     else:
         args.force_hosts = set()
+
+    # Process string arguments (validate and format)
+    if hasattr(args, 'string') and args.string:
+        try:
+            args.strings = validate_and_format_strings(args.string)
+        except ValueError as e:
+            print(f"Error: Invalid search string - {e}")
+            return 1
+    else:
+        args.strings = []
 
     try:
         # Import workflow components

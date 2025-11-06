@@ -145,6 +145,34 @@ SMBSeek 3.0+ uses a simplified single-command interface that performs discovery 
 ./smbseek.py --country US --quiet
 ```
 
+### String-Based Searching
+
+Search for SMB servers containing specific strings in banners (e.g., share names, file content):
+
+```bash
+# Search for servers with "Documents" in SMB banners
+./smbseek.py --country US --string Documents
+
+# Search for multiple strings (OR logic)
+./smbseek.py --country US --string Documents --string "My Documents"
+
+# Multi-word string searches (requires quotes)
+./smbseek.py --string "Company Files" --verbose
+
+# Global string search (no country filter)
+./smbseek.py --string "Shared Folder" --string Videos
+
+# Combined with other features
+./smbseek.py --country US --string Documents --verbose --force-hosts 192.168.1.100
+```
+
+**String Search Notes:**
+- Strings are searched within SMB banner data from Shodan
+- Multiple `--string` options create OR searches (any string matches)
+- Multi-word strings should be quoted: `--string "My Documents"`
+- String searches can significantly narrow down results
+- Use `--verbose` to see the final Shodan query being executed
+
 ### Available Countries
 
 SMBSeek supports country-specific scanning using two-letter country codes:
