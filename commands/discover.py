@@ -987,11 +987,11 @@ class DiscoverOperation:
         if not self._quick_connectivity_check(ip):
             return None
 
-        # Test authentication methods in optimized order (highest success probability first)
+        # Test authentication methods preferring guest credentials to maximize compatibility
         auth_methods = [
-            ("Anonymous", "", ""),           # Most common on vulnerable SMB servers
-            ("Guest/Guest", "guest", "guest"), # Common on misconfigured systems
-            ("Guest/Blank", "guest", "")    # Least common in practice
+            ("Guest/Guest", "guest", "guest"),
+            ("Guest/Blank", "guest", ""),
+            ("Anonymous", "", "")
         ]
 
         for method_name, username, password in auth_methods:
@@ -1244,9 +1244,9 @@ class DiscoverOperation:
 
         # Test commands matching legacy system
         test_commands = [
-            ("Anonymous", ["-L", f"//{ip}", "-N"]),
+            ("Guest/Guest", ["-L", f"//{ip}", "--user", "guest%guest"]),
             ("Guest/Blank", ["-L", f"//{ip}", "--user", "guest%"]),
-            ("Guest/Guest", ["-L", f"//{ip}", "--user", "guest%guest"])
+            ("Anonymous", ["-L", f"//{ip}", "-N"])
         ]
 
         stderr_buffer = StringIO()
