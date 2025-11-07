@@ -40,13 +40,16 @@ accessible_hosts = database.get_hosts_with_accessible_shares()
 #   {
 #     'ip_address': '10.0.0.50',
 #     'country': 'Germany',
-#     'auth_method': 'Anonymous', 
+#     'auth_method': 'Guest/Guest', 
 #     'accessible_shares': ['shared', 'public']
 #   }
 # ]
 
 database.close()
 ```
+
+> **Browseable-only guarantee**  
+> `get_hosts_with_accessible_shares()` now filters out anonymous/null-session results. Every record returned here has a working guest credential so GUI “browse” buttons won’t surprise users with credential prompts. If you still need to visualize anonymous hosts, fetch them via `get_authenticated_hosts()` and label them appropriately.
 
 #### `get_authenticated_hosts()`
 Returns all hosts where SMB authentication succeeded (may or may not have accessible shares).

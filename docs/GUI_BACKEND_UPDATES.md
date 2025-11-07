@@ -13,6 +13,7 @@
 - **More reliable share parsing**: The smbclient parser now keeps legitimate share names such as `Server`/`Domain`/`Workgroup`, so accessible share counts are higher and more accurate.
 - **Safer logging**: `shared.output.SMBSeekOutput` guards all console printing with a lock so concurrent jobs no longer interleave characters.
 - **Manual rescan override**: `smbseek.py` now accepts `--force-hosts` so operators can rescan specific IPs immediately, bypassing recency/failed filters.
+- **Anonymous-only filtering**: Discovery once again treats anonymous/null-session successes as informational only. Share enumeration and the `share_access` table now include hosts **only** when a guest credential works, eliminating GUI false positives that prompted the user for credentials.
 - **Cleaner access denials**: Expected anonymous/guest denials now emit friendly ⚠ warnings instead of ✗ errors, making log streams less noisy for the GUI.
 - **Quicker exclusion filtering**: Discovery reuses cached org/ISP data from Shodan and memoizes host lookups, cutting the “Applying exclusion filters…” delay.
 

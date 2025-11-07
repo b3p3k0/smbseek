@@ -987,46 +987,47 @@ class DiscoverOperation:
         if not self._quick_connectivity_check(ip):
             return None
 
-        # Test authentication methods in optimized order (highest success probability first)
-        auth_methods = [
-            ("Anonymous", "", ""),           # Most common on vulnerable SMB servers
-            ("Guest/Guest", "guest", "guest"), # Common on misconfigured systems
-            ("Guest/Blank", "guest", "")    # Least common in practice
+        def build_result(method_label: str) -> Dict:
+            """Helper to build consistent auth result payload."""
+            metadata = self.shodan_host_metadata.get(ip, {})
+            country_name = metadata.get('country_name') or country or 'Unknown'
+            country_code = metadata.get('country_code')
+            return {
+                'ip_address': ip,
+                'country': country_name,
+                'country_code': country_code,
+                'auth_method': method_label,
+                'timestamp': datetime.now().isoformat(),
+                'status': 'accessible'
+            }
+
+        # Test guest authentication methods first (browseable credentials)
+        guest_methods = [
+            ("Guest/Guest", "guest", "guest"),
+            ("Guest/Blank", "guest", "")
         ]
 
-        for method_name, username, password in auth_methods:
+        for method_name, username, password in guest_methods:
             if self._test_smb_auth(ip, username, password):
-                # Early exit on first successful authentication
-                metadata = self.shodan_host_metadata.get(ip, {})
-                country_name = metadata.get('country_name') or country or 'Unknown'
-                country_code = metadata.get('country_code')
-
-                return {
-                    'ip_address': ip,
-                    'country': country_name,
-                    'country_code': country_code,
-                    'auth_method': method_name,
-                    'timestamp': datetime.now().isoformat(),
-                    'status': 'accessible'
-                }
+                return build_result(method_name)
         
-        # If smbprotocol fails, try smbclient fallback
+        # If smbprotocol fails, try smbclient fallback for guest credentials
         if self.smbclient_available:
             fallback_result = self._test_smb_alternative(ip)
             if fallback_result:
-                # Use metadata lookup with CLI fallback (same as above)
-                metadata = self.shodan_host_metadata.get(ip, {})
-                country_name = metadata.get('country_name') or country or 'Unknown'
-                country_code = metadata.get('country_code')
-
-                return {
-                    'ip_address': ip,
-                    'country': country_name,
-                    'country_code': country_code,
-                    'auth_method': f"{fallback_result} (smbclient)",
-                    'timestamp': datetime.now().isoformat(),
-                    'status': 'accessible'
-                }
+                if 'anonymous' not in fallback_result.lower():
+                    return build_result(f"{fallback_result} (smbclient)")
+                else:
+                    self.output.print_if_verbose(
+                        f"{ip} allows anonymous access via smbclient but rejected guest credentials; skipping"
+                    )
+                    return None
+        
+        # As a last resort, detect pure anonymous hosts (informational only)
+        if self._test_smb_auth(ip, "", ""):
+            self.output.print_if_verbose(
+                f"{ip} allows anonymous access but rejected guest credentials; skipping"
+            )
         
         return None
     
@@ -1244,9 +1245,9 @@ class DiscoverOperation:
 
         # Test commands matching legacy system
         test_commands = [
-            ("Anonymous", ["-L", f"//{ip}", "-N"]),
+            ("Guest/Guest", ["-L", f"//{ip}", "--user", "guest%guest"]),
             ("Guest/Blank", ["-L", f"//{ip}", "--user", "guest%"]),
-            ("Guest/Guest", ["-L", f"//{ip}", "--user", "guest%guest"])
+            ("Anonymous", ["-L", f"//{ip}", "-N"])
         ]
 
         stderr_buffer = StringIO()
