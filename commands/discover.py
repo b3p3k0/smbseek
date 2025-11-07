@@ -29,14 +29,21 @@ from shared.config import load_config
 from shared.database import create_workflow_database
 from shared.output import create_output_manager
 
-# SMB imports (with error handling for missing dependencies)
+# SMB imports (with error handling for missing dependencies / Dialect support)
+SMB_AVAILABLE = False
+Dialect = None
 try:
-    from smbprotocol.connection import Connection
+    from smbprotocol import connection as smb_connection_module
     from smbprotocol.session import Session
     from smbprotocol.exceptions import SMBException
+
+    Connection = smb_connection_module.Connection
+    Dialect = getattr(smb_connection_module, "Dialect", None)
     SMB_AVAILABLE = True
 except ImportError:
-    SMB_AVAILABLE = False
+    Connection = None
+    Session = None
+    SMBException = Exception  # Placeholder to keep type references valid
 
 
 @dataclass
@@ -56,7 +63,7 @@ class DiscoverOperation:
     with intelligent host filtering and database integration.
     """
 
-    def __init__(self, config, output, database, session_id, cautious_mode=False):
+    def __init__(self, config, output, database, session_id, cautious_mode=False, allow_smb1=False):
         """
         Initialize discover operation.
 
@@ -66,12 +73,14 @@ class DiscoverOperation:
             database: SMBSeekWorkflowDatabase instance
             session_id: Database session ID for this operation
             cautious_mode: Enable modern security hardening if True
+            allow_smb1: Permit legacy SMB1 hosts if True
         """
         self.config = config
         self.output = output
         self.database = database
         self.session_id = session_id
         self.cautious_mode = cautious_mode
+        self.allow_smb1 = allow_smb1
 
         # Initialize Shodan host metadata tracking
         self.shodan_host_metadata = {}
@@ -119,6 +128,7 @@ class DiscoverOperation:
             'failed_auth': 0,
             'total_processed': 0
         }
+        self._dialect_warning_logged = False
 
     def execute(self, country=None, rescan_all=False, rescan_failed=False, force_hosts=None, custom_strings=None) -> DiscoverResult:
         """
@@ -437,7 +447,10 @@ class DiscoverOperation:
     
     def _apply_exclusions(self, ip_addresses: Set[str]) -> Set[str]:
         """
-        Apply exclusion filters to IP addresses.
+        Apply exclusion filters to IP addresses using dual-phase processing.
+
+        Phase 1: Fast exclusion using cached metadata (parallelizable)
+        Phase 2: Slow API-dependent exclusion (rate-limited, sequential)
 
         Args:
             ip_addresses: Set of IP addresses to filter
@@ -452,42 +465,120 @@ class DiscoverOperation:
 
         if not self.exclusions:
             return ip_addresses
-        
+
         total_ips = len(ip_addresses)
         self.output.info(f"Applying exclusion filters to {total_ips} IPs...")
-        
-        filtered_ips = set()
-        excluded_count = 0
+
+        # Phase 1: Fast exclusion using cached metadata
+        phase1_results, uncached_ips = self._fast_exclusion_check(ip_addresses)
+        phase1_excluded = len(ip_addresses) - len(phase1_results) - len(uncached_ips)
+
+        self.output.print_if_verbose(f"Phase 1 (cached): {len(phase1_results)} passed, {phase1_excluded} excluded, {len(uncached_ips)} need API lookup")
+
+        # Phase 2: Slow API-dependent exclusion for remaining IPs
+        if uncached_ips:
+            phase2_results = self._slow_api_exclusion_check(uncached_ips)
+            final_results = phase1_results.union(phase2_results)
+            phase2_excluded = len(uncached_ips) - len(phase2_results)
+        else:
+            final_results = phase1_results
+            phase2_excluded = 0
+
+        total_excluded = phase1_excluded + phase2_excluded
+        self.stats['excluded_ips'] = total_excluded
+
+        if total_excluded > 0:
+            self.output.info(f"✓ Excluded {total_excluded} IPs (ISPs, cloud providers, etc.)")
+
+        return final_results
+
+    def _fast_exclusion_check(self, ip_addresses: Set[str]) -> tuple[Set[str], Set[str]]:
+        """
+        Phase 1: Fast exclusion check using only cached metadata.
+
+        Args:
+            ip_addresses: Set of IP addresses to check
+
+        Returns:
+            Tuple of (passed_ips, uncached_ips)
+        """
+        passed_ips = set()
+        uncached_ips = set()
+
+        for ip in ip_addresses:
+            # Check if we have cached normalized data
+            metadata = self.shodan_host_metadata.get(ip, {})
+            org_normalized = metadata.get('org_normalized')
+            isp_normalized = metadata.get('isp_normalized')
+
+            # Also check memoization cache
+            if org_normalized is None or isp_normalized is None:
+                cached_result = self._host_lookup_cache.get(ip)
+                if cached_result is not None:
+                    org_normalized = cached_result.get('org_normalized', '')
+                    isp_normalized = cached_result.get('isp_normalized', '')
+
+            # If we have complete cached data, process immediately
+            if org_normalized is not None and isp_normalized is not None:
+                excluded = False
+                for pattern in self.exclusion_patterns:
+                    if pattern in org_normalized or pattern in isp_normalized:
+                        excluded = True
+                        # Remove excluded IP from metadata to maintain alignment
+                        self.shodan_host_metadata.pop(ip, None)
+                        break
+
+                if not excluded:
+                    passed_ips.add(ip)
+            else:
+                # Need API lookup
+                uncached_ips.add(ip)
+
+        return passed_ips, uncached_ips
+
+    def _slow_api_exclusion_check(self, uncached_ips: Set[str]) -> Set[str]:
+        """
+        Phase 2: Slow API-dependent exclusion check with rate limiting.
+
+        Args:
+            uncached_ips: Set of IP addresses that need API lookup
+
+        Returns:
+            Set of IP addresses that passed exclusion filtering
+        """
+        if not uncached_ips:
+            return set()
+
+        self.output.info(f"Performing API lookups for {len(uncached_ips)} uncached IPs (rate-limited to 1/sec)...")
+
+        passed_ips = set()
         processed_count = 0
-        
-        # Get configurable progress interval with safe integer conversion
+        excluded_count = 0
+
+        # Get configurable progress interval
         try:
             progress_interval = int(self.config.get("exclusions", "progress_interval", 100))
         except (ValueError, TypeError):
             progress_interval = 100
 
-        for ip in ip_addresses:
+        for ip in uncached_ips:
             processed_count += 1
 
-            # Show progress at configurable intervals or key milestones
-            if processed_count % progress_interval == 0 or processed_count == 1 or processed_count == total_ips:
-                progress_pct = (processed_count / total_ips) * 100
-                self.output.info(f"🔍 Filtering progress: {processed_count}/{total_ips} ({progress_pct:.1f}%) | Excluded: {excluded_count}")
-            
+            # Show progress for API-dependent phase
+            if processed_count % progress_interval == 0 or processed_count == 1 or processed_count == len(uncached_ips):
+                progress_pct = (processed_count / len(uncached_ips)) * 100
+                self.output.info(f"🔍 API lookup progress: {processed_count}/{len(uncached_ips)} ({progress_pct:.1f}%) | Excluded: {excluded_count}")
+
+            # Use existing _should_exclude_ip method (now with rate limiting)
             if self._should_exclude_ip(ip):
                 excluded_count += 1
                 # Remove excluded IP from metadata to maintain alignment
                 self.shodan_host_metadata.pop(ip, None)
             else:
-                filtered_ips.add(ip)
-        
-        self.stats['excluded_ips'] = excluded_count
-        
-        if excluded_count > 0:
-            self.output.info(f"✓ Excluded {excluded_count} IPs (ISPs, cloud providers, etc.)")
-        
-        return filtered_ips
-    
+                passed_ips.add(ip)
+
+        return passed_ips
+
     def _should_exclude_ip(self, ip: str) -> bool:
         """
         Check if IP should be excluded based on organization using cached metadata.
@@ -536,44 +627,45 @@ class DiscoverOperation:
                     return True
             return False
 
-        # Need to make API call - get fresh org/ISP data
-        try:
-            host_info = self.shodan_api.host(ip)
-            org = host_info.get('org', '')
-            isp = host_info.get('isp', '')
+        # Need to make API call - use rate-limited method
+        host_info = self._api_rate_limited_call(ip)
 
-            # Safe normalization with type checking
-            org_normalized = org.lower() if isinstance(org, str) else ''
-            isp_normalized = isp.lower() if isinstance(isp, str) else ''
-
-            # Cache results in both locations to mark IP as fully resolved
-            api_result = {
-                'org': org,
-                'isp': isp,
-                'org_normalized': org_normalized,
-                'isp_normalized': isp_normalized
-            }
-            self._host_lookup_cache[ip] = api_result
-
-            # Update metadata cache with complete org/ISP info
-            # Defensive type check before setdefault operation
-            if not isinstance(self.shodan_host_metadata, dict):
-                self.output.error(f"CRITICAL: shodan_host_metadata corrupted during API call processing - expected dict, got {type(self.shodan_host_metadata)}: {self.shodan_host_metadata}")
-                self.shodan_host_metadata = {}
-
-            metadata = self.shodan_host_metadata.setdefault(ip, {})
-            metadata.update(api_result)
-
-            # Check against exclusion patterns
-            for pattern in self.exclusion_patterns:
-                if pattern in org_normalized or pattern in isp_normalized:
-                    return True
-            return False
-
-        except Exception:
-            # Cache failure to prevent retry loops
+        if host_info is None:
+            # API call failed or circuit breaker active - cache failure and fail open
             self._host_lookup_cache[ip] = None
             return False
+
+        # Process successful API response
+        org = host_info.get('org', '')
+        isp = host_info.get('isp', '')
+
+        # Safe normalization with type checking
+        org_normalized = org.lower() if isinstance(org, str) else ''
+        isp_normalized = isp.lower() if isinstance(isp, str) else ''
+
+        # Cache results in both locations to mark IP as fully resolved
+        api_result = {
+            'org': org,
+            'isp': isp,
+            'org_normalized': org_normalized,
+            'isp_normalized': isp_normalized
+        }
+        self._host_lookup_cache[ip] = api_result
+
+        # Update metadata cache with complete org/ISP info
+        # Defensive type check before setdefault operation
+        if not isinstance(self.shodan_host_metadata, dict):
+            self.output.error(f"CRITICAL: shodan_host_metadata corrupted during API call processing - expected dict, got {type(self.shodan_host_metadata)}: {self.shodan_host_metadata}")
+            self.shodan_host_metadata = {}
+
+        metadata = self.shodan_host_metadata.setdefault(ip, {})
+        metadata.update(api_result)
+
+        # Check against exclusion patterns
+        for pattern in self.exclusion_patterns:
+            if pattern in org_normalized or pattern in isp_normalized:
+                return True
+        return False
     
     def _load_exclusions(self) -> List[str]:
         """
@@ -950,7 +1042,7 @@ class DiscoverOperation:
         """
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3.0)  # Balanced 3s timeout for pre-screening
+            sock.settimeout(1.0)  # Aggressive 1s timeout for pre-screening
             result = sock.connect_ex((ip, 445))
             sock.close()
             return result == 0
@@ -1023,6 +1115,14 @@ class DiscoverOperation:
 
         return False
 
+    def _log_dialect_unavailable(self):
+        """Log a one-time message when smbprotocol lacks explicit Dialect support."""
+        if not self._dialect_warning_logged:
+            self.output.print_if_verbose(
+                "SMB dialect restriction unavailable in current smbprotocol version - SMB1 will still be blocked via smbclient options."
+            )
+            self._dialect_warning_logged = True
+
     def _attempt_smb_connection(self, ip: str, username: str, password: str, timeout: int) -> bool:
         """
         Single SMB connection attempt with specified timeout.
@@ -1040,32 +1140,49 @@ class DiscoverOperation:
         connection = None
         session = None
 
-        # Determine security settings based on cautious_mode
+        # Determine security settings based on cautious_mode + SMB1 toggle
         require_signing = self.cautious_mode
         require_encryption = False  # Never require encryption to avoid false negatives
+        restrict_legacy_protocols = not self.allow_smb1
         dialects = None
 
-        # Try to set SMB dialect restrictions in cautious mode
-        if self.cautious_mode:
+        if restrict_legacy_protocols and Dialect is not None:
             try:
-                from smbprotocol.connection import Dialect
-                # Include SMB2+ (not just SMB3) - SMB2.0/2.1 still benefit from signing
-                dialects = [Dialect.SMB_2_0_2, Dialect.SMB_2_1, Dialect.SMB_3_0_2, Dialect.SMB_3_1_1]
-            except ImportError:
+                requested_dialects = [
+                    getattr(Dialect, "SMB_2_0_2", None),
+                    getattr(Dialect, "SMB_2_1", None),
+                    getattr(Dialect, "SMB_3_0_2", None),
+                    getattr(Dialect, "SMB_3_1_1", None)
+                ]
+                dialects = [dialect for dialect in requested_dialects if dialect is not None] or None
+            except Exception:
                 dialects = None
-                self.output.print_if_verbose("SMB dialect restriction unavailable - using library defaults with signing")
+                self._log_dialect_unavailable()
+        elif restrict_legacy_protocols and Dialect is None:
+            self._log_dialect_unavailable()
 
         try:
             # Suppress stderr output
             stderr_buffer = StringIO()
             with redirect_stderr(stderr_buffer):
                 # Create connection with security settings
+                connection_kwargs = {
+                    'require_signing': require_signing
+                }
+                if dialects:
+                    connection_kwargs['dialects'] = dialects
+
                 try:
-                    connection = Connection(conn_uuid, ip, 445, require_signing=require_signing, dialects=dialects)
+                    connection = Connection(conn_uuid, ip, 445, **connection_kwargs)
                 except TypeError:
                     # Fallback for older smbprotocol versions that don't support dialects parameter
-                    connection = Connection(conn_uuid, ip, 445, require_signing=require_signing)
-                    if self.cautious_mode:
+                    if 'dialects' in connection_kwargs:
+                        connection_kwargs.pop('dialects', None)
+                        self._log_dialect_unavailable()
+                        connection = Connection(conn_uuid, ip, 445, **connection_kwargs)
+                    else:
+                        raise
+                    if self.cautious_mode and not restrict_legacy_protocols:
                         self.output.print_if_verbose("SMB dialect restriction not supported by library - enforcing signing only")
 
                 # Connection attempt with specified timeout
@@ -1084,13 +1201,17 @@ class DiscoverOperation:
                 return True
 
         except SMBException as e:
+            error_msg = str(e).lower()
             # In cautious mode, provide informational messages for rejected connections
-            if self.cautious_mode:
-                error_msg = str(e).lower()
-                if 'signing' in error_msg or 'unsigned' in error_msg:
-                    self.output.print_if_verbose(f"Host {ip} requires unsigned SMB - rejected in cautious mode")
-                elif 'smb' in error_msg and ('version' in error_msg or 'dialect' in error_msg):
-                    self.output.print_if_verbose(f"Host {ip} requires SMB1 or unsupported protocol - rejected in cautious mode")
+            if self.cautious_mode and ('signing' in error_msg or 'unsigned' in error_msg):
+                self.output.print_if_verbose(f"Host {ip} requires unsigned SMB - rejected in cautious mode")
+            if (not self.allow_smb1) and (
+                'smb1' in error_msg or 'legacy' in error_msg or
+                ('smb' in error_msg and ('version' in error_msg or 'dialect' in error_msg))
+            ):
+                self.output.print_if_verbose(
+                    f"Host {ip} requires SMB1/legacy protocol - rerun with --enable-smb1 to include it"
+                )
             return False
         except Exception:
             return False
@@ -1123,14 +1244,15 @@ class DiscoverOperation:
 
         # Test commands matching legacy system
         test_commands = [
-            ("Anonymous", ["smbclient", "-L", f"//{ip}", "-N"]),
-            ("Guest/Blank", ["smbclient", "-L", f"//{ip}", "--user", "guest%"]),
-            ("Guest/Guest", ["smbclient", "-L", f"//{ip}", "--user", "guest%guest"])
+            ("Anonymous", ["-L", f"//{ip}", "-N"]),
+            ("Guest/Blank", ["-L", f"//{ip}", "--user", "guest%"]),
+            ("Guest/Guest", ["-L", f"//{ip}", "--user", "guest%guest"])
         ]
 
         stderr_buffer = StringIO()
-        for method_name, cmd in test_commands:
+        for method_name, extra_args in test_commands:
             try:
+                cmd = self._build_smbclient_probe_cmd(extra_args)
                 with redirect_stderr(stderr_buffer):
                     result = subprocess.run(cmd, capture_output=True, text=True,
                                           timeout=10, stdin=subprocess.DEVNULL)
@@ -1146,6 +1268,27 @@ class DiscoverOperation:
         # Cache failed result to prevent retries
         self._smbclient_auth_cache[ip] = None
         return None
+
+    def _build_smbclient_probe_cmd(self, extra_args: List[str]) -> List[str]:
+        """
+        Build smbclient command used for fallback authentication tests.
+
+        Args:
+            extra_args: Command portion containing target/share/auth options
+
+        Returns:
+            Complete smbclient command list
+        """
+        cmd = ["smbclient"]
+
+        if not self.allow_smb1:
+            cmd.extend([
+                "--max-protocol=SMB3",
+                "--option=client min protocol=SMB2"
+            ])
+
+        cmd.extend(extra_args)
+        return cmd
     
     
     def _save_to_database(self, successful_hosts: List[Dict], country=None) -> Set[str]:

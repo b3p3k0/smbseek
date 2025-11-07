@@ -227,7 +227,12 @@ Documentation: docs/USER_GUIDE.md
     parser.add_argument(
         '--cautious',
         action='store_true',
-        help='Enable modern security hardening (signed SMB sessions, SMB2+/3 only). Default is legacy compatibility mode.'
+        help='Enable modern security hardening (require signed SMB sessions and prefer encryption). SMB1 stays disabled unless explicitly enabled.'
+    )
+    parser.add_argument(
+        '--enable-smb1',
+        action='store_true',
+        help='Allow legacy SMB1 hosts (unsafe). By default SMBSeek only negotiates SMB2+/SMB3.'
     )
     parser.add_argument(
         '--version',

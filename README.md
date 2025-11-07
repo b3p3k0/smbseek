@@ -331,41 +331,58 @@ SMBSeek represents a successful AI-human collaboration where Claude (Anthropic's
 
 ## Operational Safety
 
-SMBSeek 3.0+ implements **compatibility-by-default** to maximize discovery while providing optional security hardening for untrusted environments.
+SMBSeek 3.0+ implements **secure-by-default transport handling** while still allowing an explicit legacy compatibility override when necessary.
 
-### Default Compatibility Mode
+### Default Secure Mode (SMB1 Disabled)
 
-**Default Behavior (Legacy Compatible):**
-- **Unsigned SMB sessions allowed** - Compatible with legacy/insecure servers
-- **SMB1 protocol enabled** - Can connect to very old Windows systems
-- **Maximum compatibility** - Works with all SMB protocol versions
-- **Legacy system support** - Connects to older Windows and Samba implementations
+**Default Behavior:**
+- **SMB1 protocol disabled** - Legacy-only hosts are skipped unless `--enable-smb1` is supplied
+- **Unsigned SMB sessions allowed** - Maintains broad coverage for modern hosts that lack signing
+- **SMB2/SMB3 compatibility** - Works with every contemporary Windows/Samba release
+- **Operator awareness** - Legacy scanning now requires an intentional flag, preventing accidental unsafe traffic
 
 ```bash
-# Default compatibility mode - maximum SMB server support
+# Default scan - SMB2+/SMB3 only
 ./smbseek.py --country US
 ```
 
-### Enhanced Security Mode
+### Legacy Compatibility Mode (--enable-smb1)
 
-**Cautious Mode (--cautious flag required):**
+- **Explicit opt-in** to reintroduce SMB1 negotiations
+- **Intended for targeted assessments** against Windows 2000/XP, legacy NAS, or forensic comparisons
+- **Higher risk**: SMB1 traffic is inherently insecure; combine with isolated infrastructure
+
+```bash
+# Include SMB1-only targets (use sparingly)
+./smbseek.py --country US --enable-smb1
+```
+
+### Enhanced Security Mode (--cautious)
+
 - **Signed SMB sessions required** - Rejects unsigned/insecure connections
-- **SMB2+/3 protocols only** - Blocks legacy SMB1 connections
-- **Modern security flags** - Uses latest smbclient hardening options
-- **Enhanced authentication validation** - Stricter connection requirements
+- **Preferred encryption** - Requests SMB encryption when available
+- **SMB1 remains disabled unless `--enable-smb1` is explicitly provided**
+- **Best choice** for hostile or untrusted environments
 
 ```bash
 # Enhanced security mode - use for untrusted environments
 ./smbseek.py --country US --cautious
+
+# Combine cautious mode with explicit SMB1 support (e.g., forensic deep dives)
+./smbseek.py --country US --cautious --enable-smb1
 ```
 
 ### When to Use Each Mode
 
 **Use Default Mode when:**
-- Performing comprehensive security assessments
-- Scanning internal corporate networks
-- Working with mixed legacy/modern infrastructure
-- Prioritizing maximum compatibility and discovery
+- Performing comprehensive security assessments on modern infrastructure
+- Scanning internal corporate networks where SMB2/3 is the norm
+- You still need breadth but want SMB1 skipped automatically
+
+**Enable SMB1 (--enable-smb1) only when:**
+- You have explicit approval to touch legacy Windows/Samba hosts
+- The goal is root-cause analysis on historical systems
+- You are operating from an isolated VM or lab network
 
 **Use Cautious Mode (--cautious) when:**
 - Scanning unknown or untrusted networks
@@ -395,13 +412,13 @@ SMBSeek 3.0+ implements **compatibility-by-default** to maximize discovery while
 
 ### Expected Behavior Differences
 
-**Cautious Mode May Skip:**
-- Very old Windows 2000/XP systems that only support SMB1
-- Legacy Samba configurations with signing disabled
+**Default SMB1-Off Behavior May Skip:**
+- Very old Windows 2000/XP systems that only support SMB1 (use `--enable-smb1` to include them)
+- Legacy Samba configurations with signing disabled (cautious mode also rejects these)
 - Industrial control systems using outdated SMB implementations
 - Network attached storage (NAS) devices with basic SMB support
 
-**This trade-off is beneficial for high-security environments** because:
+**These trade-offs are beneficial for high-security environments** because:
 - Such systems indicate significant security debt requiring separate remediation
 - Honeypots commonly masquerade as vulnerable legacy systems
 - Modern infrastructure should support signed SMB2+/3 connections
@@ -414,6 +431,9 @@ Use default mode for comprehensive discovery, cautious mode for secure environme
 ```bash
 # Default comprehensive scan
 ./smbseek.py --country US --verbose
+
+# Include legacy SMB1 systems during a targeted window
+./smbseek.py --country US --enable-smb1 --verbose
 
 # Enhanced security scan for untrusted networks
 ./smbseek.py --country US --cautious --force-hosts 192.168.1.100,192.168.1.200
@@ -439,7 +459,7 @@ SMBSeek automatically detects smbclient version capabilities and falls back grac
 - Educational purposes in controlled environments
 
 ### Built-in Safeguards
-- **Safe-by-default SMB security** with optional legacy compatibility
+- **Safe-by-default SMB security** with optional legacy compatibility via `--enable-smb1`
 - Organization exclusion lists to avoid scanning infrastructure providers
 - Rate limiting to prevent aggressive scanning behavior
 - Read-only operations (no modification of target systems)

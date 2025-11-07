@@ -123,6 +123,12 @@ class SMBSeekOutput:
 
         # Display database location
         self.print_if_not_quiet(f"💾 Results saved to: smbseek.db")
+        
+        # Display SMB1 compatibility state
+        if getattr(summary, 'allow_smb1', False):
+            self.print_if_not_quiet("⚠️ SMB1 compatibility ENABLED (legacy hosts included)")
+        else:
+            self.print_if_not_quiet("🚫 SMB1 compatibility DISABLED (default)")
 
         # Success indicator
         if getattr(summary, 'accessible_shares', 0) > 0:

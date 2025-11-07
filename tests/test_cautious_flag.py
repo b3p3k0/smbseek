@@ -58,13 +58,13 @@ class TestCautiousFlag(unittest.TestCase):
             self.assertIn("-L", cmd)
             self.assertIn("//192.168.1.1", cmd)
 
-    def test_access_operation_command_builder_legacy_mode(self):
-        """Test that legacy mode (default) omits security flags in smbclient commands."""
+    def test_access_operation_command_builder_default_blocks_smb1(self):
+        """Default mode should still block SMB1 even without cautious flag."""
         # Patch smbclient availability check
         with patch('commands.access.AccessOperation.check_smbclient_availability', return_value=True):
             from commands.access import AccessOperation
 
-            # Create AccessOperation in legacy mode (cautious_mode=False)
+            # Create AccessOperation in default mode (cautious_mode=False, SMB1 disabled)
             access_op = AccessOperation(
                 self.mock_config,
                 self.mock_output,
@@ -76,18 +76,38 @@ class TestCautiousFlag(unittest.TestCase):
             # Test enumerate command building
             cmd = access_op._build_smbclient_cmd("enumerate", "192.168.1.1", "guest", "")
 
-            # Should NOT include security flags
-            cmd_str = " ".join(cmd)
-            self.assertNotIn("--client-protection", cmd_str)
-            self.assertNotIn("--max-protocol", cmd_str)
-            self.assertNotIn("client min protocol", cmd_str)
-            self.assertNotIn("client smb encrypt", cmd_str)
+            # Should include SMB1-blocking flags but skip cautious-only options
+            self.assertIn("--max-protocol=SMB3", cmd)
+            self.assertIn("--option=client min protocol=SMB2", cmd)
+            self.assertNotIn("--client-protection=sign", cmd)
+            self.assertNotIn("--option=client smb encrypt=desired", cmd)
 
             # Should still include credentials and target
             self.assertIn("--user", cmd)
             self.assertIn("guest%", cmd)
             self.assertIn("-L", cmd)
             self.assertIn("//192.168.1.1", cmd)
+
+    def test_access_operation_command_builder_enables_smb1_when_requested(self):
+        """Verify that --enable-smb1 removes SMB1 restrictions."""
+        with patch('commands.access.AccessOperation.check_smbclient_availability', return_value=True):
+            from commands.access import AccessOperation
+
+            access_op = AccessOperation(
+                self.mock_config,
+                self.mock_output,
+                self.mock_database,
+                self.session_id,
+                cautious_mode=False,
+                allow_smb1=True
+            )
+
+            cmd = access_op._build_smbclient_cmd("enumerate", "192.168.1.1", "guest", "")
+            cmd_str = " ".join(cmd)
+
+            self.assertNotIn("--max-protocol=SMB3", cmd_str)
+            self.assertNotIn("client min protocol=SMB2", cmd_str)
+            self.assertNotIn("--client-protection=sign", cmd_str)
 
     def test_access_operation_command_builder_access_type(self):
         """Test command builder for share access operations."""
@@ -114,8 +134,8 @@ class TestCautiousFlag(unittest.TestCase):
             # Should include anonymous auth
             self.assertIn("-N", cmd)
 
-    def test_discover_operation_cautious_mode_parameter(self):
-        """Test that DiscoverOperation accepts and stores cautious_mode parameter."""
+    def test_discover_operation_security_parameters(self):
+        """Test that DiscoverOperation accepts and stores cautious/SMB1 parameters."""
         with patch('commands.discover.DiscoverOperation._check_smbclient_availability', return_value=True):
             from commands.discover import DiscoverOperation
 
@@ -128,6 +148,7 @@ class TestCautiousFlag(unittest.TestCase):
                 cautious_mode=False
             )
             self.assertFalse(discover_op_legacy.cautious_mode)
+            self.assertFalse(discover_op_legacy.allow_smb1)
 
             # Test cautious mode
             discover_op_cautious = DiscoverOperation(
@@ -138,6 +159,18 @@ class TestCautiousFlag(unittest.TestCase):
                 cautious_mode=True
             )
             self.assertTrue(discover_op_cautious.cautious_mode)
+            self.assertFalse(discover_op_cautious.allow_smb1)
+
+            # Test SMB1 override
+            discover_op_legacy_smb1 = DiscoverOperation(
+                self.mock_config,
+                self.mock_output,
+                self.mock_database,
+                self.session_id,
+                cautious_mode=False,
+                allow_smb1=True
+            )
+            self.assertTrue(discover_op_legacy_smb1.allow_smb1)
 
     def test_credential_handling_in_command_builder(self):
         """Test various credential scenarios in command builder."""
