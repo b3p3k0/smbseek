@@ -243,7 +243,7 @@ Failed Auth: 855
 ```
 
 > **Important**  
-> SMBSeek only records “accessible” hosts when a guest credential (guest/guest or guest/blank) works. Null-session/anonymous responses are still logged in discovery output, but they are excluded from share enumeration and database rollups so everything shown in the UI is actually browseable with guest access.
+> SMBSeek only records “accessible” hosts when a guest credential (guest/guest or guest/blank) works. Null-session/anonymous responses are still logged in discovery output, but they are excluded from share enumeration and database rollups so everything shown in the UI is actually browseable with guest access. Each accessible share now includes a ready-to-use `smb://` link (for example `smb://guest:@203.0.113.10/Public`) so you can open it directly in Finder or Explorer without retyping credentials.
 
 **Status Message Guide:**
 - **ℹ** (blue): Informational status updates

@@ -176,6 +176,32 @@ class TestDatabaseFiltering(unittest.TestCase):
         self.assertEqual(result[0]['ip_address'], '192.168.1.1')
         self.assertEqual(result[0]['accessible_shares'], [])  # Should be empty list
 
+    def test_get_hosts_with_accessible_shares_includes_urls(self):
+        """Test share browse URLs are generated with embedded credentials."""
+        mock_rows = [
+            {
+                'ip_address': '192.168.1.5',
+                'country': 'US',
+                'auth_method': 'Guest/Blank (smbclient)',
+                'accessible_shares': 'Public,Docs Folder'
+            }
+        ]
+        self.mock_db_manager.execute_query.return_value = mock_rows
+
+        result = self.workflow_db.get_hosts_with_accessible_shares()
+
+        self.assertEqual(len(result), 1)
+        host = result[0]
+        self.assertIn('share_urls', host)
+        self.assertEqual(
+            host['share_urls'].get('Public'),
+            'smb://guest:@192.168.1.5/Public'
+        )
+        self.assertEqual(
+            host['share_urls'].get('Docs Folder'),
+            'smb://guest:@192.168.1.5/Docs%20Folder'
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
