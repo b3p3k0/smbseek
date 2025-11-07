@@ -52,8 +52,6 @@ class TestDiscoverMetadata(unittest.TestCase):
                 database=self.mock_database,
                 session_id=self.session_id
             )
-        # Avoid real network connectivity checks during tests
-        self.discover_op._quick_connectivity_check = Mock(return_value=True)
 
     def test_metadata_capture_from_shodan(self):
         """Test that Shodan location metadata is properly captured."""
@@ -584,7 +582,7 @@ class TestDiscoverMetadata(unittest.TestCase):
         # Mock Shodan results with metadata
         mock_shodan_results = {'192.168.1.1', '192.168.1.2'}
 
-        def mock_query_shodan(country, custom_strings=None):
+        def mock_query_shodan(country):
             """Mock that populates metadata like real _query_shodan"""
             # Populate metadata for Shodan results
             self.discover_op.shodan_host_metadata['192.168.1.1'] = {

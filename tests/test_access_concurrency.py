@@ -107,7 +107,7 @@ class TestAccessConcurrency(unittest.TestCase):
             call_times = []
             call_lock = threading.Lock()
 
-            def mock_process_target(host, host_position=None):
+            def mock_process_target(host):
                 nonlocal call_count
                 with call_lock:
                     call_count += 1
@@ -162,7 +162,7 @@ class TestAccessConcurrency(unittest.TestCase):
             self.mock_database.get_authenticated_hosts.return_value = test_hosts
 
             # Mock process_target to return simple results
-            def mock_process_target(host, host_position=None):
+            def mock_process_target(host):
                 return {
                     'ip_address': host['ip_address'],
                     'country': host['country'],
@@ -212,7 +212,7 @@ class TestAccessConcurrency(unittest.TestCase):
 
             self.mock_database.get_authenticated_hosts.return_value = test_hosts
 
-            def mock_process_target(host, host_position=None):
+            def mock_process_target(host):
                 if host['ip_address'] == '192.168.1.2':
                     raise Exception("Simulated processing error")
 
@@ -269,7 +269,7 @@ class TestAccessConcurrency(unittest.TestCase):
             # Replace mock output with real one for this test
             self.access_op.output = real_output
 
-            def mock_process_target(host, host_position=None):
+            def mock_process_target(host):
                 # Call various output methods from different threads
                 real_output.info(f"Processing {host['ip_address']}")
                 real_output.success(f"Connected to {host['ip_address']}")
@@ -306,12 +306,10 @@ class TestConfigValidationIntegration(unittest.TestCase):
         # Should have access section with max_concurrent_hosts defaulting to 1
         access_config = config.get("access")
         self.assertIsNotNone(access_config, "Should have access configuration section")
-        self.assertGreaterEqual(access_config.get("max_concurrent_hosts", 0), 1,
-                                "Configured concurrency should be at least 1")
+        self.assertEqual(access_config.get("max_concurrent_hosts"), 1, "Should default to 1")
 
-        # Getter method should reflect configured value
-        self.assertGreaterEqual(config.get_max_concurrent_hosts(), 1,
-                                "Getter should return a positive concurrency value")
+        # Getter method should return 1
+        self.assertEqual(config.get_max_concurrent_hosts(), 1, "Getter should return default value 1")
 
 
 if __name__ == '__main__':

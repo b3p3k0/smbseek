@@ -76,7 +76,7 @@ class AccessOperation:
         'NT_STATUS_INSUFFICIENT_RESOURCES': 'Insufficient server resources'
     }
 
-    def __init__(self, config, output, database, session_id, cautious_mode=False, allow_smb1=False):
+    def __init__(self, config, output, database, session_id, cautious_mode=False):
         """
         Initialize access operation.
 
@@ -86,14 +86,12 @@ class AccessOperation:
             database: SMBSeekWorkflowDatabase instance
             session_id: Database session ID for this operation
             cautious_mode: Enable modern security hardening if True
-            allow_smb1: Permit legacy SMB1 hosts if True
         """
         self.config = config
         self.output = output
         self.database = database
         self.session_id = session_id
         self.cautious_mode = cautious_mode
-        self.allow_smb1 = allow_smb1
         
         # Check smbclient availability for share enumeration
         self.smbclient_available = self.check_smbclient_availability()
@@ -129,24 +127,14 @@ class AccessOperation:
         """
         cmd = ["smbclient"]
 
-        security_flags = []
-
-        if not self.allow_smb1:
-            # Default posture: block SMB1 everywhere
-            security_flags.extend([
-                "--max-protocol=SMB3",
-                "--option=client min protocol=SMB2"
-            ])
-
         if self.cautious_mode:
-            # Cautious mode builds on the baseline by requiring signing/encryption
-            security_flags.extend([
-                "--client-protection=sign",   # Require signing (Samba 4.11+)
-                "--option=client smb encrypt=desired"
+            # Cautious mode: Apply security hardening flags
+            cmd.extend([
+                "--client-protection=sign",  # Require signing (Samba 4.11+)
+                "--max-protocol=SMB3",       # Allow SMB2/3, block SMB1
+                "--option=client min protocol=SMB2",
+                "--option=client smb encrypt=desired"  # Prefer but don't require encryption
             ])
-
-        if security_flags:
-            cmd.extend(security_flags)
 
         # Add operation-specific parts
         if operation_type == "enumerate":
@@ -525,21 +513,6 @@ class AccessOperation:
             combined_output = stdout_trimmed
         else:
             combined_output = ""
-
-        # Detect legacy SMB1-only hosts and provide explicit guidance
-        lowered_output = combined_output.lower()
-        if (not self.allow_smb1) and lowered_output:
-            smb1_indicators = [
-                "smb1 disabled",
-                "requires smb1",
-                "only supports smb1",
-                "smbv1",
-                "smb v1"
-            ]
-            negotiation_issue = "protocol negotiation failed" in lowered_output and "nt_status_invalid_network_response" in lowered_output
-            if negotiation_issue or any(indicator in lowered_output for indicator in smb1_indicators):
-                friendly_msg = "Host requires legacy SMB1 protocol - rerun with --enable-smb1 to include legacy systems"
-                return (friendly_msg, combined_output or None)
 
         # If no output at all, provide exit code info
         if not combined_output:

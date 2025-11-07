@@ -76,10 +76,6 @@ def test_global_flags():
         # Cautious flag
         (["./smbseek.py", "--cautious", "--help"], True),
         (["./smbseek.py", "--help", "--cautious"], True),
-        # SMB1 override flag
-        (["./smbseek.py", "--enable-smb1", "--help"], True),
-        (["./smbseek.py", "--help", "--enable-smb1"], True),
-        (["./smbseek.py", "--cautious", "--enable-smb1", "--help"], True),
 
         # Risky flag should fail (no longer exists)
         (["./smbseek.py", "--risky", "--country", "US"], False),

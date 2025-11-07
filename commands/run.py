@@ -50,13 +50,7 @@ class WorkflowOrchestrator:
 
         # Import and initialize the new workflow
         from workflow import UnifiedWorkflow
-        self.workflow = UnifiedWorkflow(
-            self.config,
-            self.output,
-            self.database,
-            getattr(args, 'cautious', False),
-            getattr(args, 'enable_smb1', False)
-        )
+        self.workflow = UnifiedWorkflow(self.config, self.output, self.database)
 
     def execute(self):
         """

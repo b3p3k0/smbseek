@@ -59,6 +59,7 @@ class SMBSeekConfig:
                 },
                 "query_components": {
                     "base_query": "smb authentication: disabled",
+                    "product_filter": "product:\"Samba\"",
                     "additional_exclusions": ["-\"DSL\""],
                     "use_organization_exclusions": True
                 }
@@ -70,14 +71,13 @@ class SMBSeekConfig:
                 "skip_failed_hosts": True
             },
             "connection": {
-                "timeout": 5,
-                "port_check_timeout": 2,
+                "timeout": 30,
+                "port_check_timeout": 10,
                 "rate_limit_delay": 3,
                 "share_access_delay": 7
             },
             "discovery": {
-                "max_concurrent_hosts": 50,
-                "rate_limit_delay": 0.1
+                "max_concurrent_hosts": 1
             },
             "access": {
                 "max_concurrent_hosts": 1
@@ -226,10 +226,6 @@ class SMBSeekConfig:
         """Get delay between share access tests on same host."""
         return self.get("connection", "share_access_delay", 7)
 
-    def get_discovery_rate_limit_delay(self) -> float:
-        """Get discovery-specific rate limit delay for authentication testing."""
-        return self.get("discovery", "rate_limit_delay", 0.1)
-
     def get_max_concurrent_hosts(self) -> int:
         """Get maximum concurrent hosts for access operations with validation."""
         value = self.get("access", "max_concurrent_hosts", 1)
@@ -293,20 +289,8 @@ class SMBSeekConfig:
         if self.get("workflow", "rescan_after_days", 30) < 1:
             issues.append("rescan_after_days must be at least 1")
         
-        # Validate timeout ranges
-        connection_timeout = self.get("connection", "timeout", 30)
-        port_check_timeout = self.get("connection", "port_check_timeout", 8)
-
-        if connection_timeout < 3:
-            issues.append("connection timeout should be at least 3 seconds")
-        elif connection_timeout < 10:
-            print("⚠ Warning: connection timeout < 10 seconds may cause false negatives on high-latency networks")
-
-        if port_check_timeout < 1:
-            issues.append("port_check_timeout should be at least 1 second")
-
-        if port_check_timeout > connection_timeout:
-            issues.append("port_check_timeout should not exceed connection timeout")
+        if self.get("connection", "timeout", 30) < 5:
+            issues.append("connection timeout should be at least 5 seconds")
         
         if issues:
             print("⚠ Configuration validation issues:")
