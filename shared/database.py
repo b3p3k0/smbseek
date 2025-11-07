@@ -9,7 +9,6 @@ import sqlite3
 import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set, Tuple, Iterable
-from urllib.parse import quote
 import sys
 
 # Add tools directory to path for DatabaseManager import
@@ -17,79 +16,6 @@ tools_path = os.path.join(os.path.dirname(__file__), '..', 'tools')
 sys.path.insert(0, tools_path)
 
 from db_manager import DatabaseManager, SMBSeekDataAccessLayer
-
-
-def _parse_auth_credentials(auth_method: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Parse stored auth_method label into explicit credentials.
-
-    Returns:
-        Tuple of (username, password). Empty strings represent anonymous/blank values.
-    """
-    if not auth_method:
-        return None, None
-
-    normalized = auth_method.lower()
-
-    if 'guest/guest' in normalized:
-        return 'guest', 'guest'
-    if 'guest/blank' in normalized or 'guest/' in normalized or normalized.strip() == 'guest':
-        return 'guest', ''
-    if 'anonymous' in normalized:
-        return '', ''
-
-    return None, None
-
-
-def _format_host_for_url(ip_address: str) -> str:
-    """Wrap IPv6 literals for smb:// URLs."""
-    if ':' in ip_address and not ip_address.startswith('['):
-        return f"[{ip_address}]"
-    return ip_address
-
-
-def _build_smb_url(ip_address: str, share_name: str,
-                   username: Optional[str], password: Optional[str]) -> Optional[str]:
-    """Construct smb:// URL with embedded credentials when available."""
-    if share_name is None:
-        return None
-
-    share_clean = share_name.strip()
-    if not share_clean:
-        return None
-
-    host_component = _format_host_for_url(ip_address)
-    share_component = quote(share_clean, safe="$-_.~")
-
-    if username is None:
-        return None
-
-    if username == '' and password == '':
-        return f"smb://{host_component}/{share_component}"
-
-    user_part = quote(username, safe="-_.~")
-
-    if password is None:
-        return f"smb://{user_part}@{host_component}/{share_component}"
-
-    password_part = quote(password, safe="-_.~")
-    return f"smb://{user_part}:{password_part}@{host_component}/{share_component}"
-
-
-def _build_share_url_map(ip_address: str, share_names: List[str], auth_method: Optional[str]) -> Dict[str, str]:
-    """Build mapping of share name -> smb:// URL with proper credentials."""
-    username, password = _parse_auth_credentials(auth_method or '')
-    if username is None:
-        return {}
-
-    urls: Dict[str, str] = {}
-    for share in share_names or []:
-        if not share:
-            continue
-        url = _build_smb_url(ip_address, share, username, password)
-        if url:
-            urls[share] = url
-    return urls
 
 
 class SMBSeekWorkflowDatabase:
@@ -474,11 +400,6 @@ class SMBSeekWorkflowDatabase:
                     host_dict['accessible_shares'] = host_dict['accessible_shares'].split(',')
                 else:
                     host_dict['accessible_shares'] = []
-                host_dict['share_urls'] = _build_share_url_map(
-                    host_dict.get('ip_address', ''),
-                    host_dict['accessible_shares'],
-                    host_dict.get('auth_method')
-                )
                 processed_hosts.append(host_dict)
             
             return processed_hosts
@@ -527,11 +448,6 @@ class SMBSeekWorkflowDatabase:
                     host_dict['accessible_shares'] = host_dict['accessible_shares'].split(',')
                 else:
                     host_dict['accessible_shares'] = []
-                host_dict['share_urls'] = _build_share_url_map(
-                    host_dict.get('ip_address', ''),
-                    host_dict['accessible_shares'],
-                    host_dict.get('auth_method')
-                )
                 processed_hosts.append(host_dict)
             
             return processed_hosts
@@ -760,12 +676,6 @@ class SMBSeekWorkflowDatabase:
                     host_dict['accessible_shares_list'] = [s.strip() for s in host_dict['accessible_shares_list'].split(',') if s.strip()]
                 else:
                     host_dict['accessible_shares_list'] = []
-
-                host_dict['accessible_share_urls'] = _build_share_url_map(
-                    host_dict.get('ip_address', ''),
-                    host_dict['accessible_shares_list'],
-                    host_dict.get('auth_method')
-                )
                 
                 processed_hosts.append(host_dict)
             
@@ -811,12 +721,6 @@ class SMBSeekWorkflowDatabase:
                     host_dict['accessible_shares_list'] = [s.strip() for s in host_dict['accessible_shares_list'].split(',') if s.strip()]
                 else:
                     host_dict['accessible_shares_list'] = []
-
-                host_dict['accessible_share_urls'] = _build_share_url_map(
-                    host_dict.get('ip_address', ''),
-                    host_dict['accessible_shares_list'],
-                    host_dict.get('auth_method')
-                )
                 
                 processed_hosts.append(host_dict)
             

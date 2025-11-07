@@ -195,23 +195,6 @@ class TestAccessConcurrency(unittest.TestCase):
             self.assertEqual(result.accessible_shares, 0)
             self.assertEqual(result.share_details, [])
 
-    def test_process_target_skips_anonymous_hosts(self):
-        """Anonymous-only hosts should be skipped before share testing."""
-        host_record = {
-            'ip_address': '192.0.2.10',
-            'country': 'US',
-            'auth_method': 'Anonymous (smbclient)'
-        }
-        self.access_op.total_targets = 1
-
-        with patch.object(self.access_op, 'check_port') as mock_check:
-            result = self.access_op.process_target(host_record, 1)
-
-        mock_check.assert_not_called()
-        self.mock_output.warning.assert_called()
-        self.assertIn('anonymous', result['error'].lower())
-        self.assertEqual(result.get('skip_reason'), 'anonymous_only')
-
     def test_exception_handling_maintains_structure(self):
         """Test that exceptions in individual hosts don't crash entire operation."""
         with patch('commands.access.SMB_AVAILABLE', True), \
@@ -326,7 +309,7 @@ class TestConfigValidationIntegration(unittest.TestCase):
         self.assertGreaterEqual(access_config.get("max_concurrent_hosts", 0), 1,
                                 "Configured concurrency should be at least 1")
 
-        # Getter method should mirror the configured value
+        # Getter method should reflect configured value
         self.assertGreaterEqual(config.get_max_concurrent_hosts(), 1,
                                 "Getter should return a positive concurrency value")
 

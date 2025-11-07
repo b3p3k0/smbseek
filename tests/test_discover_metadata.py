@@ -52,7 +52,7 @@ class TestDiscoverMetadata(unittest.TestCase):
                 database=self.mock_database,
                 session_id=self.session_id
             )
-        # Avoid real network connectivity checks during unit tests
+        # Avoid real network connectivity checks during tests
         self.discover_op._quick_connectivity_check = Mock(return_value=True)
 
     def test_metadata_capture_from_shodan(self):
@@ -246,31 +246,6 @@ class TestDiscoverMetadata(unittest.TestCase):
             self.assertEqual(result['country'], 'Canada')
             self.assertEqual(result['country_code'], 'CA')
             self.assertEqual(result['auth_method'], 'Guest/Blank (smbclient)')
-
-    def test_anonymous_only_hosts_not_returned(self):
-        """Hosts that only allow anonymous access should be skipped."""
-        self.discover_op.smbclient_available = False
-
-        with patch.object(self.discover_op, '_check_port', return_value=True), \
-             patch.object(self.discover_op, '_test_smb_auth', side_effect=[False, False, True]):
-
-            result = self.discover_op._test_single_host('192.168.1.50', 'CLI_Country')
-
-            self.assertIsNone(result)
-            self.mock_output.print_if_verbose.assert_called()
-
-    def test_smbclient_anonymous_results_ignored(self):
-        """Anonymous smbclient results should not be treated as authenticated hosts."""
-        self.discover_op.smbclient_available = True
-
-        with patch.object(self.discover_op, '_check_port', return_value=True), \
-             patch.object(self.discover_op, '_test_smb_auth', side_effect=[False, False]), \
-             patch.object(self.discover_op, '_test_smb_alternative', return_value='Anonymous'):
-
-            result = self.discover_op._test_single_host('192.168.1.60', 'CLI_Country')
-
-            self.assertIsNone(result)
-            self.mock_output.print_if_verbose.assert_called()
 
     def test_database_storage_includes_country_code(self):
         """Test that database storage includes both country fields."""

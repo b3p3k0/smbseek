@@ -226,7 +226,7 @@ SMBSeek provides detailed progress information throughout the scanning process:
 ℹ Testing SMB authentication on 900 hosts...
 ℹ 📊 Progress: 225/900 (25.0%) | Success: 12, Failed: 213 (5%)
 [225/900] Testing 192.168.1.100...
-  ✓ 192.168.1.100: Guest/Blank (smbclient)
+  ✓ 192.168.1.100: Anonymous (smbclient)
 ```
 
 #### Final Results
@@ -241,9 +241,6 @@ Failed Auth: 855
 ✓ Found 45 accessible SMB servers
 ✓ Results saved to database (session: 15)
 ```
-
-> **Important**  
-> SMBSeek only records “accessible” hosts when a guest credential (guest/guest or guest/blank) works. Null-session/anonymous responses are still logged in discovery output, but they are excluded from share enumeration and database rollups so everything shown in the UI is actually browseable with guest access. Each accessible share now includes a ready-to-use `smb://` link (for example `smb://guest:@203.0.113.10/Public`) so you can open it directly in Finder or Explorer without retyping credentials.
 
 **Status Message Guide:**
 - **ℹ** (blue): Informational status updates

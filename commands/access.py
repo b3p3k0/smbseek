@@ -589,6 +589,11 @@ class AccessOperation:
         host_label = f"Host {host_position}/{self.total_targets}"
         self.output.info(f"[{host_position}/{self.total_targets}] Testing {ip} ({country})...")
         
+        # Parse authentication method
+        username, password = self.parse_auth_method(auth_method)
+        if True:  # verbose check handled by output methods
+            self.output.info(f"Using auth: {username}/{password if password else '[blank]'}")
+        
         # Create result structure
         target_result = {
             'ip_address': ip,
@@ -599,19 +604,6 @@ class AccessOperation:
             'accessible_shares': [],
             'share_details': []
         }
-
-        # Parse authentication method
-        username, password = self.parse_auth_method(auth_method)
-        if True:  # verbose check handled by output methods
-            self.output.info(f"Using auth: {username}/{password if password else '[blank]'}")
-
-        # Skip hosts that only allow anonymous access since they aren't browseable
-        if 'anonymous' in auth_method.lower():
-            message = "Skipping anonymous-only host; browsing requires guest credentials"
-            self.output.warning(f"{host_label}: {ip} - {message}")
-            target_result['error'] = message
-            target_result['skip_reason'] = 'anonymous_only'
-            return target_result
         
         try:
             # First check if port 445 is still open
