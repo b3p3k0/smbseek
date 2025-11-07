@@ -38,6 +38,7 @@ yarn-error.log*
 *.py,cover
 htmlcov/
 coverage.xml
+.pytest_cache/
 
 # IDE project settings
 .vscode/
@@ -45,14 +46,32 @@ coverage.xml
 *.iml
 
 # SMBSeek specific files
-.claude
+.claude/
+.claude/settings.local.json
 CLAUDE.md
 CODEX.md
+
+# Developer notes and internal documentation
+DEVNOTES.md
+KEV.md
+OPTIMIZATIONS_SUMMARY.md
+PERFORMANCE_IMPROVEMENTS.md
+PERFORMANCE_OPTIMIZATIONS.md
+AUTHENTICATION_CHUNKING_FIX.md
+CONCURRENCY_PERFORMANCE_OPTIMIZATION.md
+CONFIGURATION_HARDCODING_REMOVAL.md
+docs/DEVNOTES.md
+docs/KEV.md
+docs/PERFORMANCE_OPTIMIZATIONS.md
+docs/CODEX_smbseek.md
 
 # Configuration files with sensitive data
 conf/config.json
 conf/config.json.backup*
 conf/config.bak
+conf/config.json.xsmbseek
+conf/*.json
+!conf/*.json.example
 
 # Database files
 *.db
