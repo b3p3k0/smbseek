@@ -14,7 +14,7 @@ SMBSeek 3.0 introduces a streamlined single-command interface that significantly
 
 | SMBSeek 2.x (Old) | SMBSeek 3.0 (New) |
 |-------------------|-------------------|
-| `./smbseek.py run --country US` | `./smbseek.py --country US` |
+| `./smbseek.py run --country US` | `./smbseek.py --country US` (or `./smbseek.py` for global scan) |
 | `./smbseek.py run --verbose` | `./smbseek.py --verbose` |
 | `./smbseek.py run --quiet` | `./smbseek.py --quiet` |
 
@@ -44,7 +44,7 @@ SMBSeek 3.0 introduces a streamlined single-command interface that significantly
 ```bash
 #!/bin/bash
 # Old scanning script
-./smbseek.py run --country US --verbose
+./smbseek.py --verbose
 ./smbseek.py db query --summary
 ./smbseek.py db backup
 ```
@@ -53,7 +53,7 @@ SMBSeek 3.0 introduces a streamlined single-command interface that significantly
 ```bash
 #!/bin/bash
 # New scanning script
-./smbseek.py --country US --verbose
+./smbseek.py --verbose
 python tools/db_query.py --summary
 python tools/db_maintenance.py --backup
 ```
@@ -71,13 +71,13 @@ python tools/db_maintenance.py --backup
 **Before:**
 ```bash
 # /etc/crontab entry
-0 2 * * * cd /path/to/smbseek && ./smbseek.py run --country US --quiet
+0 2 * * * cd /path/to/smbseek && ./smbseek.py --quiet
 ```
 
 **After:**
 ```bash
 # /etc/crontab entry
-0 2 * * * cd /path/to/smbseek && ./smbseek.py --country US --quiet
+0 2 * * * cd /path/to/smbseek && ./smbseek.py --quiet
 ```
 
 ---
@@ -110,7 +110,7 @@ SMBSeek 3.0 provides backward compatibility with deprecation warnings:
 
 ### 1. Simplified Interface
 
-- **Single command**: `./smbseek.py --country US` performs complete discovery + share enumeration
+- **Single command**: `./smbseek.py` performs complete global discovery + share enumeration
 - **Automatic workflow**: No need to manually chain discover → access commands
 - **Session management**: Unified session tracking across operations
 

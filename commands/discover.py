@@ -15,7 +15,7 @@ import subprocess
 import threading
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Set, List, Dict, Optional
+from typing import Set, List, Dict, Optional, Tuple
 from contextlib import redirect_stderr
 from io import StringIO
 from concurrent.futures import ThreadPoolExecutor
@@ -28,6 +28,7 @@ sys.path.insert(0, tools_path)
 from shared.config import load_config
 from shared.database import create_workflow_database
 from shared.output import create_output_manager
+from smbseek import format_string_for_shodan
 
 # SMB imports (with error handling for missing dependencies)
 try:
@@ -46,6 +47,87 @@ class DiscoverResult:
     total_hosts: int
     authenticated_hosts: int
     host_ips: Set[str]
+
+
+class SMBConnectionPool:
+    """
+    Connection pool for SMB connections to improve performance.
+
+    Caches successful connections per host to avoid repeated handshakes
+    when testing multiple authentication methods.
+    """
+
+    def __init__(self, max_connections_per_host: int = 1, idle_timeout: int = 30):
+        """
+        Initialize connection pool.
+
+        Args:
+            max_connections_per_host: Maximum connections to cache per host
+            idle_timeout: Seconds before closing idle connections
+        """
+        self._pools = {}  # ip -> list of connection info
+        self._locks = {}  # ip -> threading.Lock
+        self._last_used = {}  # ip -> timestamp
+        self.max_connections_per_host = max_connections_per_host
+        self.idle_timeout = idle_timeout
+        self._global_lock = threading.Lock()
+
+    def get_connection(self, ip: str, cautious_mode: bool = False):
+        """
+        Get cached connection or create new one.
+
+        Args:
+            ip: IP address
+            cautious_mode: Security hardening flag
+
+        Returns:
+            Connection object or None if not available
+        """
+        # For now, return None to force new connections each time
+        # Connection pooling with smbprotocol requires careful session management
+        # This is a placeholder for future enhancement
+        return None
+
+    def return_connection(self, ip: str, connection, session=None):
+        """
+        Return connection to pool or clean up.
+
+        Args:
+            ip: IP address
+            connection: Connection object
+            session: Session object (optional)
+        """
+        # Clean up connections immediately for safety
+        try:
+            if session:
+                session.disconnect()
+            if connection:
+                connection.disconnect()
+        except:
+            pass  # Ignore cleanup errors
+
+    def cleanup_idle_connections(self):
+        """Clean up idle connections that have exceeded timeout."""
+        current_time = time.time()
+        with self._global_lock:
+            for ip in list(self._pools.keys()):
+                last_used = self._last_used.get(ip, 0)
+                if current_time - last_used > self.idle_timeout:
+                    # Clean up idle connections for this host
+                    connections = self._pools.pop(ip, [])
+                    self._last_used.pop(ip, None)
+                    if ip in self._locks:
+                        del self._locks[ip]
+
+                    # Clean up the actual connections
+                    for conn_info in connections:
+                        try:
+                            if 'session' in conn_info and conn_info['session']:
+                                conn_info['session'].disconnect()
+                            if 'connection' in conn_info and conn_info['connection']:
+                                conn_info['connection'].disconnect()
+                        except:
+                            pass  # Ignore cleanup errors
 
 
 class DiscoverOperation:
@@ -86,6 +168,9 @@ class DiscoverOperation:
         # Initialize SMBClient authentication cache for fallback outcomes
         self._smbclient_auth_cache = {}
 
+        # Initialize SMB connection pool for performance optimization
+        self._connection_pool = SMBConnectionPool(max_connections_per_host=1, idle_timeout=60)
+
         # Initialize Shodan API
         try:
             api_key = self.config.get_shodan_api_key()
@@ -114,7 +199,7 @@ class DiscoverOperation:
             'total_processed': 0
         }
 
-    def execute(self, country=None, rescan_all=False, rescan_failed=False, force_hosts=None) -> DiscoverResult:
+    def execute(self, country=None, rescan_all=False, rescan_failed=False, force_hosts=None, custom_strings: Optional[List[str]] = None) -> DiscoverResult:
         """
         Execute the discover operation.
 
@@ -123,6 +208,7 @@ class DiscoverOperation:
             rescan_all: Force rescan of all discovered hosts
             rescan_failed: Include previously failed hosts for rescanning
             force_hosts: Set of IP addresses to force scan regardless of filters
+            custom_strings: Optional list of formatted string filters for Shodan queries
 
         Returns:
             DiscoverResult with discovery statistics
@@ -149,8 +235,11 @@ class DiscoverOperation:
         if force_hosts:
             self.output.print_if_verbose(f"Forced hosts specified: {', '.join(sorted(force_hosts))}")
 
+        if custom_strings is None:
+            custom_strings = []
+
         # Query Shodan
-        shodan_results = self._query_shodan(country)
+        shodan_results, query_used = self._query_shodan(country, custom_strings)
 
         # Add forced hosts to results and create placeholder metadata
         if force_hosts:
@@ -165,15 +254,11 @@ class DiscoverOperation:
         if not shodan_results:
             self.output.warning("No results from Shodan query and no forced hosts")
             return DiscoverResult(
-                query_used="",
+                query_used=query_used,
                 total_hosts=0,
                 authenticated_hosts=0,
                 host_ips=set()
             )
-
-        # Build the query string for summary display
-        target_countries = self.config.resolve_target_countries(country)
-        query_used = self._build_targeted_query(target_countries)
 
         # Apply exclusions
         # Debug trace before exclusion filtering
@@ -252,34 +337,34 @@ class DiscoverOperation:
             host_ips=authenticated_ips
         )
     
-    def _query_shodan(self, country=None) -> Set[str]:
+    def _query_shodan(self, country=None, custom_strings: Optional[List[str]] = None) -> Tuple[Set[str], str]:
         """
         Query Shodan for SMB servers in specified country.
 
         Args:
             country: Target country code for search
+            custom_strings: Optional list of formatted string filters
 
         Returns:
-            Set of IP addresses from Shodan results
+            Tuple of (Set of IP addresses, query string used)
         """
         # Debug trace at start of Shodan query
         self.output.print_if_verbose(f"DEBUG: At start of _query_shodan - shodan_host_metadata type: {type(self.shodan_host_metadata)}, len: {len(self.shodan_host_metadata) if isinstance(self.shodan_host_metadata, dict) else 'N/A'}")
-        # Resolve target countries using 3-tier fallback logic
+        # Resolve target countries (explicit or global scan)
         target_countries = self.config.resolve_target_countries(country)
+        query = ""
         
         # Display what we're scanning
         if target_countries:
-            countries_dict = self.config.get("countries") or {}
-            country_names = [countries_dict.get(c, c) for c in target_countries]
-            self.output.info(f"Querying Shodan for SMB servers in: {', '.join(country_names)}")
+            self.output.info(f"Querying Shodan for SMB servers in: {', '.join(target_countries)}")
+            self.output.print_if_verbose(f"Country-specific scan: {len(target_countries)} countries specified")
         else:
-            if not country:
-                self.output.print_if_verbose("No country specified, using global search")
-            self.output.info("Querying Shodan for SMB servers globally (no country filter)")
+            self.output.info("Performing global Shodan search (no country filter)")
+            self.output.print_if_verbose("Global scan mode: maximum discovery coverage")
         
         try:
             # Build targeted Shodan query 
-            query = self._build_targeted_query(target_countries)
+            query = self._build_targeted_query(target_countries, custom_strings)
             
             # Execute query with configured limit
             shodan_config = self.config.get_shodan_config()
@@ -326,21 +411,22 @@ class DiscoverOperation:
             self.output.success(f"Found {len(ip_addresses)} SMB servers in Shodan database")
             self.output.print_if_verbose(f"Captured metadata for {len(self.shodan_host_metadata)} hosts")
             
-            return ip_addresses
+            return ip_addresses, query
         
         except shodan.APIError as e:
             self.output.error(f"Shodan API error: {e}")
-            return set()
+            return set(), query
         except Exception as e:
             self.output.error(f"Shodan query failed: {e}")
-            return set()
+            return set(), query
     
-    def _build_targeted_query(self, countries: list) -> str:
+    def _build_targeted_query(self, countries: list, custom_strings: Optional[List[str]] = None) -> str:
         """
         Build a targeted Shodan query for vulnerable SMB servers.
         
         Args:
             countries: List of country codes for search (empty list for global)
+            custom_strings: Optional list of formatted string filters to include
             
         Returns:
             Formatted Shodan query string
@@ -354,6 +440,27 @@ class DiscoverOperation:
         
         # Start with base components
         query_parts = [base_query, product_filter]
+
+        # String filters (CLI overrides config defaults)
+        string_filters = self._resolve_string_filters(query_config, custom_strings)
+        if string_filters:
+            combination = str(query_config.get("string_combination", "OR")).upper()
+            if combination not in {"AND", "OR"}:
+                combination = "OR"
+
+            if len(string_filters) == 1:
+                string_clause = string_filters[0]
+            else:
+                joined_filters = f" {combination} ".join(string_filters)
+                string_clause = f"({joined_filters})"
+
+            # Insert string clause at beginning to emphasize content search
+            query_parts.insert(0, string_clause)
+            self.output.print_if_verbose(
+                f"String filter logic: {combination} across {len(string_filters)} value(s): {', '.join(string_filters)}"
+            )
+        else:
+            self.output.print_if_verbose("No string filters applied to Shodan query")
         
         # Add country filter only if countries specified
         if countries:
@@ -381,9 +488,54 @@ class DiscoverOperation:
         query_parts.extend(additional_exclusions)
         
         final_query = ' '.join(query_parts)
-        self.output.print_if_verbose(f"Shodan query: {final_query}")
-        
+        query_type = "country-specific" if countries else "global"
+        self.output.print_if_verbose(f"Shodan query ({query_type}): {final_query}")
+
         return final_query
+
+    def _resolve_string_filters(self, query_config: Dict, custom_strings: Optional[List[str]]) -> List[str]:
+        """
+        Determine which string filters should be applied to the Shodan query.
+
+        Args:
+            query_config: Query component configuration
+            custom_strings: CLI-supplied string filters (already formatted)
+
+        Returns:
+            Deduplicated list of formatted string filters
+        """
+        combined_filters: List[str] = []
+
+        config_strings = query_config.get("string_filters", [])
+        if isinstance(config_strings, str):
+            config_strings = [config_strings]
+        elif not isinstance(config_strings, list):
+            config_strings = []
+
+        for raw_value in config_strings:
+            if raw_value is None:
+                continue
+            try:
+                formatted = format_string_for_shodan(str(raw_value))
+                combined_filters.append(formatted)
+            except ValueError as exc:
+                self.output.warning(f"Skipping invalid config string filter '{raw_value}': {exc}")
+
+        if custom_strings:
+            # CLI values have already been validated/quoted
+            combined_filters.extend(custom_strings)
+            self.output.print_if_verbose(
+                f"Custom CLI string filters provided ({len(custom_strings)}): {', '.join(custom_strings)}"
+            )
+
+        deduped_filters: List[str] = []
+        seen = set()
+        for value in combined_filters:
+            if value not in seen:
+                deduped_filters.append(value)
+                seen.add(value)
+
+        return deduped_filters
     
     def _apply_exclusions(self, ip_addresses: Set[str]) -> Set[str]:
         """
@@ -565,10 +717,52 @@ class DiscoverOperation:
 
     def _throttled_auth_wait(self) -> None:
         """
-        Thread-safe rate limiting for discovery authentication attempts.
+        Enhanced thread-safe rate limiting for discovery authentication attempts.
 
-        Enforces global rate limiting across concurrent threads by maintaining
-        shared timestamp tracking with proper locking.
+        Applies smart throttling that scales with concurrency and implements
+        jitter for internet-facing hosts to avoid looking like automated attacks.
+        """
+        if not self.config.get_discovery_smart_throttling():
+            # Use basic rate limiting if smart throttling disabled
+            self._basic_throttled_auth_wait()
+            return
+
+        with self._auth_rate_lock:
+            current_time = time.monotonic()
+
+            # First run: establish baseline without sleeping
+            if self._last_auth_attempt == 0:
+                self._last_auth_attempt = current_time
+                return
+
+            # Calculate dynamic delay based on active thread count
+            base_delay = self.config.get_rate_limit_delay()
+            active_threads = threading.active_count() - 1  # Exclude main thread
+
+            # Reduce per-thread delay as concurrency increases but maintain courtesy
+            effective_delay = base_delay / max(1, active_threads * 0.7)
+
+            # Never go below minimum courtesy delay for internet scanning
+            effective_delay = max(0.5, effective_delay)
+
+            # Add small random jitter (±20%) to avoid synchronized behavior
+            import random
+            jitter = effective_delay * 0.2 * (random.random() - 0.5)
+            final_delay = effective_delay + jitter
+
+            # Calculate time since last attempt and sleep remainder if needed
+            time_elapsed = current_time - self._last_auth_attempt
+
+            if time_elapsed < final_delay:
+                sleep_time = final_delay - time_elapsed
+                time.sleep(sleep_time)
+
+            # Update timestamp for next thread
+            self._last_auth_attempt = time.monotonic()
+
+    def _basic_throttled_auth_wait(self) -> None:
+        """
+        Basic thread-safe rate limiting (fallback when smart throttling disabled).
         """
         with self._auth_rate_lock:
             current_time = time.monotonic()
@@ -649,16 +843,20 @@ class DiscoverOperation:
         total_hosts = len(ip_addresses)
         self.output.info(f"Testing SMB authentication on {total_hosts} hosts...")
 
-        # Get concurrency setting and size executor appropriately
+        # Get concurrency setting and apply smart worker scaling
         max_concurrent_hosts = self.config.get_max_concurrent_discovery_hosts()
-        max_workers = min(max_concurrent_hosts, total_hosts)
+        max_workers = self._get_optimal_workers(total_hosts, max_concurrent_hosts)
 
         # Convert to list for deterministic ordering
         ip_list = list(ip_addresses)
 
-        # If max_concurrent_hosts is 1, use sequential processing (preserve existing behavior)
+        # If max_workers is 1, use sequential processing (preserve existing behavior)
         if max_workers == 1:
             return self._test_smb_authentication_sequential(ip_list, country)
+
+        # Enable smart batching if configured
+        if self.config.get_discovery_batch_processing():
+            ip_list = self._organize_hosts_for_optimal_processing(ip_list)
 
         # Concurrent processing with ThreadPoolExecutor
         successful_hosts = []
@@ -670,24 +868,43 @@ class DiscoverOperation:
         progress_failed_count = 0
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Calculate timeout for future operations (conservative for internet hosts)
+            per_future_timeout = self.config.get_connection_timeout() + self.config.get("connection", "port_check_timeout", 10) + 5
+
             # Submit all tasks
             future_to_index = {
                 executor.submit(self._test_single_host_concurrent, ip, country): i
                 for i, ip in enumerate(ip_list)
             }
 
-            # Collect results as they complete
-            for future in future_to_index:
+            self.output.print_if_verbose(f"Started {len(future_to_index)} concurrent authentication tasks with {max_workers} workers")
+
+            # Collect results as they complete with timeout
+            import concurrent.futures
+            for future in concurrent.futures.as_completed(future_to_index, timeout=per_future_timeout * total_hosts):
                 index = future_to_index[future]
                 ip = ip_list[index]
 
                 try:
-                    result_data = future.result()
+                    # Apply per-future timeout for individual operations
+                    result_data = future.result(timeout=per_future_timeout)
                     results_by_index[index] = result_data
 
                     # Handle error results
                     if "error" in result_data:
-                        self.output.error(f"Authentication failed for {result_data['ip']}: {result_data['error']}")
+                        self.output.print_if_verbose(f"Authentication failed for {result_data['ip']}: {result_data['error']}")
+
+                except concurrent.futures.TimeoutError:
+                    # Individual future timed out
+                    timeout_result = {
+                        "ip": ip,
+                        "error": f"Timeout after {per_future_timeout}s",
+                        "success": False,
+                        "failed": True,
+                        "result": None
+                    }
+                    results_by_index[index] = timeout_result
+                    self.output.print_if_verbose(f"Authentication timeout for {ip} after {per_future_timeout}s")
 
                 except Exception as e:
                     # Future itself failed
@@ -699,7 +916,7 @@ class DiscoverOperation:
                         "result": None
                     }
                     results_by_index[index] = error_result
-                    self.output.error(f"Authentication failed for {ip}: {e}")
+                    self.output.print_if_verbose(f"Authentication error for {ip}: {e}")
 
                 # Update progress counters
                 completed_count += 1
@@ -708,13 +925,12 @@ class DiscoverOperation:
                 else:
                     progress_failed_count += 1
 
-                # Show progress every 25 completions or at significant milestones
-                if completed_count % 25 == 0 or completed_count == 1 or completed_count == total_hosts:
-                    progress_pct = (completed_count / total_hosts) * 100
-                    success_percent = int((progress_success_count / completed_count) * 100) if completed_count else 0
-                    self.output.info(
-                        f"📊 Progress: {completed_count}/{total_hosts} ({progress_pct:.1f}%) | "
-                        f"Success: {progress_success_count}, Failed: {progress_failed_count} ({success_percent}%)"
+                # Enhanced progress reporting with concurrency awareness
+                active_threads = sum(1 for f in future_to_index if not f.done())
+                if completed_count % 10 == 0 or completed_count == 1 or completed_count == total_hosts:
+                    self._report_concurrent_progress(
+                        completed_count, total_hosts, progress_success_count,
+                        progress_failed_count, active_threads
                     )
 
         # Process results in original order and aggregate statistics
@@ -936,14 +1152,8 @@ class DiscoverOperation:
         except Exception:
             return False
         finally:
-            # Cleanup connections
-            try:
-                if session:
-                    session.disconnect()
-                if connection:
-                    connection.disconnect()
-            except:
-                pass
+            # Cleanup connections using connection pool
+            self._connection_pool.return_connection(ip, connection, session)
     
     def _test_smb_alternative(self, ip: str) -> Optional[str]:
         """
@@ -1021,6 +1231,97 @@ class DiscoverOperation:
         except Exception as e:
             self.output.error(f"Failed to save results to database: {e}")
             return set()
+
+    def _get_optimal_workers(self, total_hosts: int, max_concurrent: int) -> int:
+        """
+        Scale workers based on workload size and system capacity.
+
+        Args:
+            total_hosts: Total number of hosts to process
+            max_concurrent: Maximum concurrent hosts from config
+
+        Returns:
+            Optimal number of workers
+        """
+        # For small workloads, use fewer threads to avoid overhead
+        if total_hosts <= 10:
+            return min(3, max_concurrent, total_hosts)
+        # For large workloads, use full concurrency but cap for safety
+        else:
+            worker_cap = self.config.get_max_worker_cap()
+            return min(max_concurrent, total_hosts, worker_cap)
+
+    def _organize_hosts_for_optimal_processing(self, ip_list: List[str]) -> List[str]:
+        """
+        Organize hosts for optimal processing by responsiveness.
+
+        Args:
+            ip_list: List of IP addresses to organize
+
+        Returns:
+            Reorganized list with responsive hosts first
+        """
+        if not self.config.get_discovery_connectivity_precheck():
+            return ip_list
+
+        self.output.print_if_verbose("Performing connectivity pre-check for optimal host ordering...")
+
+        responsive_hosts = []
+        unresponsive_hosts = []
+
+        # Quick connectivity check with very short timeout
+        for ip in ip_list:
+            if self._quick_connectivity_check(ip, timeout=1):
+                responsive_hosts.append(ip)
+            else:
+                unresponsive_hosts.append(ip)
+
+        self.output.print_if_verbose(f"Pre-check complete: {len(responsive_hosts)} responsive, {len(unresponsive_hosts)} unresponsive")
+
+        # Process responsive hosts first, unresponsive hosts last
+        return responsive_hosts + unresponsive_hosts
+
+    def _quick_connectivity_check(self, ip: str, timeout: float = 1.0) -> bool:
+        """
+        Quick connectivity check for host responsiveness.
+
+        Args:
+            ip: IP address to check
+            timeout: Timeout in seconds
+
+        Returns:
+            True if host appears responsive
+        """
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((ip, 445))
+            sock.close()
+            return result == 0
+        except:
+            return False
+
+    def _report_concurrent_progress(self, completed: int, total: int,
+                                  success_count: int, failed_count: int,
+                                  active_threads: int):
+        """
+        Enhanced progress reporting with concurrency awareness.
+
+        Args:
+            completed: Number of completed hosts
+            total: Total number of hosts
+            success_count: Number of successful authentications
+            failed_count: Number of failed attempts
+            active_threads: Number of active threads
+        """
+        progress_pct = (completed / total) * 100
+        success_rate = (success_count / max(1, completed)) * 100
+
+        self.output.info(
+            f"📊 Progress: {completed}/{total} ({progress_pct:.1f}%) | "
+            f"Success: {success_count}, Failed: {failed_count} ({success_rate:.0f}%) | "
+            f"Active: {active_threads} threads"
+        )
 
 
 # Compatibility layer for old DiscoverCommand interface

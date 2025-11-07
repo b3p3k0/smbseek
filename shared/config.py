@@ -61,7 +61,9 @@ class SMBSeekConfig:
                     "base_query": "smb authentication: disabled",
                     "product_filter": "product:\"Samba\"",
                     "additional_exclusions": ["-\"DSL\""],
-                    "use_organization_exclusions": True
+                    "use_organization_exclusions": True,
+                    "string_filters": [],
+                    "string_combination": "OR"
                 }
             },
             "workflow": {
@@ -77,7 +79,11 @@ class SMBSeekConfig:
                 "share_access_delay": 7
             },
             "discovery": {
-                "max_concurrent_hosts": 1
+                "max_concurrent_hosts": 10,
+                "max_worker_cap": 20,
+                "batch_processing": False,
+                "smart_throttling": False,
+                "connectivity_precheck": False
             },
             "access": {
                 "max_concurrent_hosts": 1
@@ -237,34 +243,50 @@ class SMBSeekConfig:
 
     def get_max_concurrent_discovery_hosts(self) -> int:
         """Get maximum concurrent hosts for discovery operations with validation."""
-        value = self.get("discovery", "max_concurrent_hosts", 1)
+        value = self.get("discovery", "max_concurrent_hosts", 10)
         if isinstance(value, int) and value >= 1:
             return value
         else:
-            # Fallback to 1 for invalid values (zero, negative, or non-integer)
-            return 1
-    
+            # Fallback to 10 for invalid values (zero, negative, or non-integer)
+            return 10
+
+    def get_discovery_batch_processing(self) -> bool:
+        """Get whether batch processing is enabled for discovery."""
+        return self.get("discovery", "batch_processing", False)
+
+    def get_discovery_smart_throttling(self) -> bool:
+        """Get whether smart throttling is enabled for discovery."""
+        return self.get("discovery", "smart_throttling", False)
+
+    def get_discovery_connectivity_precheck(self) -> bool:
+        """Get whether connectivity pre-checking is enabled for discovery."""
+        return self.get("discovery", "connectivity_precheck", False)
+
+    def get_max_worker_cap(self) -> int:
+        """Get maximum worker cap for thread pool safety with validation."""
+        value = self.get("discovery", "max_worker_cap", 20)
+        if isinstance(value, int) and value >= 1:
+            return value
+        else:
+            # Fallback to 20 for invalid values (zero, negative, or non-integer)
+            return 20
+
     def resolve_target_countries(self, args_country: Optional[str] = None) -> list:
         """
-        Resolve target countries using 3-tier fallback logic.
-        
+        Resolve target countries using explicit argument or global scan.
+
         Args:
             args_country: Country argument from command line (optional)
-            
+
         Returns:
             List of country codes to scan, empty list for global scan
         """
-        # Tier 1: Use --country flag if provided
+        # Use --country flag if provided
         if args_country:
             # Handle comma-separated countries
             return [country.strip().upper() for country in args_country.split(',')]
-        
-        # Tier 2: Use countries from config.json if exists
-        countries_config = self.get("countries")
-        if countries_config and isinstance(countries_config, dict):
-            return list(countries_config.keys())
-        
-        # Tier 3: Fall back to global scan (empty list)
+
+        # Default to global scan (no country filter)
         return []
     
     def validate_configuration(self) -> bool:

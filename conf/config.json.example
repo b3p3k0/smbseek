@@ -11,7 +11,9 @@
       "additional_exclusions": [
         "-\"DSL\""
       ],
-      "use_organization_exclusions": true
+      "use_organization_exclusions": true,
+      "string_filters": [],
+      "string_combination": "OR"
     }
   },
   "workflow": {
@@ -24,14 +26,18 @@
   "connection": {
     "timeout": 30,
     "port_check_timeout": 10,
-    "rate_limit_delay": 1,
-    "share_access_delay": 1
+    "rate_limit_delay": 2,
+    "share_access_delay": 3
   },
   "discovery": {
-    "max_concurrent_hosts": 1
+    "max_concurrent_hosts": 10,
+    "max_worker_cap": 20,
+    "batch_processing": true,
+    "smart_throttling": true,
+    "connectivity_precheck": true
   },
   "access": {
-    "max_concurrent_hosts": 1
+    "max_concurrent_hosts": 3
   },
   "exclusion_progress_interval": 100,
   "security": {
@@ -56,15 +62,7 @@
     "verbose_by_default": false,
     "executive_summary": true
   },
-  "countries": {
-    "US": "United States",
-    "GB": "United Kingdom", 
-    "CA": "Canada",
-    "IE": "Ireland",
-    "AU": "Australia",
-    "NZ": "New Zealand",
-    "ZA": "South Africa"
-  },
+  "_note": "Global scans (no country filter) are performed when --country is not specified. To limit scans to specific countries, use: ./smbseek.py --country US,GB,CA",
   "file_collection": {
     "max_files_per_target": 3,
     "max_total_size_mb": 500,

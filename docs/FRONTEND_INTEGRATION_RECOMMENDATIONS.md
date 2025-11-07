@@ -1,7 +1,7 @@
 # Frontend Integration Recommendations for SMBSeek
 
 > **Note**
-> This document targets the legacy multi-subcommand CLI (SMBSeek 2.x). For SMBSeek 3.x, prefer the unified command `./smbseek.py [--country ...]` and treat the guidance below as historical reference when integrating older workflows.
+> This document targets the legacy multi-subcommand CLI (SMBSeek 2.x). For SMBSeek 3.x, prefer the unified command `./smbseek.py` (global scan) or `./smbseek.py --country XX` (country-specific) and treat the guidance below as historical reference when integrating older workflows.
 
 ## **Document Purpose**
 

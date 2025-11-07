@@ -19,10 +19,15 @@ import argparse
 import sys
 import os
 import ipaddress
-from typing import Optional
+import re
+from typing import Optional, Set
+from typing import List
 
 # Add current directory to Python path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+MAX_STRING_FILTER_LENGTH = 100
+STRING_FILTER_PATTERN = re.compile(r'^[A-Za-z0-9\s\-\_\.\,\@\:\#\(\)\/\\\'"&\+\!\?\$]+$')
 
 
 def validate_force_hosts(value):
@@ -56,6 +61,135 @@ def validate_force_hosts(value):
         raise argparse.ArgumentTypeError("no valid IP addresses provided")
 
     return ips
+
+
+def validate_country_codes(value: str) -> str:
+    """
+    Validate and normalize country codes.
+
+    Args:
+        value: Comma-separated country codes string
+
+    Returns:
+        Normalized comma-separated country codes (uppercase)
+
+    Raises:
+        argparse.ArgumentTypeError: If any country code is invalid
+    """
+    if not value or not value.strip():
+        raise argparse.ArgumentTypeError("country codes cannot be empty")
+
+    # Common ISO 3166-1 alpha-2 country codes
+    valid_codes: Set[str] = {
+        'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AS', 'AT',
+        'AU', 'AW', 'AX', 'AZ', 'BA', 'BB', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI',
+        'BJ', 'BL', 'BM', 'BN', 'BO', 'BQ', 'BR', 'BS', 'BT', 'BV', 'BW', 'BY',
+        'BZ', 'CA', 'CC', 'CD', 'CF', 'CG', 'CH', 'CI', 'CK', 'CL', 'CM', 'CN',
+        'CO', 'CR', 'CU', 'CV', 'CW', 'CX', 'CY', 'CZ', 'DE', 'DJ', 'DK', 'DM',
+        'DO', 'DZ', 'EC', 'EE', 'EG', 'EH', 'ER', 'ES', 'ET', 'FI', 'FJ', 'FK',
+        'FM', 'FO', 'FR', 'GA', 'GB', 'GD', 'GE', 'GF', 'GG', 'GH', 'GI', 'GL',
+        'GM', 'GN', 'GP', 'GQ', 'GR', 'GS', 'GT', 'GU', 'GW', 'GY', 'HK', 'HM',
+        'HN', 'HR', 'HT', 'HU', 'ID', 'IE', 'IL', 'IM', 'IN', 'IO', 'IQ', 'IR',
+        'IS', 'IT', 'JE', 'JM', 'JO', 'JP', 'KE', 'KG', 'KH', 'KI', 'KM', 'KN',
+        'KP', 'KR', 'KW', 'KY', 'KZ', 'LA', 'LB', 'LC', 'LI', 'LK', 'LR', 'LS',
+        'LT', 'LU', 'LV', 'LY', 'MA', 'MC', 'MD', 'ME', 'MF', 'MG', 'MH', 'MK',
+        'ML', 'MM', 'MN', 'MO', 'MP', 'MQ', 'MR', 'MS', 'MT', 'MU', 'MV', 'MW',
+        'MX', 'MY', 'MZ', 'NA', 'NC', 'NE', 'NF', 'NG', 'NI', 'NL', 'NO', 'NP',
+        'NR', 'NU', 'NZ', 'OM', 'PA', 'PE', 'PF', 'PG', 'PH', 'PK', 'PL', 'PM',
+        'PN', 'PR', 'PS', 'PT', 'PW', 'PY', 'QA', 'RE', 'RO', 'RS', 'RU', 'RW',
+        'SA', 'SB', 'SC', 'SD', 'SE', 'SG', 'SH', 'SI', 'SJ', 'SK', 'SL', 'SM',
+        'SN', 'SO', 'SR', 'SS', 'ST', 'SV', 'SX', 'SY', 'SZ', 'TC', 'TD', 'TF',
+        'TG', 'TH', 'TJ', 'TK', 'TL', 'TM', 'TN', 'TO', 'TR', 'TT', 'TV', 'TW',
+        'TZ', 'UA', 'UG', 'UM', 'US', 'UY', 'UZ', 'VA', 'VC', 'VE', 'VG', 'VI',
+        'VN', 'VU', 'WF', 'WS', 'YE', 'YT', 'ZA', 'ZM', 'ZW'
+    }
+
+    # Parse and validate each country code
+    codes = []
+    for code in value.split(','):
+        code = code.strip().upper()
+        if not code:
+            continue
+
+        if code not in valid_codes:
+            raise argparse.ArgumentTypeError(
+                f"'{code}' is not a valid ISO 3166-1 alpha-2 country code. "
+                f"Examples of valid codes: US, GB, DE, FR, JP, CN, IN, BR"
+            )
+        codes.append(code)
+
+    if not codes:
+        raise argparse.ArgumentTypeError("no valid country codes provided")
+
+    return ','.join(codes)
+
+
+def format_string_for_shodan(value: str) -> str:
+    """
+    Format a user-supplied string for safe inclusion in Shodan queries.
+
+    Args:
+        value: Raw string from CLI/config
+
+    Returns:
+        Quoted and escaped string
+
+    Raises:
+        ValueError: If the string is empty, too long, or contains invalid characters
+    """
+    if value is None:
+        raise ValueError("String filters cannot be empty")
+
+    trimmed_value = value.strip()
+    if not trimmed_value:
+        raise ValueError("String filters cannot be empty")
+
+    if len(trimmed_value) > MAX_STRING_FILTER_LENGTH:
+        raise ValueError(f"String filters cannot exceed {MAX_STRING_FILTER_LENGTH} characters")
+
+    if not STRING_FILTER_PATTERN.fullmatch(trimmed_value):
+        raise ValueError(
+            "String filters contain invalid characters. Allowed: letters, numbers, spaces, and - _ . , @ : # / \\ ' \" & + ! ? $ ( )"
+        )
+
+    escaped_value = trimmed_value.replace('"', '\\"')
+    return f'"{escaped_value}"'
+
+
+def validate_and_format_strings(strings: Optional[List[str]]) -> List[str]:
+    """
+    Validate and normalize custom string filters from CLI arguments.
+
+    Args:
+        strings: List of raw string filter inputs
+
+    Returns:
+        List of formatted string filters suitable for Shodan queries
+
+    Raises:
+        ValueError: If any supplied string is invalid
+    """
+    if not strings:
+        return []
+
+    formatted_strings: List[str] = []
+    seen = set()
+
+    for raw_value in strings:
+        normalized = (raw_value or "").strip()
+        if not normalized:
+            raise ValueError("String filters cannot be empty or whitespace-only")
+
+        try:
+            formatted = format_string_for_shodan(normalized)
+        except ValueError as exc:
+            raise ValueError(f"Invalid --string value '{raw_value}': {exc}") from exc
+
+        if formatted not in seen:
+            formatted_strings.append(formatted)
+            seen.add(formatted)
+
+    return formatted_strings
 
 
 def detect_deprecated_usage(argv):
@@ -104,6 +238,8 @@ def create_main_parser() -> argparse.ArgumentParser:
 Examples:
   smbseek --country US                        # Complete scan (discovery + share enumeration)
   smbseek --country US --verbose              # Same with detailed output
+  smbseek --string Documents                  # Search for banners containing "Documents"
+  smbseek --country US --string "Finance"     # Combine string filters with country targeting
   smbseek --help                              # Show help
 
 The tool performs two main operations:
@@ -159,6 +295,13 @@ Documentation: docs/USER_GUIDE.md
         help='Enable modern security hardening (signed SMB sessions, SMB2+/3 only). Default is legacy compatibility mode.'
     )
     parser.add_argument(
+        '--string',
+        dest='strings',
+        action='append',
+        metavar='VALUE',
+        help='Add a string filter for banner searches (can be used multiple times; values are automatically quoted)'
+    )
+    parser.add_argument(
         '--version',
         action='version',
         version='SMBSeek 3.0.0'
@@ -196,6 +339,13 @@ def main():
     try:
         # Import workflow components
         from workflow import create_unified_workflow
+
+        # Validate and normalize custom strings before workflow creation
+        try:
+            args.strings = validate_and_format_strings(getattr(args, 'strings', []))
+        except ValueError as exc:
+            print(f"Error: {exc}")
+            return 1
 
         # Create and execute unified workflow
         workflow = create_unified_workflow(args)

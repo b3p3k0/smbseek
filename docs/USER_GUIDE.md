@@ -56,11 +56,14 @@ cp conf/config.json.example conf/config.json
 
 ### 5. Run Your First Scan
 ```bash
-# Streamlined single command - complete workflow
-./smbseek.py --country US
+# Global scan - complete workflow (recommended)
+./smbseek.py
 
 # With verbose output for learning
-./smbseek.py --country US --verbose
+./smbseek.py --verbose
+
+# Country-specific scan if needed
+./smbseek.py --country US
 ```
 
 **That's it!** In a few minutes, you'll have a database full of SMB server data ready to explore.
@@ -163,7 +166,7 @@ SMBSeek stores all scan results in a SQLite database (`smbseek.db`) that automat
 - **Export data** in various formats
 
 ### The Workflow
-1. **Scan**: Query Shodan and test SMB servers (`./smbseek.py [--country ...]`)
+1. **Scan**: Query Shodan and test SMB servers (`./smbseek.py` or `./smbseek.py --country US`)
 2. **Store**: Results are saved automatically in `smbseek.db`
 3. **Query**: Explore findings with `python tools/db_query.py`
 4. **Act**: Feed the data into your reporting or security processes
@@ -178,17 +181,17 @@ SMBSeek stores all scan results in a SQLite database (`smbseek.db`) that automat
 source venv/bin/activate  # Linux/macOS
 # OR: venv\Scripts\activate  # Windows
 
-# Single command interface - complete workflow
-./smbseek.py --country US
-
-# Or scan with global defaults
+# Global scan - complete workflow (recommended)
 ./smbseek.py
+
+# Or scan specific country
+./smbseek.py --country US
 ```
 
 ### Common Scan Commands
 ```bash
 # SMBSeek 3.0 single command interface
-./smbseek.py                       # Uses global defaults
+./smbseek.py                       # Global scan (default)
 ./smbseek.py --country US          # Scan specific country
 ./smbseek.py --country US,GB,CA    # Scan multiple countries
 ./smbseek.py --quiet               # Quiet mode (less output)
@@ -364,7 +367,7 @@ python3 tools/db_maintenance.py --export
 
 ### Security Assessment
 ```bash
-./smbseek.py --country US              # Run discovery + share enumeration
+./smbseek.py                           # Global discovery + share enumeration
 python3 tools/db_query.py --summary    # Review key findings
 python3 tools/db_query.py --countries  # Identify hotspots
 python3 tools/db_maintenance.py --export  # Optional: export snapshots
@@ -372,7 +375,7 @@ python3 tools/db_maintenance.py --export  # Optional: export snapshots
 
 ### Broad Recon / Research
 ```bash
-./smbseek.py --country US,GB,CA        # Multi-country scan
+./smbseek.py --verbose                  # Global scan with detailed output
 python3 tools/db_query.py --all        # Explore comprehensive data
 python3 tools/db_query.py --shares     # Investigate common share names
 ```
@@ -387,35 +390,22 @@ python3 tools/db_maintenance.py --backup       # Regular backups
 
 ---
 
-## 🌍 Country Configuration and Resolution
+## 🌍 Country Configuration and Scanning
 
 ### How SMBSeek Selects Countries to Scan
 
-SMBSeek uses a 3-tier system to determine which countries to scan:
+SMBSeek performs **global scans by default** and supports optional country-specific filtering:
 
-1. **Command Line Override** (highest priority)
+1. **Global Scan** (default behavior)
+   ```bash
+   ./smbseek.py                         # Scans all countries (no filter)
+   ./smbseek.py --verbose               # Global scan with detailed output
+   ```
+
+2. **Country-Specific Scan** (when specified)
    ```bash
    ./smbseek.py --country US            # Scan only United States
    ./smbseek.py --country US,GB,CA      # Scan multiple countries
-   ```
-
-2. **Configuration File Defaults** (medium priority)
-   ```json
-   // In conf/config.json
-   "countries": {
-     "US": "United States",
-     "GB": "United Kingdom", 
-     "CA": "Canada"
-   }
-   ```
-   ```bash
-   ./smbseek.py  # Uses US, GB, CA from config
-   ```
-
-3. **Global Scan Fallback** (lowest priority)
-   ```bash
-   # If no --country AND no countries in config.json
-   ./smbseek.py  # Scans globally (no country filter)
    ```
 
 ### Country Code Reference
@@ -425,19 +415,33 @@ SMBSeek accepts **ISO 3166-1 alpha-2** country codes (two-letter codes):
 **Common Examples:**
 - `US` - United States
 - `GB` - United Kingdom
-- `CA` - Canada  
+- `CA` - Canada
 - `AU` - Australia
 - `DE` - Germany
 - `FR` - France
 - `JP` - Japan
 - `CN` - China
+- `IN` - India
+- `BR` - Brazil
 
 **Multiple Countries:**
 ```bash
 ./smbseek.py --country US,GB,CA,AU,DE  # Comma-separated
 ```
 
-**Note:** Shodan may return more servers for global scans but they may be less relevant to your specific needs. Country-specific scans are usually more targeted and manageable.
+### When to Use Each Approach
+
+**Global Scans (Recommended):**
+- Comprehensive security assessments
+- Research and threat intelligence
+- Maximum discovery coverage
+- Initial broad reconnaissance
+
+**Country-Specific Scans:**
+- Compliance requirements (data sovereignty)
+- Targeted regional assessments
+- Resource-constrained environments
+- Focused threat hunting
 
 ---
 
@@ -468,20 +472,9 @@ SMBSeek accepts **ISO 3166-1 alpha-2** country codes (two-letter codes):
 }
 ```
 
-**Geographic Scope**:
-```json
-{
-  "countries": {
-    "US": "United States",
-    "GB": "United Kingdom", 
-    "CA": "Canada"
-  }
-}
-```
 
 ### When to Modify Settings
 - **Increase delays** if you're getting connection errors
-- **Add countries** to expand your scan scope  
 - **Enable backups** for important long-term data
 - **Adjust timeouts** for slow network conditions
 
@@ -512,7 +505,7 @@ SMBSeek accepts **ISO 3166-1 alpha-2** country codes (two-letter codes):
 - Some networks may block SMB traffic (port 445)
 
 **"No results found"**
-- Try different countries: `python3 tools/smb_scan.py -c GB`
+- Try specific countries: `./smbseek.py --country GB`
 - Check Shodan API limits (free accounts have daily limits)
 - Verify your network allows outbound connections
 
@@ -520,7 +513,7 @@ SMBSeek accepts **ISO 3166-1 alpha-2** country codes (two-letter codes):
 - **Verbose mode**: Add `-v` to any command for detailed output
 - **Check logs**: Look for error messages in the console output  
 - **Database status**: Run `python3 db_maintenance.py --info`
-- **Configuration test**: Try `python3 smb_scan.py --help`
+- **Configuration test**: Try `./smbseek.py --help`
 
 ---
 

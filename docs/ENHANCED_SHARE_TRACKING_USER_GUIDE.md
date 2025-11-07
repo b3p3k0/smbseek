@@ -155,7 +155,7 @@ python3 tools/add_share_summary_view.py
 **Possible causes**:
 1. **No share discovery yet**: Run SMBSeek discovery first:
    ```bash
-   ./smbseek.py --country US
+   ./smbseek.py
    ```
 
 2. **No accessible shares found**: This is normal if targets have strong security. The enhancement will still show total shares discovered.
@@ -212,7 +212,7 @@ SELECT 'Total Accessible Shares', SUM(accessible_shares_count) FROM v_host_share
 Run SMBSeek scans regularly to keep share data current:
 ```bash
 # Rescan existing hosts every 30 days (default)
-./smbseek.py --country US --rescan-all
+./smbseek.py --force-hosts 192.168.1.100
 ```
 
 ### 2. Data Backup

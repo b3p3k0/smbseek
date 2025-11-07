@@ -20,7 +20,10 @@ pip install -r requirements.txt
 cp conf/config.json.example conf/config.json
 # Edit conf/config.json with your Shodan API key
 
-# Run complete security assessment (discovery + share enumeration)
+# Run global security assessment (discovery + share enumeration)
+./smbseek.py
+
+# Or scan specific country
 ./smbseek.py --country US
 ```
 
@@ -132,31 +135,44 @@ See `conf/config.json.example` for complete configuration options with detailed 
 SMBSeek 3.0+ uses a simplified single-command interface that performs discovery and share enumeration in one operation:
 
 ```bash
-# Scan United States for vulnerable SMB servers
-./smbseek.py --country US
-
-# Scan with verbose output
-./smbseek.py --country US --verbose
-
-# Scan globally (uses configuration defaults)
+# Global scan for vulnerable SMB servers (recommended)
 ./smbseek.py
 
+# Scan specific country
+./smbseek.py --country US
+
+# Global scan with verbose output
+./smbseek.py --verbose
+
 # Quiet mode (minimal output)
-./smbseek.py --country US --quiet
+./smbseek.py --quiet
 ```
 
-### Available Countries
+### Country-Specific Scanning
 
-SMBSeek supports country-specific scanning using two-letter country codes:
-- `US` - United States
-- `GB` - United Kingdom
-- `CA` - Canada
-- `IE` - Ireland
-- `AU` - Australia
-- `NZ` - New Zealand
-- `ZA` - South Africa
+SMBSeek performs global scans by default. For country-specific scans, use the `--country` flag with ISO 3166-1 alpha-2 country codes (e.g., US, GB, CA, DE, JP). Multiple countries can be specified with comma separation:
 
-Or scan globally by omitting the `--country` parameter.
+```bash
+./smbseek.py --country US,GB,CA    # Scan multiple countries
+./smbseek.py --country DE          # Scan Germany only
+```
+
+## String-Based Searching
+
+Target SMB banners that contain specific phrases or keywords using the `--string` flag (repeatable). SMBSeek automatically validates, de-duplicates, and quotes each value before inserting it into the Shodan query.
+
+```bash
+./smbseek.py --string Documents                     # Search for a single keyword (quoted in Shodan as "Documents")
+./smbseek.py --string Documents --string "My Docs"  # Match hosts containing either Documents or "My Docs"
+./smbseek.py --string "Finance Reports" --country US --verbose
+```
+
+**How it works:**
+- Every `--string` argument becomes a quoted phrase in the Shodan query (multi-word values do not require manual quoting beyond shell requirements).
+- All CLI-provided strings are combined using logical OR by default. You can change this behavior via `conf/config.json` (`string_combination`: `"AND"` or `"OR"`).
+- Default strings can also be defined in `shodan.query_components.string_filters`; CLI values are appended to that list.
+- Inputs longer than 100 characters or containing unsafe punctuation are rejected with a helpful error so you know exactly what to fix.
+- Verbose mode displays how string filters are applied (`-v`/`--verbose`).
 
 ## Migration from 2.x
 
@@ -191,7 +207,7 @@ SMBSeek stores all results in a SQLite database (`smbseek.db`). Use the `tools/`
 # Summary statistics
 python tools/db_query.py --summary
 
-# Country distribution
+# Country distribution (from global scan results)
 python tools/db_query.py --countries
 
 # Database health / backups
@@ -262,7 +278,7 @@ pip install -r requirements.txt
 ./smbseek.py --help
 
 # Verbose output for debugging
-./smbseek.py --country US --verbose
+./smbseek.py --verbose
 
 # Database tools help
 python tools/db_query.py --help
@@ -384,13 +400,13 @@ SMBSeek 3.0+ implements **compatibility-by-default** to maximize discovery while
 Use default mode for comprehensive discovery, cautious mode for secure environments:
 
 ```bash
-# Default comprehensive scan
-./smbseek.py --country US --verbose
+# Default comprehensive global scan
+./smbseek.py --verbose
 
 # Enhanced security scan for untrusted networks
-./smbseek.py --country US --cautious --force-hosts 192.168.1.100,192.168.1.200
+./smbseek.py --cautious --force-hosts 192.168.1.100,192.168.1.200
 
-# Targeted security scan for specific hosts
+# Targeted security scan for specific country
 ./smbseek.py --country US --cautious --verbose
 ```
 
