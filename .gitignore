@@ -108,6 +108,8 @@ legacy/
 # Test files
 *test*.json
 *test*.csv
+tests/
+tools/
 
 # Enhanced share tracking test files
 test_enhanced_share_tracking.py

@@ -193,15 +193,18 @@ Target SMB banners that contain specific phrases or keywords using the `--string
 SMBSeek 3.0 uses a streamlined single-command interface with modular backend components:
 
 ```
-smbseek                     # CLI entry point (unified workflow)
-├── workflow.py            # Orchestrates discovery → access pipeline
-├── commands/              # Backend operation modules (discover, access, etc.)
-├── shared/                # Common utilities and configuration helpers
+repo root
+├── smbseek               # CLI launcher (entry point for unified workflow)
 ├── gui/
-│   ├── xsmbseek          # GUI launcher command
-│   └── components/…      # Tkinter widgets, dialogs, and styles
-├── tools/                # Database maintenance / reporting utilities
-└── conf/                 # Configuration files and examples
+│   ├── xsmbseek          # GUI launcher (xSMBSeek)
+│   ├── components/       # Tkinter windows, dialogs, and widgets
+│   └── utils/            # GUI helpers (backend interface, sandbox, extract, etc.)
+├── commands/             # Discovery + access operation modules used by the CLI
+├── shared/               # Configuration, database, output, and utility helpers
+├── tools/                # Database maintenance scripts and reporting utilities
+├── conf/                 # Configuration files and examples
+├── docs/                 # Project documentation (guides, changelog, etc.)
+└── tests/                # Unit/integration tests for CLI and GUI features
 ```
 
 ### Database Schema
@@ -300,6 +303,12 @@ The GUI provides an intuitive interface for SMBSeek operations:
 - Visual configuration editor
 - Settings persistence across sessions
 - Real-time validation of inputs
+
+**Controlled Extraction:**
+
+- Launch per-host file collection runs with configurable limits for file size, total bytes, runtime, and count
+- Results are automatically quarantined under `~/.smbseek/quarantine/<purpose>/<timestamp>` alongside JSON audit logs
+- Analysts review and promote quarantined artifacts manually, keeping risky files out of trusted folders by default
 
 ### Sandbox Share Browsing (Linux)
 
