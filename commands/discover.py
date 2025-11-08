@@ -28,7 +28,7 @@ sys.path.insert(0, tools_path)
 from shared.config import load_config
 from shared.database import create_workflow_database
 from shared.output import create_output_manager
-from smbseek import format_string_for_shodan
+from shared.utils import format_string_for_shodan
 
 # SMB imports (with error handling for missing dependencies)
 try:
