@@ -289,6 +289,29 @@ The GUI provides an intuitive interface for SMBSeek operations:
 - The host OS never opens the remote share; all enumeration happens inside the sandbox and the output is streamed back into the GUI.
 - If a supported container runtime is not detected, the button stays disabled so operators know they are outside the sandboxed path.
 
+<details>
+<summary><strong>Setting up the sandbox runtime (Ubuntu, Fedora, Arch)</strong></summary>
+
+Pick the distro you care about, paste the block, and you’ll have Podman plus the lightweight Alpine image we use for `smbclient` inside the sandbox. You can swap in Docker if you prefer, but Podman stays rootless by default.
+
+```bash
+# Ubuntu / Debian
+sudo apt update && sudo apt install -y podman
+podman info >/dev/null && podman pull docker.io/library/alpine:latest
+
+# Fedora / RHEL
+sudo dnf install -y podman
+podman info >/dev/null && podman pull docker.io/library/alpine:latest
+
+# Arch / Manjaro
+sudo pacman -Sy --noconfirm podman
+podman info >/dev/null && podman pull docker.io/library/alpine:latest
+```
+
+Verification tip: run `podman run --rm --network host alpine:latest sh -c "apk add --no-cache samba-client && smbclient --help"`. Once that succeeds, relaunch xsmbseek and the **Sandbox Shares** button should enable itself automatically.
+
+</details>
+
 See `docs/XSMBSEEK_USER_GUIDE.md` for comprehensive GUI documentation.
 
 ## Development
