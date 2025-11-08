@@ -81,9 +81,7 @@ class SMBSeekConfig:
             "discovery": {
                 "max_concurrent_hosts": 10,
                 "max_worker_cap": 20,
-                "batch_processing": False,
-                "smart_throttling": False,
-                "connectivity_precheck": False
+                "smart_throttling": False
             },
             "access": {
                 "max_concurrent_hosts": 1
@@ -250,17 +248,9 @@ class SMBSeekConfig:
             # Fallback to 10 for invalid values (zero, negative, or non-integer)
             return 10
 
-    def get_discovery_batch_processing(self) -> bool:
-        """Get whether batch processing is enabled for discovery."""
-        return self.get("discovery", "batch_processing", False)
-
     def get_discovery_smart_throttling(self) -> bool:
         """Get whether smart throttling is enabled for discovery."""
         return self.get("discovery", "smart_throttling", False)
-
-    def get_discovery_connectivity_precheck(self) -> bool:
-        """Get whether connectivity pre-checking is enabled for discovery."""
-        return self.get("discovery", "connectivity_precheck", False)
 
     def get_max_worker_cap(self) -> int:
         """Get maximum worker cap for thread pool safety with validation."""

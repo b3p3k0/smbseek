@@ -46,8 +46,21 @@
       "0XXX_DECRYPTION_README.TXT",
       "HOW_TO_DECRYPT_FILES.txt",
       "DECRYPT_INSTRUCTIONS.txt",
-      "_DECRYPT_INFO_.txt",
-      "README_FOR_DECRYPT.txt"
+      "_DECRYPT_INFO_.html",
+      "README_FOR_DECRYPT.txt",
+      "+readme-warning+.txt",
+      "cAcTuS.readme.txt",
+      "README-ID-*.txt",
+      "README_*.txt",
+      "Readme.*.txt",
+      "HOW_TO_DECYPHER_FILES.txt",
+      "UNLOCK_FILES_INFO.txt",
+      "RESTORE_FILES.txt",
+      "HELP_DECRYPT.*",
+      "RECOVER-FILES.txt",
+      "HOW TO RECOVER YOUR FILES.txt",
+      "RETURN FILES.txt",
+      "Restore-My-Files.txt"
     ],
     "exclusion_file": "conf/exclusion_list.txt"
   },

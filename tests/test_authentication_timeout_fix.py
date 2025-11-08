@@ -48,31 +48,12 @@ def create_mock_discover_operation():
             session_id=session_id
         )
 
+    # Ensure concurrency helpers use deterministic caps in tests
+    discover_op.config.get_max_worker_cap = Mock(return_value=50)
+    discover_op.config.get_max_concurrent_discovery_hosts = Mock(return_value=50)
+
     return discover_op
 
-
-def test_quick_connectivity_timeout():
-    """Test that quick connectivity check uses optimized 1s timeout."""
-    print("🔍 Testing quick connectivity check timeout optimization...")
-
-    discover_op = create_mock_discover_operation()
-
-    # Mock socket to verify timeout setting
-    with patch('commands.discover.socket.socket') as mock_socket_class:
-        mock_socket = Mock()
-        mock_socket_class.return_value = mock_socket
-        mock_socket.connect_ex.return_value = 0  # Connection success
-
-        # Test connectivity check
-        result = discover_op._quick_connectivity_check('192.168.1.1')
-
-        # Verify timeout was set to optimized value
-        mock_socket.settimeout.assert_called_with(1.0)
-
-        print(f"  ✓ Quick connectivity timeout set to: 1.0s (optimized)")
-        print(f"  ✓ Connection result: {result}")
-
-        return True
 
 
 def test_timeout_configuration():
@@ -206,9 +187,6 @@ def main():
     print("=" * 65)
 
     try:
-        # Test quick connectivity timeout
-        quick_timeout_ok = test_quick_connectivity_timeout()
-
         # Test configuration values
         config_ok = test_timeout_configuration()
 
@@ -221,12 +199,11 @@ def main():
         # Summary
         print("\n" + "=" * 65)
         print("🎉 Timeout Optimization Validation Summary:")
-        print(f"  ✅ Quick connectivity timeout: {'Optimized' if quick_timeout_ok else 'Needs Fix'}")
         print(f"  ✅ Configuration values: {'Optimized' if config_ok else 'Needs Fix'}")
         print(f"  ✅ Authentication simulation: {'Fast' if auth_simulation_ok else 'Slow'}")
         print(f"  ✅ Chunking elimination: {'Theoretical Success' if chunking_eliminated else 'Needs Attention'}")
 
-        all_tests_passed = all([quick_timeout_ok, config_ok, auth_simulation_ok, chunking_eliminated])
+        all_tests_passed = all([config_ok, auth_simulation_ok, chunking_eliminated])
 
         if all_tests_passed:
             print("\n🏆 All timeout optimizations validated!")
@@ -236,7 +213,6 @@ def main():
             print("  • Smooth continuous progress updates")
             print("  • 3x faster timeout per host (15s → 5s)")
             print("  • 4x faster port checks (8s → 2s)")
-            print("  • 3x faster connectivity pre-screening (3s → 1s)")
             return 0
         else:
             print("  ⚠️  Some optimizations need attention")

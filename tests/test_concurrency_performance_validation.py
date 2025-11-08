@@ -38,12 +38,8 @@ def test_concurrency_performance_validation():
     print("\n🔍 4. Testing concurrent vs sequential performance...")
     test_concurrent_vs_sequential_performance()
 
-    # Test 5: Smart Batching
-    print("\n🔍 5. Testing smart batching and connectivity pre-check...")
-    test_smart_batching()
-
-    # Test 6: Connection Pool Integration
-    print("\n🔍 6. Testing connection pool integration...")
+    # Test 5: Connection Pool Integration
+    print("\n🔍 5. Testing connection pool integration...")
     test_connection_pool_integration()
 
     print("\n🎉 CONCURRENCY PERFORMANCE VALIDATION COMPLETE")
@@ -57,9 +53,7 @@ def test_enhanced_configuration():
     test_config_content = """{
         "discovery": {
             "max_concurrent_hosts": 5,
-            "batch_processing": true,
-            "smart_throttling": true,
-            "connectivity_precheck": true
+            "smart_throttling": true
         },
         "connection": {
             "timeout": 30,
@@ -81,20 +75,22 @@ def test_enhanced_configuration():
 
         # Verify enhanced discovery settings
         assert config.get_max_concurrent_discovery_hosts() == 5
-        assert config.get_discovery_batch_processing() == True
         assert config.get_discovery_smart_throttling() == True
-        assert config.get_discovery_connectivity_precheck() == True
 
         # Verify conservative timeout settings are preserved
         assert config.get_connection_timeout() == 30
         assert config.get("connection", "port_check_timeout", 10) == 10
         assert config.get_rate_limit_delay() == 2
 
+        # Verify deprecated knobs are absent
+        discovery_settings = config.config.get("discovery", {})
+        assert "batch_processing" not in discovery_settings
+        assert "connectivity_precheck" not in discovery_settings
+
         print("  ✓ Enhanced configuration settings loaded correctly")
         print(f"    • Max concurrent hosts: {config.get_max_concurrent_discovery_hosts()}")
-        print(f"    • Batch processing: {config.get_discovery_batch_processing()}")
         print(f"    • Smart throttling: {config.get_discovery_smart_throttling()}")
-        print(f"    • Connectivity precheck: {config.get_discovery_connectivity_precheck()}")
+        print("    • Deprecated knobs removed: batch_processing, connectivity_precheck")
         print(f"    • Conservative timeout: {config.get_connection_timeout()}s")
 
     finally:
@@ -106,11 +102,13 @@ def test_smart_worker_scaling():
 
     # Mock dependencies
     mock_config = Mock()
-    mock_config.get_max_concurrent_discovery_hosts.return_value = 5
+    mock_config.get_max_concurrent_discovery_hosts = Mock(return_value=5)
+    mock_config.get_max_worker_cap = Mock(return_value=10)
     mock_output = Mock()
     mock_database = Mock()
 
     discover_op = DiscoverOperation(mock_config, mock_output, mock_database, 1)
+    discover_op.config.get_max_worker_cap = Mock(return_value=10)
 
     # Test small workload scaling
     workers_small = discover_op._get_optimal_workers(total_hosts=5, max_concurrent=5)
@@ -141,6 +139,7 @@ def test_enhanced_rate_limiting():
     mock_database = Mock()
 
     discover_op = DiscoverOperation(mock_config, mock_output, mock_database, 1)
+    discover_op.config.get_max_worker_cap = Mock(return_value=10)
 
     # Test basic rate limiting timing
     start_time = time.time()
@@ -169,14 +168,15 @@ def test_concurrent_vs_sequential_performance():
 
     # Mock dependencies for performance testing
     mock_config = Mock()
-    mock_config.get_max_concurrent_discovery_hosts.return_value = 5
-    mock_config.get_discovery_batch_processing.return_value = False
+    mock_config.get_max_concurrent_discovery_hosts = Mock(return_value=5)
     mock_config.get_connection_timeout.return_value = 30
     mock_config.get.return_value = 10  # port_check_timeout
     mock_output = Mock()
     mock_database = Mock()
 
     discover_op = DiscoverOperation(mock_config, mock_output, mock_database, 1)
+    discover_op.config.get_max_worker_cap = Mock(return_value=10)
+    discover_op._get_optimal_workers = lambda total_hosts, max_concurrent: min(int(max_concurrent), total_hosts)
 
     # Create test IPs
     test_ips = {f"192.168.1.{i}" for i in range(1, 21)}  # 20 test IPs
@@ -221,44 +221,6 @@ def test_concurrent_vs_sequential_performance():
 
     # Performance should be better with concurrency
     assert improvement_ratio >= 1.5, f"Concurrent should be at least 1.5x faster, got {improvement_ratio:.1f}x"
-
-def test_smart_batching():
-    """Test smart batching and connectivity pre-check functionality."""
-    from commands.discover import DiscoverOperation
-
-    # Mock dependencies
-    mock_config = Mock()
-    mock_config.get_discovery_connectivity_precheck.return_value = True
-    mock_output = Mock()
-    mock_database = Mock()
-
-    discover_op = DiscoverOperation(mock_config, mock_output, mock_database, 1)
-
-    # Test IP list organization
-    test_ips = ["192.168.1.1", "192.168.1.2", "192.168.1.3", "192.168.1.4"]
-
-    # Mock quick connectivity check (simulate some responsive, some not)
-    def mock_connectivity_check(ip, timeout=1):
-        # Simulate 192.168.1.1 and 192.168.1.3 as responsive
-        return ip in ["192.168.1.1", "192.168.1.3"]
-
-    with patch.object(discover_op, '_quick_connectivity_check', side_effect=mock_connectivity_check):
-        organized_ips = discover_op._organize_hosts_for_optimal_processing(test_ips)
-
-    # Verify responsive hosts come first
-    responsive_hosts = ["192.168.1.1", "192.168.1.3"]
-    unresponsive_hosts = ["192.168.1.2", "192.168.1.4"]
-
-    # Check that responsive hosts are at the beginning
-    organized_responsive = organized_ips[:len(responsive_hosts)]
-    organized_unresponsive = organized_ips[len(responsive_hosts):]
-
-    assert set(organized_responsive) == set(responsive_hosts), "Responsive hosts should come first"
-    assert set(organized_unresponsive) == set(unresponsive_hosts), "Unresponsive hosts should come last"
-
-    print("  ✓ Smart batching organizes hosts correctly")
-    print(f"    • Responsive hosts first: {organized_responsive}")
-    print(f"    • Unresponsive hosts last: {organized_unresponsive}")
 
 def test_connection_pool_integration():
     """Test connection pool integration."""
@@ -336,7 +298,7 @@ def simulate_performance_improvement():
     print()
     print("ADDITIONAL BENEFITS:")
     print("  • Enhanced progress reporting every 10 hosts (vs 25)")
-    print("  • Smart batching prioritizes responsive hosts")
+    print("  • Immediate authentication attempts (no pre-check delay)")
     print("  • Intelligent rate limiting with jitter")
     print("  • Connection cleanup optimization")
 

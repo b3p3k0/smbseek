@@ -854,10 +854,6 @@ class DiscoverOperation:
         if max_workers == 1:
             return self._test_smb_authentication_sequential(ip_list, country)
 
-        # Enable smart batching if configured
-        if self.config.get_discovery_batch_processing():
-            ip_list = self._organize_hosts_for_optimal_processing(ip_list)
-
         # Concurrent processing with ThreadPoolExecutor
         successful_hosts = []
         results_by_index = [None] * total_hosts
@@ -1250,56 +1246,6 @@ class DiscoverOperation:
         else:
             worker_cap = self.config.get_max_worker_cap()
             return min(max_concurrent, total_hosts, worker_cap)
-
-    def _organize_hosts_for_optimal_processing(self, ip_list: List[str]) -> List[str]:
-        """
-        Organize hosts for optimal processing by responsiveness.
-
-        Args:
-            ip_list: List of IP addresses to organize
-
-        Returns:
-            Reorganized list with responsive hosts first
-        """
-        if not self.config.get_discovery_connectivity_precheck():
-            return ip_list
-
-        self.output.print_if_verbose("Performing connectivity pre-check for optimal host ordering...")
-
-        responsive_hosts = []
-        unresponsive_hosts = []
-
-        # Quick connectivity check with very short timeout
-        for ip in ip_list:
-            if self._quick_connectivity_check(ip, timeout=1):
-                responsive_hosts.append(ip)
-            else:
-                unresponsive_hosts.append(ip)
-
-        self.output.print_if_verbose(f"Pre-check complete: {len(responsive_hosts)} responsive, {len(unresponsive_hosts)} unresponsive")
-
-        # Process responsive hosts first, unresponsive hosts last
-        return responsive_hosts + unresponsive_hosts
-
-    def _quick_connectivity_check(self, ip: str, timeout: float = 1.0) -> bool:
-        """
-        Quick connectivity check for host responsiveness.
-
-        Args:
-            ip: IP address to check
-            timeout: Timeout in seconds
-
-        Returns:
-            True if host appears responsive
-        """
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(timeout)
-            result = sock.connect_ex((ip, 445))
-            sock.close()
-            return result == 0
-        except:
-            return False
 
     def _report_concurrent_progress(self, completed: int, total: int,
                                   success_count: int, failed_count: int,

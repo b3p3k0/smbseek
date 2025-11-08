@@ -171,6 +171,8 @@ SMBSeek stores all scan results in a SQLite database (`smbseek.db`) that automat
 3. **Query**: Explore findings with `python tools/db_query.py`
 4. **Act**: Feed the data into your reporting or security processes
 
+> **Connectivity pre-check retired:** We no longer run a separate TCP 445 responsiveness probe before authentication. Field testing showed the extra round trip delayed scans without surfacing additional weak hosts, and current Microsoft guidance already recommends blocking SMB over untrusted networks. SMBSeek now proceeds directly to authentication using the discovered host order while keeping throttling safeguards in place.
+
 ---
 
 ## 🔧 Basic Usage

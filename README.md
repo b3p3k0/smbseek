@@ -271,6 +271,10 @@ pip install -r requirements.txt
 - Ensure database file (`smbseek.db`) is writable
 - Check file permissions in project directory
 
+### Connectivity Pre-Checks (Removed)
+
+Early 2025 builds briefly performed a TCP 445 “connectivity pre-check” to reorder hosts before authentication. We removed that logic in November 2025 because it doubled pre-scan time without improving accuracy—modern guidance already recommends blocking SMB over untrusted networks, so second-pass warmups add noise without new signal. SMBSeek now authenticates targets immediately in the order provided, which shortens overall scan duration while still honoring per-host timeout and throttling controls.
+
 ### Getting Help
 
 ```bash
