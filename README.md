@@ -21,10 +21,10 @@ cp conf/config.json.example conf/config.json
 # Edit conf/config.json with your Shodan API key
 
 # Run global security assessment (discovery + share enumeration)
-./smbseek.py
+./smbseek
 
 # Or scan specific country
-./smbseek.py --country US
+./smbseek --country US
 ```
 
 <details>
@@ -147,16 +147,16 @@ SMBSeek 3.0+ uses a simplified single-command interface that performs discovery 
 
 ```bash
 # Global scan for vulnerable SMB servers (recommended)
-./smbseek.py
+./smbseek
 
 # Scan specific country
-./smbseek.py --country US
+./smbseek --country US
 
 # Global scan with verbose output
-./smbseek.py --verbose
+./smbseek --verbose
 
 # Quiet mode (minimal output)
-./smbseek.py --quiet
+./smbseek --quiet
 ```
 
 > **Security note:** Cautious mode (SMB signing + SMB2/SMB3) is now enabled automatically. Use `--legacy` only when you must talk to SMB1 or unsigned targets, and expect reduced protections when you do.
@@ -166,8 +166,8 @@ SMBSeek 3.0+ uses a simplified single-command interface that performs discovery 
 SMBSeek performs global scans by default. For country-specific scans, use the `--country` flag with ISO 3166-1 alpha-2 country codes (e.g., US, GB, CA, DE, JP). Multiple countries can be specified with comma separation:
 
 ```bash
-./smbseek.py --country US,GB,CA    # Scan multiple countries
-./smbseek.py --country DE          # Scan Germany only
+./smbseek --country US,GB,CA    # Scan multiple countries
+./smbseek --country DE          # Scan Germany only
 ```
 
 ## String-Based Searching
@@ -175,9 +175,9 @@ SMBSeek performs global scans by default. For country-specific scans, use the `-
 Target SMB banners that contain specific phrases or keywords using the `--string` flag (repeatable). SMBSeek automatically validates, de-duplicates, and quotes each value before inserting it into the Shodan query.
 
 ```bash
-./smbseek.py --string Documents                     # Search for a single keyword (quoted in Shodan as "Documents")
-./smbseek.py --string Documents --string "My Docs"  # Match hosts containing either Documents or "My Docs"
-./smbseek.py --string "Finance Reports" --country US --verbose
+./smbseek --string Documents                     # Search for a single keyword (quoted in Shodan as "Documents")
+./smbseek --string Documents --string "My Docs"  # Match hosts containing either Documents or "My Docs"
+./smbseek --string "Finance Reports" --country US --verbose
 ```
 
 **How it works:**
@@ -193,19 +193,15 @@ Target SMB banners that contain specific phrases or keywords using the `--string
 SMBSeek 3.0 uses a streamlined single-command interface with modular backend components:
 
 ```
-smbseek.py                    # Main CLI entry point (single command)
-├── workflow.py              # Unified workflow orchestration
-├── commands/                 # Backend operation modules
-│   ├── discover.py          # Shodan queries + SMB authentication
-│   ├── access.py            # Share enumeration and access testing
-│   ├── run.py               # Legacy workflow (backward compatibility)
-│   ├── collect.py           # Deprecated (stub)
-│   ├── analyze.py           # Deprecated (stub)
-│   ├── report.py            # Deprecated (stub)
-│   └── database.py          # Deprecated (stub)
-├── shared/                  # Common utilities and configuration
-├── tools/                   # Database maintenance and query tools
-└── conf/                    # Configuration files
+smbseek                     # CLI entry point (unified workflow)
+├── workflow.py            # Orchestrates discovery → access pipeline
+├── commands/              # Backend operation modules (discover, access, etc.)
+├── shared/                # Common utilities and configuration helpers
+├── gui/
+│   ├── xsmbseek          # GUI launcher command
+│   └── components/…      # Tkinter widgets, dialogs, and styles
+├── tools/                # Database maintenance / reporting utilities
+└── conf/                 # Configuration files and examples
 ```
 
 ### Database Schema
@@ -250,10 +246,10 @@ pip install -r requirements.txt
 
 ```bash
 # General help
-./smbseek.py --help
+./smbseek --help
 
 # Verbose output for debugging
-./smbseek.py --verbose
+./smbseek --verbose
 
 # Database tools help
 python tools/db_query.py --help
@@ -262,7 +258,7 @@ python tools/db_maintenance.py --help
 
 ## Graphical User Interface
 
-SMBSeek includes a graphical interface for users who prefer visual interaction with scan results and configuration.
+xSMBSeek (the graphical companion now bundled in this repository) provides a full GUI for the same backend data, so CLI and GUI users share one codebase. The original xsmbseek repository remains publicly archived for historical reference, but all active development lives here.
 
 ### Launching the GUI
 
@@ -270,7 +266,7 @@ SMBSeek includes a graphical interface for users who prefer visual interaction w
 # Activate your virtual environment first
 source venv/bin/activate
 
-# Launch the GUI
+# Launch the GUI (xSMBSeek)
 ./xsmbseek
 ```
 
@@ -313,7 +309,7 @@ The GUI provides an intuitive interface for SMBSeek operations:
 
 #### macOS and Windows (experimental)
 
-We have not validated the sandbox workflow on macOS or Windows yet, but the tools listed below may work. in theory. Feedback and PRs are very welcome—treat these as starting points, not official support.
+We have not validated the sandbox workflow on macOS or Windows yet, but the tools listed below may work in theory. Feedback and PRs are very welcome—treat these as starting points, not official support.
 
 - **macOS (theoretical)**: install [Colima](https://github.com/abiosoft/colima) or Podman Desktop, then run `colima start --network-address`. Pull the same `docker.io/library/alpine:latest` image and verify `podman run --rm --network host alpine:latest sh -c "apk add --no-cache samba-client && smbclient --help"` succeeds. Finally, start xsmbseek from a terminal that inherits the Colima/Podman environment so the sandbox button can detect the CLI.
 - **Windows (theoretical)**: enable WSL2, install Ubuntu from the Store, and inside that distro install Podman (`sudo apt install podman`). In PowerShell, set `PODMAN_HOST` to your WSL distribution (e.g., `wsl -d Ubuntu podman info`). Pull `docker.io/library/alpine:latest` inside WSL, then launch xsmbseek from the same shell so the detection logic can find `podman.exe` on PATH.
