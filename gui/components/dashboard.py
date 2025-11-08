@@ -860,7 +860,7 @@ class DashboardWidget:
                     error_details.append(f"• Backend path not found: {backend_path}")
                 
                 # Check if SMBSeek executable exists
-                smbseek_cli = os.path.join(backend_path, "smbseek.py")
+                smbseek_cli = os.path.join(backend_path, "smbseek")
                 if not os.path.exists(smbseek_cli):
                     error_details.append(f"• SMBSeek CLI not found: {smbseek_cli}")
                 

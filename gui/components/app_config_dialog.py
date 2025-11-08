@@ -384,15 +384,15 @@ class AppConfigDialog:
         if not path_obj.is_dir():
             return {'valid': False, 'message': '❌ Path is not a directory'}
         
-        # Check for smbseek.py
-        smbseek_script = path_obj / "smbseek.py"
+        # Check for smbseek executable
+        smbseek_script = path_obj / "smbseek"
         if not smbseek_script.exists():
-            return {'valid': False, 'message': '❌ smbseek.py not found in directory'}
-        
+            return {'valid': False, 'message': '❌ smbseek executable not found in directory'}
+
         # Try to get version to confirm it's working
         try:
             result = subprocess.run(
-                ["python", str(smbseek_script), "--version"],
+                [str(smbseek_script), "--version"],
                 capture_output=True,
                 text=True,
                 timeout=5
@@ -401,7 +401,7 @@ class AppConfigDialog:
                 version = result.stdout.strip()
                 return {'valid': True, 'message': f'✅ Valid SMBSeek installation ({version})'}
             else:
-                return {'valid': False, 'message': '❌ SMBSeek script not executable'}
+                return {'valid': False, 'message': '❌ SMBSeek executable not working'}
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
             # Script exists but may not be executable - still mark as valid
             return {'valid': True, 'message': '✅ SMBSeek installation found (version check failed)'}
