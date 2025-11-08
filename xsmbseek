@@ -87,7 +87,7 @@ class XSMBSeekConfig:
         """Get built-in default configuration."""
         return {
             "smbseek": {
-                "path": "./smbseek",
+                "path": ".",
                 "database_path": None
             },
             "gui": {

@@ -51,6 +51,12 @@ coverage.xml
 CLAUDE.md
 CODEX.md
 
+# GUI-specific files
+xsmbseek-config.json
+gui_env/
+gui/smbseek.db
+.smbseek/
+
 # Developer notes and internal documentation
 DEVNOTES.md
 KEV.md

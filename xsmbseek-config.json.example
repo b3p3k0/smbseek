@@ -1,8 +1,8 @@
 {
   "smbseek": {
-    "path": "./smbseek",
+    "path": ".",
     "database_path": null,
-    "comment": "Path to SMBSeek installation directory. Database path is optional - if null, defaults to {path}/smbseek.db"
+    "comment": "Path to SMBSeek installation directory (current directory for unified repo). Database path is optional - if null, defaults to {path}/smbseek.db"
   },
   "gui": {
     "theme": "default",

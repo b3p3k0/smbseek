@@ -40,7 +40,7 @@ class BackendInterface:
     """
 
     
-    def __init__(self, backend_path: str = "./smbseek", mock_mode: bool = False):
+    def __init__(self, backend_path: str = ".", mock_mode: bool = False):
         """
         Initialize backend interface.
 
@@ -48,11 +48,11 @@ class BackendInterface:
             backend_path: Path to SMBSeek installation directory
             mock_mode: Enable mock mode for testing without backend
 
-        Design Decision: Default to ./smbseek for new structure, but allow
-        complete override for different deployment scenarios.
+        Design Decision: Default to current directory (.) for unified repo structure,
+        but allow complete override for different deployment scenarios.
         """
         self.backend_path = Path(backend_path).resolve()
-        self.cli_script = self.backend_path / "smbseek.py"
+        self.cli_script = self.backend_path / "smbseek"
         self.config_path = self.backend_path / "conf" / "config.json"
         self.config_example_path = self.backend_path / "conf" / "config.json.example"
 
