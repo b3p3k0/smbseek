@@ -17,6 +17,7 @@ from typing import Dict, Any, List, Optional, Sequence, Tuple
 
 from gui.utils import probe_cache, probe_runner, probe_patterns, extract_runner
 from gui.utils.probe_runner import ProbeError
+from gui.utils.sandbox_manager import get_sandbox_manager, SandboxUnavailable, SandboxResult
 from shared.quarantine import create_quarantine_dir
 
 
@@ -77,6 +78,8 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
         "latest": cached_probe,
         "indicator_patterns": indicator_patterns or []
     }
+    sandbox_state = {"running": False}
+    sandbox_manager = get_sandbox_manager()
 
     extract_state = {
         "running": False
@@ -124,6 +127,24 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     )
     theme.apply_to_widget(explore_button, "button_secondary")
     explore_button.pack(side=tk.LEFT, padx=(0, 10))
+
+    sandbox_button = tk.Button(
+        button_frame,
+        text="Sandbox Shares",
+        command=lambda: _open_sandbox_dialog(
+            detail_window,
+            server_data,
+            sandbox_manager,
+            sandbox_state,
+            status_var,
+            theme,
+            sandbox_button
+        )
+    )
+    theme.apply_to_widget(sandbox_button, "button_secondary")
+    sandbox_button.pack(side=tk.LEFT, padx=(0, 10))
+    if not sandbox_manager.is_available():
+        sandbox_button.configure(state=tk.DISABLED)
 
     # Close button
     close_button = tk.Button(
@@ -192,6 +213,88 @@ def explore_server(server_data):
             f"Error: {str(e)}\n\n"
             f"Please check your network connection and SMB client configuration."
         )
+
+
+def _open_sandbox_dialog(parent_window, server_data, sandbox_manager, sandbox_state,
+                         status_var: tk.StringVar, theme, sandbox_button: Optional[tk.Button]):
+    """Launch a sandbox share listing and display output in a dialog."""
+    if sandbox_state.get("running"):
+        messagebox.showinfo("Sandbox Running", "A sandbox listing is already in progress.")
+        return
+
+    ip_address = server_data.get('ip_address')
+    if not ip_address:
+        messagebox.showerror("Sandbox Unavailable", "Server IP address is missing.")
+        return
+
+    if not sandbox_manager.is_available():
+        messagebox.showerror(
+            "Sandbox Unavailable",
+            "Sandbox browsing requires Podman or Docker on Linux."
+        )
+        return
+
+    username, password = _derive_credentials(server_data.get('auth_method', ''))
+
+    dialog = tk.Toplevel(parent_window)
+    dialog.title("Sandbox Share Listing")
+    dialog.geometry("640x420")
+    dialog.transient(parent_window)
+    if theme:
+        theme.apply_to_widget(dialog, "main_window")
+
+    text_widget = tk.Text(dialog, wrap=tk.WORD, state=tk.DISABLED)
+    text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    def append_line(message: str):
+        text_widget.configure(state=tk.NORMAL)
+        text_widget.insert(tk.END, message + "\n")
+        text_widget.configure(state=tk.DISABLED)
+        text_widget.see(tk.END)
+
+    button_frame = tk.Frame(dialog)
+    button_frame.pack(pady=(0, 10))
+    tk.Button(button_frame, text="Close", command=dialog.destroy).pack()
+
+    sandbox_state["running"] = True
+    if sandbox_button:
+        sandbox_button.configure(state=tk.DISABLED)
+    status_var.set("Running sandbox share listing…")
+    append_line("Launching sandbox… This may take a few seconds the first time an image is used.")
+
+    def finish(result: Optional[SandboxResult], error_message: Optional[str]):
+        sandbox_state["running"] = False
+        if sandbox_button and sandbox_manager.is_available():
+            sandbox_button.configure(state=tk.NORMAL)
+
+        if error_message:
+            append_line("")
+            append_line("Error:")
+            append_line(error_message)
+            status_var.set("Sandbox listing failed")
+            return
+
+        output = result.stdout.strip() or "(no output)"
+        append_line("")
+        append_line(output)
+        if result.stderr.strip():
+            append_line("")
+            append_line("--- stderr ---")
+            append_line(result.stderr.strip())
+        status_var.set(f"Sandbox listing complete (exit {result.returncode})")
+
+    def worker():
+        try:
+            sandbox_result = sandbox_manager.list_shares(ip_address, username, password)
+            dialog.after(0, lambda: finish(sandbox_result, None))
+        except SandboxUnavailable as exc:
+            dialog.after(0, lambda: finish(None, str(exc)))
+        except subprocess.TimeoutExpired:
+            dialog.after(0, lambda: finish(None, "Sandbox timed out"))
+        except Exception as exc:  # pragma: no cover - defensive
+            dialog.after(0, lambda: finish(None, f"Unexpected error: {exc}"))
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def _format_server_details(server: Dict[str, Any], probe_section: Optional[str] = None) -> str:

@@ -284,6 +284,11 @@ The GUI provides an intuitive interface for SMBSeek operations:
 - Settings persistence across sessions
 - Real-time validation of inputs
 
+### Sandbox Share Browsing (Linux)
+- When Podman or Docker is installed, the Server Details window shows a **Sandbox Shares** button that lists shares via `smbclient` running inside a throwaway container.
+- The host OS never opens the remote share; all enumeration happens inside the sandbox and the output is streamed back into the GUI.
+- If a supported container runtime is not detected, the button stays disabled so operators know they are outside the sandboxed path.
+
 See `docs/XSMBSEEK_USER_GUIDE.md` for comprehensive GUI documentation.
 
 ## Development
@@ -321,6 +326,7 @@ See `docs/AI_AGENT_FIELD_GUIDE.md` and `docs/COLLAB.md` for detailed collaborati
 - Country-based filtering to limit scan scope
 - Cautious mode (SMB signing + SMB2/SMB3 dialects) enabled by default; use `--legacy` only when you explicitly need SMB1/unsigned access
 - GUI extractions are quarantined under `~/.smbseek/quarantine/<purpose>/<timestamp>` so analysts can inspect artifacts before promoting them
+- Optional Linux sandbox for share browsing keeps risky enumeration inside Podman/Docker containers
 
 ## Legal and Ethical Use
 
