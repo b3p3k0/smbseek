@@ -9,9 +9,9 @@
 
 ```bash
 # Create virtual environment
-python3 -m venv smbseek_env     # You can name this anything you like
-source smbseek_env/bin/activate # Linux/macOS
-# OR: smbseek_env\Scripts\activate # Windows
+python3 -m venv venv            # You can name this anything you like
+source venv/bin/activate        # Linux/macOS
+# OR: venv\Scripts\activate      # Windows
 
 # Install dependencies
 pip install -r requirements.txt
@@ -33,8 +33,8 @@ cp conf/config.json.example conf/config.json
 A virtual environment is an isolated Python environment that keeps this project's dependencies separate from your system Python. This prevents conflicts and makes the project easier to manage.
 
 **Quick explanation:**
-- `python3 -m venv smbseek_env` creates a new virtual environment
-- `source smbseek_env/bin/activate` activates it (you'll see the name in your prompt)
+- `python3 -m venv venv` creates a new virtual environment
+- `source venv/bin/activate` activates it (you'll see the name in your prompt)
 - Always activate the environment before running SMBSeek commands
 - Use `deactivate` to exit the virtual environment when done
 
@@ -45,7 +45,7 @@ A virtual environment is an isolated Python environment that keeps this project'
 ### System Requirements
 - **Python 3.8+** (recommended: Python 3.10+)
 - **smbclient** (required for full functionality, but tool works without it)
-- **Valid Shodan API key** (free account available)
+- **Valid Shodan API key** (paid membership required)
 
 ### SMB Background
 SMBSeek identifies SMB (Server Message Block) servers with weak authentication. For technical background on SMB protocols and security considerations, see the [official Samba documentation](https://www.samba.org/samba/docs/).
@@ -75,8 +75,8 @@ cd smbseek
 
 2. **Create and activate virtual environment:**
 ```bash
-python3 -m venv smbseek_env
-source smbseek_env/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 ```
 
 3. **Install dependencies:**
@@ -93,7 +93,7 @@ cp conf/config.json.example conf/config.json
 
 ### API Key Setup
 
-1. Sign up for a free Shodan account at [shodan.io](https://shodan.io)
+1. Sign up for a Shodan membership at [shodan.io](https://shodan.io) (paid membership required for API access)
 2. Copy your API key from your account dashboard
 3. Edit `conf/config.json` and add your API key:
 
@@ -174,50 +174,6 @@ Target SMB banners that contain specific phrases or keywords using the `--string
 - Inputs longer than 100 characters or containing unsafe punctuation are rejected with a helpful error so you know exactly what to fix.
 - Verbose mode displays how string filters are applied (`-v`/`--verbose`).
 
-## Migration from 2.x
-
-**⚠️ BREAKING CHANGES in SMBSeek 3.0.0**
-
-The multi-command CLI has been replaced by a single streamlined entry point. Legacy subcommands now emit deprecation warnings before forwarding to the unified workflow.
-
-**Old (deprecated):**
-```bash
-./smbseek.py run --country US       # ⚠️ Deprecated, forwards to unified workflow
-./smbseek.py discover --country US  # ⚠️ Deprecated, forwards to unified workflow
-./smbseek.py collect --download     # ❌ Removed
-./smbseek.py report --executive     # ❌ Removed
-```
-
-**New (3.0+):**
-```bash
-./smbseek.py --country US           # ✅ Unified discovery + share enumeration
-```
-
-**What's Changed:**
-- **Single workflow** – discovery and share access run sequentially in one command
-- **File collection removed** – rely on third-party tooling if you need downloads
-- **Reporting removed** – query `smbseek.db` or `tools/db_query.py` for insights
-- **Database subcommands removed** – use `tools/db_*.py` scripts directly
-
-## Database Operations
-
-SMBSeek stores all results in a SQLite database (`smbseek.db`). Use the `tools/` scripts for analysis and maintenance:
-
-```bash
-# Summary statistics
-python tools/db_query.py --summary
-
-# Country distribution (from global scan results)
-python tools/db_query.py --countries
-
-# Database health / backups
-python tools/db_maintenance.py --info
-python tools/db_maintenance.py --backup
-
-# Import historical data
-python tools/db_import.py --csv legacy_results.csv
-```
-
 ## Architecture Overview
 
 SMBSeek 3.0 uses a streamlined single-command interface with modular backend components:
@@ -254,7 +210,7 @@ Core tables store discovery and access results:
 **"SMB libraries not available" error:**
 ```bash
 # Ensure virtual environment is activated
-source smbseek_env/bin/activate
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -271,10 +227,6 @@ pip install -r requirements.txt
 - Ensure database file (`smbseek.db`) is writable
 - Check file permissions in project directory
 
-### Connectivity Pre-Checks (Removed)
-
-Early 2025 builds briefly performed a TCP 445 “connectivity pre-check” to reorder hosts before authentication. We removed that logic in November 2025 because it doubled pre-scan time without improving accuracy—modern guidance already recommends blocking SMB over untrusted networks, so second-pass warmups add noise without new signal. SMBSeek now authenticates targets immediately in the order provided, which shortens overall scan duration while still honoring per-host timeout and throttling controls.
-
 ### Getting Help
 
 ```bash
@@ -289,30 +241,62 @@ python tools/db_query.py --help
 python tools/db_maintenance.py --help
 ```
 
-## Related Projects
+## Graphical User Interface
 
-### xsmbseek - GUI Interface
+SMBSeek includes a graphical interface for users who prefer visual interaction with scan results and configuration.
 
-[xsmbseek](https://github.com/b3p3k0/xsmbseek) provides a graphical user interface for SMBSeek, making it easier to visualize and interact with scan results. It offers:
+### Launching the GUI
 
-- Interactive GUI for SMBSeek operations
-- Visual representation of discovered SMB servers
-- Simplified workflow for users who prefer graphical tools
-- Real-time monitoring of scan progress
+```bash
+# Activate your virtual environment first
+source venv/bin/activate
 
-Check out the [xsmbseek repository](https://github.com/b3p3k0/xsmbseek) for installation and usage instructions.
+# Launch the GUI
+./xsmbseek
+```
+
+### Key Features
+
+The GUI provides an intuitive interface for SMBSeek operations:
+
+**Server List Management:**
+- View all discovered SMB servers with detailed information
+- Filter and sort servers by country, authentication method, or accessibility
+- Real-time status updates during scanning operations
+- Server detail view with share enumeration results
+
+**Advanced Scanning:**
+- Configure country-specific or global scans
+- Set custom Shodan result limits and filters
+- Control rescan behavior for existing hosts
+- Override API keys per-scan without editing configuration files
+
+**Probe Functionality:**
+- Deep enumeration of accessible shares
+- Ransomware indicator detection
+- Directory structure exploration
+- Cached results for quick access
+
+**Configuration Management:**
+- Visual configuration editor
+- Settings persistence across sessions
+- Real-time validation of inputs
+
+See `docs/XSMBSEEK_USER_GUIDE.md` for comprehensive GUI documentation.
 
 ## Development
 
-### AI-Driven Development
+### AI-Human Collaboration
 
-SMBSeek represents a successful AI-human collaboration where Claude (Anthropic's AI assistant) handled complete technical implementation while humans provided domain expertise, testing, and strategic direction.
+This project demonstrates effective AI-human partnership in software development. AI agents handled technical implementation and documentation while humans provided domain expertise, real-world testing, and strategic guidance.
 
-**Key Success Factors:**
-- Trust and autonomy in AI technical implementation
-- Iterative feedback loops with real-world testing
-- Comprehensive documentation as a core deliverable
-- Hybrid approaches combining Python libraries with external tools
+**Core Collaboration Principles:**
+- **Clear role separation**: AI owns implementation consistency; humans validate against reality
+- **Documentation as code**: Architecture notes, changelogs, and inline docs updated with every change
+- **Iterative validation**: Rapid prototyping followed by real-world testing and refinement
+- **Configuration-driven design**: Sensible defaults with comprehensive customization options
+
+See `docs/AI_AGENT_FIELD_GUIDE.md` and `docs/COLLAB.md` for detailed collaboration patterns and best practices.
 
 ### Contributing
 
@@ -320,108 +304,6 @@ SMBSeek represents a successful AI-human collaboration where Claude (Anthropic's
 2. Create a feature branch
 3. Test thoroughly against real SMB servers
 4. Submit a pull request
-
-## Operational Safety
-
-SMBSeek 3.0+ implements **compatibility-by-default** to maximize discovery while providing optional security hardening for untrusted environments.
-
-### Default Compatibility Mode
-
-**Default Behavior (Legacy Compatible):**
-- **Unsigned SMB sessions allowed** - Compatible with legacy/insecure servers
-- **SMB1 protocol enabled** - Can connect to very old Windows systems
-- **Maximum compatibility** - Works with all SMB protocol versions
-- **Legacy system support** - Connects to older Windows and Samba implementations
-
-```bash
-# Default compatibility mode - maximum SMB server support
-./smbseek.py --country US
-```
-
-### Enhanced Security Mode
-
-**Cautious Mode (--cautious flag required):**
-- **Signed SMB sessions required** - Rejects unsigned/insecure connections
-- **SMB2+/3 protocols only** - Blocks legacy SMB1 connections
-- **Modern security flags** - Uses latest smbclient hardening options
-- **Enhanced authentication validation** - Stricter connection requirements
-
-```bash
-# Enhanced security mode - use for untrusted environments
-./smbseek.py --country US --cautious
-```
-
-### When to Use Each Mode
-
-**Use Default Mode when:**
-- Performing comprehensive security assessments
-- Scanning internal corporate networks
-- Working with mixed legacy/modern infrastructure
-- Prioritizing maximum compatibility and discovery
-
-**Use Cautious Mode (--cautious) when:**
-- Scanning unknown or untrusted networks
-- Working from disposable/isolated environments
-- Prioritizing security over maximum compatibility
-- You need to enforce modern SMB security standards
-
-### Operational Hygiene
-
-**Network Isolation:**
-- Use VPN connections to trusted networks when possible
-- Deploy from disposable virtual machines for unknown network scanning
-- Avoid running from privileged network segments or production systems
-- Consider network segmentation to isolate scanning activities
-
-**Environment Management:**
-- **Use dedicated scanning VMs** that can be wiped after assessment
-- **Limit credential exposure** - avoid running with domain administrator privileges
-- **Monitor for detection** - scanning may trigger security alerts in target environments
-- **Coordinate with defenders** - notify SOC teams of authorized scanning activities
-
-**Data Handling:**
-- Review database contents (`smbseek.db`) before copying to persistent storage
-- Use `--quiet` mode in automated deployments to reduce log exposure
-- Consider encrypted storage for assessment results containing sensitive findings
-- Implement secure deletion procedures for temporary scanning environments
-
-### Expected Behavior Differences
-
-**Cautious Mode May Skip:**
-- Very old Windows 2000/XP systems that only support SMB1
-- Legacy Samba configurations with signing disabled
-- Industrial control systems using outdated SMB implementations
-- Network attached storage (NAS) devices with basic SMB support
-
-**This trade-off is beneficial for high-security environments** because:
-- Such systems indicate significant security debt requiring separate remediation
-- Honeypots commonly masquerade as vulnerable legacy systems
-- Modern infrastructure should support signed SMB2+/3 connections
-- Security-focused scanning prioritizes current threats over legacy edge cases
-
-### Mode Selection Examples
-
-Use default mode for comprehensive discovery, cautious mode for secure environments:
-
-```bash
-# Default comprehensive global scan
-./smbseek.py --verbose
-
-# Enhanced security scan for untrusted networks
-./smbseek.py --cautious --force-hosts 192.168.1.100,192.168.1.200
-
-# Targeted security scan for specific country
-./smbseek.py --country US --cautious --verbose
-```
-
-### Smbclient Compatibility
-
-SMBSeek automatically detects smbclient version capabilities and falls back gracefully:
-
-- **Modern Samba (4.11+):** Uses `--client-protection=sign` and advanced options
-- **Legacy Samba:** Falls back to `--option=client signing=required` syntax
-- **Missing smbclient:** Provides degraded functionality with clear warnings
-- **Unsupported flags:** Automatically retries with compatible option syntax
 
 ## Security Considerations
 
@@ -431,7 +313,6 @@ SMBSeek automatically detects smbclient version capabilities and falls back grac
 - Educational purposes in controlled environments
 
 ### Built-in Safeguards
-- **Safe-by-default SMB security** with optional legacy compatibility
 - Organization exclusion lists to avoid scanning infrastructure providers
 - Rate limiting to prevent aggressive scanning behavior
 - Read-only operations (no modification of target systems)
