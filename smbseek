@@ -338,7 +338,7 @@ def main():
 
     try:
         # Import workflow components
-        from workflow import create_unified_workflow
+        from shared.workflow import create_unified_workflow
 
         # Validate and normalize custom strings before workflow creation
         try:

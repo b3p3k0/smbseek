@@ -1,12 +1,24 @@
-# SMBSeek Toolkit Dependencies
-# Core networking and SMB libraries
+# SMBSeek Unified Toolkit Dependencies
+# Combined dependencies for CLI and GUI components
+
+# Core networking and SMB libraries (CLI)
 shodan>=1.25.0
 smbprotocol>=1.10.0
 pyspnego>=0.8.0
 
+# GUI-specific dependencies
+ttkthemes>=3.2.0         # Better tkinter styling
+Pillow>=8.0.0            # Image handling for icons
+python-dateutil>=2.8.0   # Date parsing utilities
+
+# Testing framework
+pytest>=7.0.0            # Testing framework
+pytest-cov>=4.0.0        # Coverage reporting
+
 # Database and data handling (included in Python standard library)
 # sqlite3 - built-in
-# json - built-in  
+# tkinter - usually included with Python
+# json - built-in
 # csv - built-in
 # logging - built-in
 # argparse - built-in
