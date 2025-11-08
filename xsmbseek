@@ -175,12 +175,12 @@ class XSMBSeekConfig:
                 'error': f"SMBSeek directory not found at: {smbseek_path}"
             }
         
-        # Check for main smbseek.py script
-        main_script = smbseek_path / "smbseek.py"
+        # Check for main smbseek executable
+        main_script = smbseek_path / "smbseek"
         if not main_script.exists():
             return {
                 'valid': False,
-                'error': f"SMBSeek main script not found at: {main_script}"
+                'error': f"SMBSeek executable not found at: {main_script}"
             }
         
         # Check for essential directories
