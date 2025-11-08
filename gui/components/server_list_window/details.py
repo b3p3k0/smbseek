@@ -6,13 +6,17 @@ Self-contained UI components with passed data dependencies.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import subprocess
 import platform
 import threading
-from typing import Dict, Any, List, Optional, Sequence
+import os
+import json
+import datetime as dt
+from pathlib import Path
+from typing import Dict, Any, List, Optional, Sequence, Tuple
 
-from gui.utils import probe_cache, probe_runner, probe_patterns
+from gui.utils import probe_cache, probe_runner, probe_patterns, extract_runner
 from gui.utils.probe_runner import ProbeError
 
 
@@ -74,6 +78,10 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
         "indicator_patterns": indicator_patterns or []
     }
 
+    extract_state = {
+        "running": False
+    }
+
     probe_button = tk.Button(
         button_frame,
         text="Probe",
@@ -91,6 +99,22 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     )
     theme.apply_to_widget(probe_button, "button_secondary")
     probe_button.pack(side=tk.LEFT, padx=(0, 10))
+
+    extract_button = tk.Button(
+        button_frame,
+        text="Extract",
+        command=lambda: _open_extract_dialog(
+            detail_window,
+            server_data,
+            status_var,
+            extract_state,
+            settings_manager,
+            theme,
+            extract_button
+        )
+    )
+    theme.apply_to_widget(extract_button, "button_secondary")
+    extract_button.pack(side=tk.LEFT, padx=(0, 10))
 
     # Explore button
     explore_button = tk.Button(
@@ -482,3 +506,288 @@ def _open_probe_dialog(
 
     tk.Button(button_frame, text="Start Probe", command=start_probe_from_dialog).pack(side=tk.LEFT, padx=(0, 5))
     tk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
+
+
+def _open_extract_dialog(
+    parent_window: tk.Toplevel,
+    server_data: Dict[str, Any],
+    status_var: tk.StringVar,
+    extract_state: Dict[str, Any],
+    settings_manager,
+    theme,
+    extract_button: Optional[tk.Button],
+) -> None:
+    """Show configuration dialog for file extraction."""
+    if extract_state.get("running"):
+        messagebox.showinfo("Extraction Running", "An extraction task is already in progress.")
+        return
+
+    config = _load_file_collection_config(settings_manager)
+    ip_address = server_data.get('ip_address', 'host')
+    default_dir = _default_extract_path(ip_address)
+
+    if settings_manager:
+        default_dir = settings_manager.get_setting('extract.last_directory', default_dir)
+        config["max_file_size_mb"] = int(settings_manager.get_setting('extract.max_file_size_mb', config["max_file_size_mb"]))
+        config["max_total_size_mb"] = int(settings_manager.get_setting('extract.max_total_size_mb', config["max_total_size_mb"]))
+        config["max_time_seconds"] = int(settings_manager.get_setting('extract.max_time_seconds', config["max_time_seconds"]))
+        config["max_files_per_target"] = int(settings_manager.get_setting('extract.max_files_per_target', config["max_files_per_target"]))
+
+    dialog = tk.Toplevel(parent_window)
+    dialog.title("Extract Files")
+    dialog.transient(parent_window)
+    dialog.grab_set()
+    if theme:
+        theme.apply_to_widget(dialog, "main_window")
+
+    download_var = tk.StringVar(value=default_dir)
+    max_file_var = tk.IntVar(value=config["max_file_size_mb"])
+    max_total_var = tk.IntVar(value=config["max_total_size_mb"])
+    max_time_var = tk.IntVar(value=config["max_time_seconds"])
+    max_count_var = tk.IntVar(value=config["max_files_per_target"])
+
+    def browse_download_dir():
+        selected = filedialog.askdirectory(parent=dialog, title="Select Download Directory")
+        if selected:
+            download_var.set(selected)
+
+    row = 0
+    tk.Label(dialog, text="Download path:").grid(row=row, column=0, sticky="w", padx=10, pady=(10, 5))
+    path_frame = tk.Frame(dialog)
+    path_frame.grid(row=row, column=1, padx=10, pady=(10, 5), sticky="we")
+    tk.Entry(path_frame, textvariable=download_var, width=40).pack(side=tk.LEFT, fill=tk.X, expand=True)
+    tk.Button(path_frame, text="Browse…", command=browse_download_dir).pack(side=tk.LEFT, padx=(5, 0))
+
+    row += 1
+    tk.Label(dialog, text="Max individual file size (MB):").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+    tk.Entry(dialog, textvariable=max_file_var, width=10).grid(row=row, column=1, padx=10, pady=5, sticky="w")
+
+    row += 1
+    tk.Label(dialog, text="Max total download size (MB):").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+    tk.Entry(dialog, textvariable=max_total_var, width=10).grid(row=row, column=1, padx=10, pady=5, sticky="w")
+
+    row += 1
+    tk.Label(dialog, text="Max run time (seconds):").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+    tk.Entry(dialog, textvariable=max_time_var, width=10).grid(row=row, column=1, padx=10, pady=5, sticky="w")
+
+    row += 1
+    tk.Label(dialog, text="Max files per host:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+    tk.Entry(dialog, textvariable=max_count_var, width=10).grid(row=row, column=1, padx=10, pady=5, sticky="w")
+
+    row += 1
+    info_text = (
+        f"Allowed extensions: {', '.join(config['included_extensions']) or 'All'}\n"
+        f"Blocked extensions: {', '.join(config['excluded_extensions']) or 'None'}"
+    )
+    info_label = tk.Label(dialog, text=info_text, justify="left", fg="#666666")
+    info_label.grid(row=row, column=0, columnspan=2, padx=10, pady=(5, 10), sticky="w")
+
+    def start_extract_from_dialog():
+        path_value = download_var.get().strip() or default_dir
+        try:
+            extraction_settings = {
+                "download_path": path_value,
+                "max_file_size_mb": max(1, int(max_file_var.get())),
+                "max_total_size_mb": max(1, int(max_total_var.get())),
+                "max_time_seconds": max(30, int(max_time_var.get())),
+                "max_files_per_target": max(1, int(max_count_var.get()))
+            }
+        except ValueError:
+            messagebox.showerror("Invalid Input", "Please enter valid numeric values for limits.")
+            return
+
+        if settings_manager:
+            settings_manager.set_setting('extract.last_directory', extraction_settings["download_path"])
+            settings_manager.set_setting('extract.max_file_size_mb', extraction_settings["max_file_size_mb"])
+            settings_manager.set_setting('extract.max_total_size_mb', extraction_settings["max_total_size_mb"])
+            settings_manager.set_setting('extract.max_time_seconds', extraction_settings["max_time_seconds"])
+            settings_manager.set_setting('extract.max_files_per_target', extraction_settings["max_files_per_target"])
+
+        extraction_settings.update({
+            "max_directory_depth": config["max_directory_depth"],
+            "download_delay_seconds": config["download_delay_seconds"],
+            "included_extensions": config["included_extensions"],
+            "excluded_extensions": config["excluded_extensions"],
+            "connection_timeout": config["connection_timeout"]
+        })
+
+        dialog.destroy()
+        _start_extract(
+            parent_window,
+            server_data,
+            status_var,
+            extract_state,
+            extract_button,
+            extraction_settings
+        )
+
+    button_frame = tk.Frame(dialog)
+    button_frame.grid(row=row + 1, column=0, columnspan=2, pady=(0, 10))
+    tk.Button(button_frame, text="Start Extract", command=start_extract_from_dialog).pack(side=tk.LEFT, padx=(0, 5))
+    tk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
+
+
+def _start_extract(
+    detail_window: tk.Toplevel,
+    server_data: Dict[str, Any],
+    status_var: tk.StringVar,
+    extract_state: Dict[str, Any],
+    extract_button: Optional[tk.Button],
+    extract_config: Dict[str, Any]
+) -> None:
+    if extract_state.get("running"):
+        return
+
+    ip_address = server_data.get('ip_address')
+    if not ip_address:
+        messagebox.showwarning("Extraction Unavailable", "Server IP address is missing.")
+        return
+
+    accessible_shares = _parse_accessible_shares(server_data.get('accessible_shares_list', ''))
+    if not accessible_shares:
+        messagebox.showinfo("Extraction", "No accessible shares available for this host.")
+        return
+
+    download_path = Path(os.path.expanduser(extract_config["download_path"]))
+    try:
+        download_path.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        messagebox.showerror("Invalid Path", f"Unable to prepare download directory:\n{exc}")
+        return
+
+    username, password = _derive_credentials(server_data.get('auth_method', ''))
+
+    extract_state["running"] = True
+    status_var.set("Preparing extraction…")
+    if extract_button:
+        extract_button.configure(state=tk.DISABLED)
+
+    def thread_progress(rel_path: str, index: int, limit: Optional[int]) -> None:
+        suffix = f"{index}/{limit}" if limit else f"{index}"
+
+        def update():
+            status_var.set(f"Downloading {rel_path} ({suffix})")
+
+        detail_window.after(0, update)
+
+    def worker():
+        try:
+            summary = extract_runner.run_extract(
+                ip_address,
+                accessible_shares,
+                download_dir=download_path,
+                username=username,
+                password=password,
+                max_total_bytes=extract_config["max_total_size_mb"] * 1024 * 1024,
+                max_file_bytes=extract_config["max_file_size_mb"] * 1024 * 1024,
+                max_file_count=extract_config["max_files_per_target"],
+                max_seconds=extract_config["max_time_seconds"],
+                max_depth=extract_config["max_directory_depth"],
+                allowed_extensions=extract_config["included_extensions"],
+                denied_extensions=extract_config["excluded_extensions"],
+                delay_seconds=extract_config["download_delay_seconds"],
+                connection_timeout=extract_config["connection_timeout"],
+                progress_callback=thread_progress
+            )
+            log_path = extract_runner.write_extract_log(summary)
+
+            def on_success():
+                extract_state["running"] = False
+                if extract_button:
+                    extract_button.configure(state=tk.NORMAL)
+                files = summary["totals"]["files_downloaded"]
+                bytes_downloaded = summary["totals"]["bytes_downloaded"]
+                size_mb = bytes_downloaded / (1024 * 1024) if bytes_downloaded else 0
+                note_parts = []
+                if summary.get("timed_out"):
+                    note_parts.append("timed out")
+                if summary.get("stop_reason"):
+                    note_parts.append(summary["stop_reason"].replace("_", " "))
+                notes = f" ({', '.join(note_parts)})" if note_parts else ""
+                status_var.set(f"Extracted {files} file(s) ({size_mb:.1f} MB){notes}")
+                messagebox.showinfo(
+                    "Extraction Complete",
+                    f"Downloaded {files} file(s) to:\n{download_path}\n\n"
+                    f"Log saved to:\n{log_path}"
+                )
+
+            detail_window.after(0, on_success)
+
+        except extract_runner.ExtractError as exc:
+            def on_error():
+                extract_state["running"] = False
+                if extract_button:
+                    extract_button.configure(state=tk.NORMAL)
+                status_var.set("Extraction failed.")
+                messagebox.showerror("Extraction Failed", str(exc))
+
+            detail_window.after(0, on_error)
+        except Exception as exc:  # pragma: no cover - defensive
+            error_text = f"Unexpected error: {exc}"
+
+            def on_unexpected():
+                extract_state["running"] = False
+                if extract_button:
+                    extract_button.configure(state=tk.NORMAL)
+                status_var.set("Extraction failed.")
+                messagebox.showerror("Extraction Error", error_text)
+
+            detail_window.after(0, on_unexpected)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _load_file_collection_config(settings_manager) -> Dict[str, Any]:
+    """Load file collection defaults from SMBSeek config."""
+    defaults = {
+        "max_files_per_target": 10,
+        "max_total_size_mb": 200,
+        "max_file_size_mb": 50,
+        "max_time_seconds": 300,
+        "max_directory_depth": 3,
+        "download_delay_seconds": 0.5,
+        "included_extensions": [],
+        "excluded_extensions": [],
+        "connection_timeout": 30
+    }
+
+    config_path = None
+    if settings_manager:
+        config_path = settings_manager.get_setting('backend.config_path', None)
+        if not config_path and hasattr(settings_manager, "get_smbseek_config_path"):
+            config_path = settings_manager.get_smbseek_config_path()
+
+    if config_path and Path(config_path).exists():
+        try:
+            config_data = json.loads(Path(config_path).read_text(encoding="utf-8"))
+            file_cfg = config_data.get("file_collection", {})
+            defaults["max_files_per_target"] = int(file_cfg.get("max_files_per_target", defaults["max_files_per_target"]))
+            defaults["max_total_size_mb"] = int(file_cfg.get("max_total_size_mb", defaults["max_total_size_mb"]))
+            defaults["download_delay_seconds"] = float(file_cfg.get("download_delay_seconds", defaults["download_delay_seconds"]))
+            defaults["max_directory_depth"] = int(file_cfg.get("max_directory_depth", defaults["max_directory_depth"]))
+            defaults["connection_timeout"] = int(file_cfg.get("enumeration_timeout_seconds", defaults["connection_timeout"]))
+            defaults["included_extensions"] = file_cfg.get("included_extensions", defaults["included_extensions"])
+            defaults["excluded_extensions"] = file_cfg.get("excluded_extensions", defaults["excluded_extensions"])
+        except Exception:
+            pass
+
+    defaults["max_file_size_mb"] = min(defaults["max_file_size_mb"], defaults["max_total_size_mb"])
+    return defaults
+
+
+def _default_extract_path(ip_address: Optional[str]) -> str:
+    safe_ip = (ip_address or "host").replace(":", "-").replace("/", "-")
+    timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
+    base_dir = Path.home() / "Documents" / "Extracted"
+    return str(base_dir / f"{safe_ip}-{timestamp}")
+
+
+def _derive_credentials(auth_method: Optional[str]) -> Tuple[str, str]:
+    method = (auth_method or "").lower()
+    if "anonymous" in method:
+        return "", ""
+    if "guest/blank" in method or method.endswith("guest/"):
+        return "guest", ""
+    if "guest/guest" in method:
+        return "guest", "guest"
+    return "guest", ""

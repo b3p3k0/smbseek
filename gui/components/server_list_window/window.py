@@ -565,7 +565,7 @@ class ServerListWindow:
     @staticmethod
     def _probe_status_to_emoji(status: str) -> str:
         mapping = {
-            'clean': '△',
+            'clean': '✔',
             'issue': '✖',
             'unprobed': '○'
         }

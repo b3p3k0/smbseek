@@ -7,8 +7,9 @@ All notable changes to the SMBSeek GUI project will be documented in this file.
 ### Added
 - **Scan Templates**: Start New Scan dialog now includes a Templates toolbar so you can save/load per-scan parameter sets (search strings, regions, filters, execution tuning) without touching the global SMBSeek config file.
   - Ships with six curated presets (stored under `templates/default_scan_templates/`) seeded from secybr’s public Shodan dork tutorials to showcase real-world use cases on first launch.
-- **Server List Probe Column**: The server list now shows a 🧪 status indicator (○ = unprobed, △ = probed, ✖ reserved) next to the favorite/avoid columns so analysts can immediately see which hosts have snapshots.
+- **Server List Probe Column**: The server list now shows a 🧪 status indicator (○ = unprobed, ✔ = probed, ✖ reserved) next to the favorite/avoid columns so analysts can immediately see which hosts have snapshots.
 - **Server Detail Probe**: Added a Probe dialog to the Server Details view. It lets analysts adjust limits, enumerate a bounded number of directories/files per accessible share using the original anonymous credentials, caches the result under `~/.smbseek/probes/`, and renders an ASCII tree inside the details view. Requires the `impacket` library.
+- **Server Detail Extract**: Introduced an Extract button between Probe and Explore. It reuses the known credentials to download a capped set of files (config-driven allow/deny lists, per-file size, cumulative size, time, and file-count limits) into a timestamped folder, surfaces live “downloading X/Y” status, and writes a JSON audit log under `~/.smbseek/extract_logs/`.
 - **Probe Indicator Matching**: GUI now loads `security.ransomware_indicators` from the SMBSeek backend config and marks any host whose probe results include those filenames with a ✖ glyph plus a detail-view alert listing the hits.
 
 ### Changed
