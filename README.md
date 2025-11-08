@@ -148,6 +148,8 @@ SMBSeek 3.0+ uses a simplified single-command interface that performs discovery 
 ./smbseek.py --quiet
 ```
 
+> **Security note:** Cautious mode (SMB signing + SMB2/SMB3) is now enabled automatically. Use `--legacy` only when you must talk to SMB1 or unsigned targets, and expect reduced protections when you do.
+
 ### Country-Specific Scanning
 
 SMBSeek performs global scans by default. For country-specific scans, use the `--country` flag with ISO 3166-1 alpha-2 country codes (e.g., US, GB, CA, DE, JP). Multiple countries can be specified with comma separation:
@@ -317,6 +319,8 @@ See `docs/AI_AGENT_FIELD_GUIDE.md` and `docs/COLLAB.md` for detailed collaborati
 - Rate limiting to prevent aggressive scanning behavior
 - Read-only operations (no modification of target systems)
 - Country-based filtering to limit scan scope
+- Cautious mode (SMB signing + SMB2/SMB3 dialects) enabled by default; use `--legacy` only when you explicitly need SMB1/unsigned access
+- GUI extractions are quarantined under `~/.smbseek/quarantine/<purpose>/<timestamp>` so analysts can inspect artifacts before promoting them
 
 ## Legal and Ethical Use
 

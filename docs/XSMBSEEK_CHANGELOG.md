@@ -17,6 +17,8 @@ All notable changes to the SMBSeek GUI project will be documented in this file.
 - **Button Placement**: Cancel and Start buttons are grouped on the lower-right with shared spacing for a consistent call-to-action row.
 - **Input Focus Flow**: Search Strings field now receives initial keyboard focus to match its new prominence at the top of the dialog.
 - **Server Detail Layout**: Removed the legacy "Security Assessment" block and now render probe snapshots directly beneath the Share Access section for better readability.
+- **Backend Security Defaults**: The GUI now assumes SMBSeek runs in cautious mode and surfaces the new `--legacy` flag warning whenever legacy compatibility is requested.
+- **Quarantined Extracts**: Extract operations no longer write directly to the operator-selected folder; files are staged under `~/.smbseek/quarantine/<purpose>/<timestamp>` so they can be reviewed before promotion.
 
 ### Fixed
 - **Country Input Padding**: Country Code card uses the same horizontal padding as neighboring sections, eliminating the subtle width mismatch reported in UI review.

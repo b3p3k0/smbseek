@@ -12,12 +12,12 @@ import platform
 import threading
 import os
 import json
-import datetime as dt
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Sequence, Tuple
 
 from gui.utils import probe_cache, probe_runner, probe_patterns, extract_runner
 from gui.utils.probe_runner import ProbeError
+from shared.quarantine import create_quarantine_dir
 
 
 def show_server_detail_popup(parent_window, server_data, theme, settings_manager=None,
@@ -552,7 +552,7 @@ def _open_extract_dialog(
             download_var.set(selected)
 
     row = 0
-    tk.Label(dialog, text="Download path:").grid(row=row, column=0, sticky="w", padx=10, pady=(10, 5))
+    tk.Label(dialog, text="Quarantine root:").grid(row=row, column=0, sticky="w", padx=10, pady=(10, 5))
     path_frame = tk.Frame(dialog)
     path_frame.grid(row=row, column=1, padx=10, pady=(10, 5), sticky="we")
     tk.Entry(path_frame, textvariable=download_var, width=40).pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -576,6 +576,7 @@ def _open_extract_dialog(
 
     row += 1
     info_text = (
+        "Files are quarantined inside a timestamped folder under the selected path.\n"
         f"Allowed extensions: {', '.join(config['included_extensions']) or 'All'}\n"
         f"Blocked extensions: {', '.join(config['excluded_extensions']) or 'None'}"
     )
@@ -648,11 +649,15 @@ def _start_extract(
         messagebox.showinfo("Extraction", "No accessible shares available for this host.")
         return
 
-    download_path = Path(os.path.expanduser(extract_config["download_path"]))
+    quarantine_root = Path(os.path.expanduser(extract_config["download_path"]))
     try:
-        download_path.mkdir(parents=True, exist_ok=True)
+        quarantine_dir = create_quarantine_dir(
+            ip_address,
+            purpose="extract",
+            base_path=quarantine_root
+        )
     except Exception as exc:
-        messagebox.showerror("Invalid Path", f"Unable to prepare download directory:\n{exc}")
+        messagebox.showerror("Quarantine Error", f"Unable to prepare quarantine directory:\n{exc}")
         return
 
     username, password = _derive_credentials(server_data.get('auth_method', ''))
@@ -675,7 +680,7 @@ def _start_extract(
             summary = extract_runner.run_extract(
                 ip_address,
                 accessible_shares,
-                download_dir=download_path,
+                download_dir=quarantine_dir,
                 username=username,
                 password=password,
                 max_total_bytes=extract_config["max_total_size_mb"] * 1024 * 1024,
@@ -704,11 +709,12 @@ def _start_extract(
                 if summary.get("stop_reason"):
                     note_parts.append(summary["stop_reason"].replace("_", " "))
                 notes = f" ({', '.join(note_parts)})" if note_parts else ""
-                status_var.set(f"Extracted {files} file(s) ({size_mb:.1f} MB){notes}")
+                status_var.set(f"Quarantined {files} file(s) ({size_mb:.1f} MB) → {quarantine_dir}{notes}")
                 messagebox.showinfo(
                     "Extraction Complete",
-                    f"Downloaded {files} file(s) to:\n{download_path}\n\n"
-                    f"Log saved to:\n{log_path}"
+                    f"Downloaded {files} file(s) into quarantine:\n{quarantine_dir}\n\n"
+                    f"Log saved to:\n{log_path}\n\n"
+                    "Inspect and promote files from this quarantine path before moving them elsewhere."
                 )
 
             detail_window.after(0, on_success)
@@ -776,10 +782,8 @@ def _load_file_collection_config(settings_manager) -> Dict[str, Any]:
 
 
 def _default_extract_path(ip_address: Optional[str]) -> str:
-    safe_ip = (ip_address or "host").replace(":", "-").replace("/", "-")
-    timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
-    base_dir = Path.home() / "Documents" / "Extracted"
-    return str(base_dir / f"{safe_ip}-{timestamp}")
+    base_dir = Path.home() / ".smbseek" / "quarantine"
+    return str(base_dir)
 
 
 def _derive_credentials(auth_method: Optional[str]) -> Tuple[str, str]:

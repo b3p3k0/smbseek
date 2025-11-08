@@ -219,6 +219,9 @@ Documentation: docs/USER_GUIDE.md
 """
     )
 
+    # Security defaults: enable cautious mode unless explicitly disabled
+    parser.set_defaults(cautious=True)
+
     # Required arguments
     parser.add_argument(
         '--country',
@@ -258,8 +261,16 @@ Documentation: docs/USER_GUIDE.md
     )
     parser.add_argument(
         '--cautious',
+        dest='cautious',
         action='store_true',
-        help='Enable modern security hardening (signed SMB sessions, SMB2+/3 only). Default is legacy compatibility mode.'
+        default=None,
+        help='Enable modern security hardening (signed SMB sessions, SMB2+/3 only). This is now the default.'
+    )
+    parser.add_argument(
+        '--legacy',
+        dest='legacy_mode',
+        action='store_true',
+        help='Disable cautious mode and allow unsigned/SMB1 connections (not recommended).'
     )
     parser.add_argument(
         '--string',
@@ -288,6 +299,19 @@ def main():
 
     # Parse arguments
     args = parser.parse_args(cleaned_argv[1:])  # Parse modified argv
+
+    # Default to cautious mode when flag not provided
+    if getattr(args, 'cautious', None) is None:
+        args.cautious = True
+
+    # Allow operators to explicitly opt out via --legacy
+    if getattr(args, 'legacy_mode', False):
+        args.cautious = False
+        print("⚠️  LEGACY MODE: unsigned SMB sessions and SMB1 are permitted. Proceed with extreme caution.")
+
+    # Clean up helper attribute to avoid accidental downstream use
+    if hasattr(args, 'legacy_mode'):
+        delattr(args, 'legacy_mode')
 
     # Validate global argument combinations
     if args.quiet and args.verbose:

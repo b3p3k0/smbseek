@@ -59,7 +59,7 @@ class TestCautiousFlag(unittest.TestCase):
             self.assertIn("//192.168.1.1", cmd)
 
     def test_access_operation_command_builder_legacy_mode(self):
-        """Test that legacy mode (default) omits security flags in smbclient commands."""
+        """Test that legacy mode (opt-in) omits security flags in smbclient commands."""
         # Patch smbclient availability check
         with patch('commands.access.AccessOperation.check_smbclient_availability', return_value=True):
             from commands.access import AccessOperation
