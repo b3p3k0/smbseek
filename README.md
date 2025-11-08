@@ -33,6 +33,7 @@ cp conf/config.json.example conf/config.json
 A virtual environment is an isolated Python environment that keeps this project's dependencies separate from your system Python. This prevents conflicts and makes the project easier to manage.
 
 **Quick explanation:**
+
 - `python3 -m venv venv` creates a new virtual environment
 - `source venv/bin/activate` activates it (you'll see the name in your prompt)
 - Always activate the environment before running SMBSeek commands
@@ -43,11 +44,13 @@ A virtual environment is an isolated Python environment that keeps this project'
 ## Prerequisites
 
 ### System Requirements
+
 - **Python 3.8+** (recommended: Python 3.10+)
 - **smbclient** (required for full functionality, but tool works without it)
 - **Valid Shodan API key** (paid membership required)
 
 ### SMB Background
+
 SMBSeek identifies SMB (Server Message Block) servers with weak authentication. For technical background on SMB protocols and security considerations, see the [official Samba documentation](https://www.samba.org/samba/docs/).
 
 ### Installing smbclient
@@ -68,23 +71,27 @@ brew install samba
 ## Installation
 
 1. **Clone the repository:**
+
 ```bash
 git clone <repository-url>
 cd smbseek
 ```
 
 2. **Create and activate virtual environment:**
+
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
 3. **Install dependencies:**
+
 ```bash
 pip install -r requirements.txt
 ```
 
 4. **Configure SMBSeek:**
+
 ```bash
 cp conf/config.json.example conf/config.json
 ```
@@ -110,19 +117,23 @@ cp conf/config.json.example conf/config.json
 SMBSeek uses `conf/config.json` for all settings. Key configuration sections:
 
 **Connection Settings:**
+
 - `timeout`: SMB connection timeout in seconds (default: 30)
 - `rate_limit_delay`: Delay between connections to avoid aggressive scanning (default: 1)
 - `share_access_delay`: Delay between share access tests (default: 1)
 
 **Workflow Settings:**
+
 - `rescan_after_days`: How often to rescan previously discovered hosts (default: 90)
 - `access_recent_hours`: Only test recently discovered hosts during access verification (default: 2)
 
 **Security Settings:**
+
 - `ransomware_indicators`: Filename patterns that indicate malware infection
 - `exclusion_file`: Path to organization exclusion list
 
 **Database Settings:**
+
 - `path`: Database file location (default: smbseek.db)
 - `backup_enabled`: Automatic backup creation (default: true)
 
@@ -170,6 +181,7 @@ Target SMB banners that contain specific phrases or keywords using the `--string
 ```
 
 **How it works:**
+
 - Every `--string` argument becomes a quoted phrase in the Shodan query (multi-word values do not require manual quoting beyond shell requirements).
 - All CLI-provided strings are combined using logical OR by default. You can change this behavior via `conf/config.json` (`string_combination`: `"AND"` or `"OR"`).
 - Default strings can also be defined in `shodan.query_components.string_filters`; CLI values are appended to that list.
@@ -199,6 +211,7 @@ smbseek.py                    # Main CLI entry point (single command)
 ### Database Schema
 
 Core tables store discovery and access results:
+
 - **smb_servers**: Server metadata (IP, country, authentication method, last seen)
 - **scan_sessions**: Unified workflow executions
 - **share_access**: Share accessibility findings per session
@@ -210,6 +223,7 @@ Core tables store discovery and access results:
 ### Common Issues
 
 **"SMB libraries not available" error:**
+
 ```bash
 # Ensure virtual environment is activated
 source venv/bin/activate
@@ -217,15 +231,18 @@ pip install -r requirements.txt
 ```
 
 **Shodan API errors:**
+
 - Verify API key in `conf/config.json`
 - Check Shodan account quota and limits
 - Ensure internet connectivity
 
 **smbclient not found:**
+
 - Install smbclient package (see Prerequisites section)
 - SMBSeek provides fallback functionality if unavailable
 
 **Permission denied errors:**
+
 - Ensure database file (`smbseek.db`) is writable
 - Check file permissions in project directory
 
@@ -262,32 +279,44 @@ source venv/bin/activate
 The GUI provides an intuitive interface for SMBSeek operations:
 
 **Server List Management:**
+
 - View all discovered SMB servers with detailed information
 - Filter and sort servers by country, authentication method, or accessibility
 - Real-time status updates during scanning operations
 - Server detail view with share enumeration results
 
 **Advanced Scanning:**
+
 - Configure country-specific or global scans
 - Set custom Shodan result limits and filters
 - Control rescan behavior for existing hosts
 - Override API keys per-scan without editing configuration files
 
 **Probe Functionality:**
+
 - Deep enumeration of accessible shares
 - Ransomware indicator detection
 - Directory structure exploration
 - Cached results for quick access
 
 **Configuration Management:**
+
 - Visual configuration editor
 - Settings persistence across sessions
 - Real-time validation of inputs
 
 ### Sandbox Share Browsing (Linux)
+
 - When Podman or Docker is installed, the Server Details window shows a **Sandbox Shares** button that lists shares via `smbclient` running inside a throwaway container.
 - The host OS never opens the remote share; all enumeration happens inside the sandbox and the output is streamed back into the GUI.
 - If a supported container runtime is not detected, the button stays disabled so operators know they are outside the sandboxed path.
+
+#### macOS and Windows (experimental)
+
+We have not validated the sandbox workflow on macOS or Windows yet, but the tools listed below may work. in theory. Feedback and PRs are very welcome—treat these as starting points, not official support.
+
+- **macOS (theoretical)**: install [Colima](https://github.com/abiosoft/colima) or Podman Desktop, then run `colima start --network-address`. Pull the same `docker.io/library/alpine:latest` image and verify `podman run --rm --network host alpine:latest sh -c "apk add --no-cache samba-client && smbclient --help"` succeeds. Finally, start xsmbseek from a terminal that inherits the Colima/Podman environment so the sandbox button can detect the CLI.
+- **Windows (theoretical)**: enable WSL2, install Ubuntu from the Store, and inside that distro install Podman (`sudo apt install podman`). In PowerShell, set `PODMAN_HOST` to your WSL distribution (e.g., `wsl -d Ubuntu podman info`). Pull `docker.io/library/alpine:latest` inside WSL, then launch xsmbseek from the same shell so the detection logic can find `podman.exe` on PATH.
 
 <details>
 <summary><strong>Setting up the sandbox runtime (Ubuntu, Fedora, Arch)</strong></summary>
@@ -321,6 +350,7 @@ See `docs/XSMBSEEK_USER_GUIDE.md` for comprehensive GUI documentation.
 This project demonstrates effective AI-human partnership in software development. AI agents handled technical implementation and documentation while humans provided domain expertise, real-world testing, and strategic guidance.
 
 **Core Collaboration Principles:**
+
 - **Clear role separation**: AI owns implementation consistency; humans validate against reality
 - **Documentation as code**: Architecture notes, changelogs, and inline docs updated with every change
 - **Iterative validation**: Rapid prototyping followed by real-world testing and refinement
@@ -338,11 +368,13 @@ See `docs/AI_AGENT_FIELD_GUIDE.md` and `docs/COLLAB.md` for detailed collaborati
 ## Security Considerations
 
 ### Intended Use
+
 - Security auditing of owned networks
 - Vulnerability assessment by authorized security professionals
 - Educational purposes in controlled environments
 
 ### Built-in Safeguards
+
 - Organization exclusion lists to avoid scanning infrastructure providers
 - Rate limiting to prevent aggressive scanning behavior
 - Read-only operations (no modification of target systems)
