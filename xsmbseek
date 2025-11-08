@@ -212,7 +212,7 @@ def show_smbseek_setup_dialog(parent=None, current_path: str = "./smbseek") -> O
     """
     dialog = tk.Toplevel(parent) if parent else tk.Tk()
     dialog.title("SMBSeek Setup Required")
-    dialog.geometry("600x400")
+    dialog.geometry("600x550")
     dialog.resizable(True, True)
     
     if parent:
@@ -290,7 +290,7 @@ def show_smbseek_setup_dialog(parent=None, current_path: str = "./smbseek") -> O
         "2. If SMBSeek is already installed:",
         "   • Enter the path to your SMBSeek directory below",
         "   • Or click 'Browse' to select the directory",
-        "   • The directory should contain 'smbseek.py'"
+        "   • The directory should contain 'smbseek' executable"
     ]
     
     for instruction in instructions:
