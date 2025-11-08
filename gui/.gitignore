@@ -1,0 +1,101 @@
+# Claude Code project instructions
+CLAUDE.md
+CODEX.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+gui_env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+.cache/
+
+# Test files - EXCEPT quality assurance tools
+test_*.py
+*_test.py
+# Quality assurance exceptions (keep these):
+!test_attribute_fixes.py
+!comprehensive_gui_audit.py  
+!validate_gui_safety.py
+!gui/tests/test_basic_functionality.py
+!gui/tests/test_probe_patterns.py
+
+# Development and implementation documentation
+*_IMPLEMENTATION.md
+*_TESTING_GUIDE.md
+*_Feedback_Template.txt
+*_FIX_SUMMARY.md
+simple_test.py
+debug_*.py
+
+# SMBSeek external dependency (user-installed)
+smbseek/
+
+# 
+xsmbseek-config.json
+
+# Public documentation allowlist
+docs/*
+!docs/CHANGELOG.md
+!docs/USER_GUIDE.md
+!docs/RANSOMWARE_INDICATORS.md
+# Keep sensitive/internal forms out of the public repo
+docs/conflict-resolution-form.odt

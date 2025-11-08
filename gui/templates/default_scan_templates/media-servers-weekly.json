@@ -1,0 +1,26 @@
+{
+  "name": "Small Business Media Servers [secybr]",
+  "saved_at": null,
+  "source": "Inspired by secybr Shodan tutorials",
+  "form_state": {
+    "search_strings": "\"Server: Logitech Media Server\" \"200 OK\" port:9000, \"X-Plex-Protocol\" \"200 OK\" port:32400",
+    "country_code": "",
+    "regions": {
+      "africa": false,
+      "asia": false,
+      "europe": true,
+      "north_america": true,
+      "oceania": false,
+      "south_america": false
+    },
+    "max_results": 200,
+    "recent_hours": "168",
+    "rescan_all": false,
+    "rescan_failed": false,
+    "discovery_concurrency": "1",
+    "access_concurrency": "1",
+    "rate_limit_delay": "1",
+    "share_access_delay": "1",
+    "api_key_override": ""
+  }
+}

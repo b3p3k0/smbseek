@@ -1,0 +1,26 @@
+{
+  "name": "NAS Exposure Sweep (APAC) [secybr]",
+  "saved_at": null,
+  "source": "Inspired by secybr Shodan tutorials",
+  "form_state": {
+    "search_strings": "\"Authentication: disabled\" port:445 product:\"NAS\"",
+    "country_code": "",
+    "regions": {
+      "africa": false,
+      "asia": true,
+      "europe": false,
+      "north_america": false,
+      "oceania": true,
+      "south_america": false
+    },
+    "max_results": 600,
+    "recent_hours": "48",
+    "rescan_all": true,
+    "rescan_failed": false,
+    "discovery_concurrency": "3",
+    "access_concurrency": "2",
+    "rate_limit_delay": "4",
+    "share_access_delay": "4",
+    "api_key_override": ""
+  }
+}

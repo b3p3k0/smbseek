@@ -1,0 +1,26 @@
+{
+  "name": "QuickBooks Network Shares [secybr]",
+  "saved_at": null,
+  "source": "Inspired by secybr Shodan tutorials",
+  "form_state": {
+    "search_strings": "\"Shared this folder to access QuickBooks files OverNetwork\" -unix port:445",
+    "country_code": "",
+    "regions": {
+      "africa": false,
+      "asia": false,
+      "europe": false,
+      "north_america": true,
+      "oceania": true,
+      "south_america": false
+    },
+    "max_results": 300,
+    "recent_hours": "72",
+    "rescan_all": false,
+    "rescan_failed": false,
+    "discovery_concurrency": "3",
+    "access_concurrency": "2",
+    "rate_limit_delay": "2",
+    "share_access_delay": "2",
+    "api_key_override": ""
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "smbseek": {
+    "path": "./smbseek",
+    "database_path": null,
+    "comment": "Path to SMBSeek installation directory. Database path is optional - if null, defaults to {path}/smbseek.db"
+  },
+  "gui": {
+    "theme": "default",
+    "window_geometry": "800x250",
+    "interface_mode": "simple",
+    "last_used_config": null,
+    "operation_timeout_seconds": 3600,
+    "enable_debug_timeouts": false,
+    "comment": "GUI preferences - theme, window size, interface complexity, timeout settings. Timeout can be overridden by SMBSEEK_GUI_TIMEOUT env var"
+  },
+  "app": {
+    "version": "1.0.0",
+    "first_run": true,
+    "github_repo": "https://github.com/b3p3k0/smbseek",
+    "comment": "Application metadata and first-run flag"
+  }
+}

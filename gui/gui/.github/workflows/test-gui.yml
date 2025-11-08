@@ -1,0 +1,41 @@
+name: GUI Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths: [ 'gui/**' ]
+  pull_request:
+    branches: [ main ]
+    paths: [ 'gui/**' ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, 3.10, 3.11]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-tk xvfb
+    
+    - name: Install Python dependencies
+      run: |
+        cd gui
+        python -m pip install --upgrade pip
+        pip install -r requirements-gui.txt
+        pip install pytest pytest-cov
+    
+    - name: Run tests with virtual display
+      run: |
+        cd gui
+        xvfb-run -a python -m pytest tests/ -v --cov=components
