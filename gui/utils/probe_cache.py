@@ -33,7 +33,14 @@ def load_probe_result(ip_address: str) -> Optional[Dict[str, Any]]:
         return None
     try:
         with cache_path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+            result = json.load(handle)
+
+            # Ensure backward compatibility with older cache files
+            # that don't have RCE analysis data
+            if result and "rce_analysis" not in result:
+                result["rce_analysis"] = None
+
+            return result
     except Exception:
         return None
 

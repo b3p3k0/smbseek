@@ -33,7 +33,8 @@ def run_probe(
     max_files: int,
     timeout_seconds: int,
     username: str = DEFAULT_USERNAME,
-    password: str = DEFAULT_PASSWORD
+    password: str = DEFAULT_PASSWORD,
+    enable_rce_analysis: bool = False
 ) -> Dict[str, Any]:
     """
     Enumerate limited directory/file information for each accessible share.
@@ -45,9 +46,11 @@ def run_probe(
         max_files: Max files per directory to list.
         timeout_seconds: SMB socket timeout per request.
         username/password: Credentials to reuse (guest/anonymous by default).
+        enable_rce_analysis: Enable RCE vulnerability analysis if True.
 
     Returns:
         Dictionary describing probe snapshot suitable for caching/printing.
+        Includes rce_analysis key if RCE analysis is enabled.
     """
     if SMBConnection is None:
         raise ProbeError(
@@ -91,6 +94,44 @@ def run_probe(
                 "share": share_name,
                 "message": str(exc)
             })
+
+    # RCE vulnerability analysis (if enabled)
+    if enable_rce_analysis:
+        try:
+            from shared.rce_scanner import scan_rce_indicators
+
+            # Build host context from probe data
+            host_context = {
+                'ip_address': ip_address,
+                'auth_method': f"{username}:{password}",
+                'accessible_shares': [share['share'] for share in snapshot['shares']],
+                'shares_found': [share['share'] for share in snapshot['shares']],
+                'timestamp': snapshot['run_at']
+            }
+
+            # Perform RCE analysis
+            rce_result = scan_rce_indicators(host_context)
+            snapshot['rce_analysis'] = rce_result
+
+        except ImportError:
+            # RCE scanner not available
+            snapshot['rce_analysis'] = {
+                'score': 0,
+                'level': 'error',
+                'status': 'scanner-unavailable',
+                'error': 'RCE scanner dependencies not found'
+            }
+        except Exception as e:
+            # RCE analysis failed
+            snapshot['rce_analysis'] = {
+                'score': 0,
+                'level': 'error',
+                'status': 'analysis-failed',
+                'error': str(e)
+            }
+    else:
+        # RCE analysis not enabled
+        snapshot['rce_analysis'] = None
 
     return snapshot
 

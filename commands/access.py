@@ -19,7 +19,7 @@ from pathlib import Path
 from contextlib import redirect_stderr
 from io import StringIO
 from dataclasses import dataclass
-from typing import Set, List, Dict, Optional
+from typing import Set, List, Dict, Optional, Any
 
 # Add project paths for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -76,7 +76,7 @@ class AccessOperation:
         'NT_STATUS_INSUFFICIENT_RESOURCES': 'Insufficient server resources'
     }
 
-    def __init__(self, config, output, database, session_id, cautious_mode=False):
+    def __init__(self, config, output, database, session_id, cautious_mode=False, check_rce=False):
         """
         Initialize access operation.
 
@@ -86,12 +86,14 @@ class AccessOperation:
             database: SMBSeekWorkflowDatabase instance
             session_id: Database session ID for this operation
             cautious_mode: Enable modern security hardening if True
+            check_rce: Enable RCE vulnerability analysis if True
         """
         self.config = config
         self.output = output
         self.database = database
         self.session_id = session_id
         self.cautious_mode = cautious_mode
+        self.check_rce = check_rce
         
         # Check smbclient availability for share enumeration
         self.smbclient_available = self.check_smbclient_availability()
@@ -592,6 +594,11 @@ class AccessOperation:
             
             if not shares:
                 self.output.warning(f"No non-administrative shares found on {ip}")
+
+                # RCE vulnerability analysis (if enabled) - even with no shares
+                if self.check_rce:
+                    self._analyze_rce_vulnerabilities(target_result)
+
                 return target_result
             
             self.output.success(f"Found {len(shares)} shares to test on {ip}")
@@ -666,12 +673,88 @@ class AccessOperation:
                 self.output.success(f"{accessible_count}/{total_count} shares accessible on {ip}: {', '.join(target_result['accessible_shares'])}")
             else:
                 self.output.warning(f"0/{total_count} shares accessible on {ip}")
-                
+
+            # RCE vulnerability analysis (if enabled)
+            if self.check_rce:
+                self._analyze_rce_vulnerabilities(target_result)
+
         except Exception as e:
             self.output.error(f"Error testing target {ip}: {str(e)[:50]}")
             target_result['error'] = str(e)
         
         return target_result
+
+    def _analyze_rce_vulnerabilities(self, target_result: Dict[str, Any]) -> None:
+        """
+        Perform RCE vulnerability analysis on target host.
+
+        Args:
+            target_result: Target result dictionary to update with RCE analysis
+        """
+        try:
+            from shared.rce_scanner import scan_rce_indicators
+
+            ip = target_result.get('ip_address', 'unknown')
+            self.output.print_if_verbose(f"Performing RCE analysis for {ip}")
+
+            # Build host context from target result
+            host_context = {
+                'ip_address': ip,
+                'country': target_result.get('country', 'unknown'),
+                'auth_method': target_result.get('auth_method', ''),
+                'shares_found': target_result.get('shares_found', []),
+                'accessible_shares': target_result.get('accessible_shares', []),
+                'share_details': target_result.get('share_details', []),
+                'timestamp': target_result.get('timestamp', '')
+            }
+
+            # Add any additional context from configuration or environment
+            # (SMB dialects, OS hints, etc. would come from connection attempts)
+
+            # Perform RCE analysis
+            rce_result = scan_rce_indicators(host_context)
+
+            # Store RCE results in target_result
+            target_result['rce_analysis'] = rce_result
+
+            # Output summary based on verbosity
+            score = rce_result.get('score', 0)
+            level = rce_result.get('level', 'unknown')
+            status = rce_result.get('status', 'analyzed')
+
+            if status == 'insufficient-data':
+                self.output.print_if_verbose(f"RCE Analysis: {score}/100 ({level}) - Limited data available")
+            elif self.output.verbose:
+                # Verbose output with details
+                matched_count = len(rce_result.get('matched_rules', []))
+                if matched_count > 0:
+                    self.output.print_if_verbose(f"RCE Analysis: {score}/100 ({level}) - {matched_count} potential vulnerabilities detected")
+                    for rule in rce_result.get('matched_rules', [])[:2]:  # Show first 2
+                        rule_name = rule.get('name', 'Unknown')
+                        rule_score = rule.get('score', 0)
+                        self.output.print_if_verbose(f"  - {rule_name}: {rule_score} points")
+                else:
+                    self.output.print_if_verbose(f"RCE Analysis: {score}/100 ({level}) - No specific vulnerabilities detected")
+            else:
+                # Quiet output - just the summary
+                self.output.info(f"RCE Analysis: {score}/100 ({level})")
+
+        except ImportError:
+            self.output.error("RCE scanner not available - missing dependencies")
+            target_result['rce_analysis'] = {
+                'score': 0,
+                'level': 'error',
+                'status': 'scanner-unavailable',
+                'error': 'RCE scanner dependencies not found'
+            }
+        except Exception as e:
+            self.output.error(f"RCE analysis failed for {ip}: {str(e)}")
+            target_result['rce_analysis'] = {
+                'score': 0,
+                'level': 'error',
+                'status': 'analysis-failed',
+                'error': str(e)
+            }
 
     def _save_and_summarize_results(self):
         """

@@ -488,6 +488,9 @@ def _start_probe(
 
     config = config_override or _load_probe_config(settings_manager)
     indicator_patterns = probe_state.get("indicator_patterns") or []
+
+    # Check if RCE analysis is enabled
+    enable_rce = settings_manager.get_setting('scan_dialog.rce_enabled', False) if settings_manager else False
     status_var.set("Probing accessible shares…")
     probe_state["running"] = True
     if probe_button:
@@ -500,7 +503,8 @@ def _start_probe(
                 accessible_shares,
                 max_directories=config["max_directories"],
                 max_files=config["max_files"],
-                timeout_seconds=config["timeout_seconds"]
+                timeout_seconds=config["timeout_seconds"],
+                enable_rce_analysis=enable_rce
             )
             analysis = probe_patterns.attach_indicator_analysis(result, indicator_patterns)
             probe_cache.save_probe_result(ip_address, result)

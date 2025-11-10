@@ -376,6 +376,10 @@ class ScanManager:
         if scan_options.get('rescan_failed'):
             cli_args.append('--rescan-failed')
 
+        security_mode = (scan_options.get('security_mode') or 'cautious').lower()
+        if security_mode == 'legacy':
+            cli_args.append('--legacy')
+
         # Recent hours filtering is now handled through config overrides
         # in the _execute_scan method via _temporary_config_override
         # (lines 324-327). CLI --recent flag removed for SMBSeek 3.x compatibility.

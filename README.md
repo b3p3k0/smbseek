@@ -177,10 +177,72 @@ Target SMB banners that contain specific phrases or keywords using the `--string
 ```bash
 ./smbseek --string Documents                     # Search for a single keyword (quoted in Shodan as "Documents")
 ./smbseek --string Documents --string "My Docs"  # Match hosts containing either Documents or "My Docs"
-./smbseek --string "Finance Reports" --country US --verbose
+```
+
+## RCE Vulnerability Analysis
+
+SMBSeek includes optional RCE (Remote Code Execution) vulnerability analysis that identifies known SMB-related security issues using signature-based detection. This defensive feature analyzes enumeration results for vulnerability indicators without performing active exploitation.
+
+### CLI Usage
+
+Enable RCE analysis during share access testing:
+
+```bash
+./smbseek --country US --check-rce               # Include RCE analysis in scan
+./smbseek --country US --check-rce --verbose     # RCE analysis with detailed output
 ```
 
 **How it works:**
+- Analyzes SMB enumeration data against known vulnerability signatures
+- Scores potential RCE risks from 0-100 with confidence levels
+- Reports matched vulnerability signatures (CVE references included)
+- All results marked as "low confidence" during initial implementation
+- No active exploitation or vulnerability testing performed
+
+**Sample output:**
+```
+RCE Analysis: 45/100 (medium, low confidence)
+  Matched Signatures: 1
+    - EternalBlue: 45 points (high severity)
+  Evidence: 2 indicators
+    - Condition met: Vulnerability requires SMB1 dialects
+    - Condition met: Host lacks MS17-010 patch
+```
+
+### GUI Usage
+
+1. Open the scan dialog in SMBSeek GUI
+2. Check "Check for RCE vulnerabilities during share access testing"
+3. Run your scan normally
+4. RCE analysis results appear in probe details alongside share enumeration
+
+### Sandbox Investigation Shell
+
+For hosts with elevated RCE scores, SMBSeek provides a read-only investigation shell:
+
+```bash
+# Launch investigation shell (requires Docker/Podman)
+# Available as CLI function after RCE analysis
+```
+
+**Features:**
+- Read-only Alpine Linux container with SMB tools
+- Command logging to `~/.smbseek/logs/sandbox_sessions/`
+- 30-day automatic log retention
+- Pre-configured with smbclient, nmap-ncat tools
+- Isolated environment for safe investigation
+
+### Signature Management
+
+RCE signatures are stored in `signatures/rce_smb/` as YAML files. The system includes signatures for major SMB vulnerabilities:
+
+- **EternalBlue** (CVE-2017-0144) - MS17-010 SMB1 vulnerability
+- **SMBGhost** (CVE-2020-0796) - SMB3 compression vulnerability
+- **ZeroLogon** (CVE-2020-1472) - Netlogon privilege escalation
+- **PrintNightmare** (CVE-2021-34527) - Print Spooler RCE
+- **PetitPotam** (CVE-2021-36942) - NTLM relay vulnerability
+
+See [`docs/RCE_SIGNATURE_GUIDE.md`](docs/RCE_SIGNATURE_GUIDE.md) for detailed signature management instructions.
 
 - Every `--string` argument becomes a quoted phrase in the Shodan query (multi-word values do not require manual quoting beyond shell requirements).
 - All CLI-provided strings are combined using logical OR by default. You can change this behavior via `conf/config.json` (`string_combination`: `"AND"` or `"OR"`).
@@ -290,6 +352,7 @@ The GUI provides an intuitive interface for SMBSeek operations:
 - Set custom Shodan result limits and filters
 - Control rescan behavior for existing hosts
 - Override API keys per-scan without editing configuration files
+- Toggle security mode (Cautious by default, Legacy when you explicitly need SMB1/unsigned access)
 
 **Probe Functionality:**
 

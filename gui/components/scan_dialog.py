@@ -119,6 +119,14 @@ class ScanDialog:
         self.rate_limit_delay_var = tk.StringVar()
         self.share_access_delay_var = tk.StringVar()
 
+        # Security mode toggle (default cautious)
+        self.security_mode_var = tk.StringVar(value="cautious")
+        self._security_mode_previous = "cautious"
+        self._security_mode_guard = False
+
+        # RCE vulnerability analysis toggle (default disabled)
+        self.rce_enabled_var = tk.BooleanVar(value=False)
+
         self._concurrency_upper_limit = 256
         self._delay_upper_limit = 3600
 
@@ -127,6 +135,8 @@ class ScanDialog:
 
         # Load initial values from settings if available
         self._load_initial_values()
+        self._security_mode_previous = (self.security_mode_var.get() or "cautious").lower()
+        self.security_mode_var.trace_add("write", self._handle_security_mode_change)
 
         self._create_dialog()
     
@@ -134,9 +144,9 @@ class ScanDialog:
         """Create the scan configuration dialog."""
         self.dialog = tk.Toplevel(self.parent)
         self.dialog.title("Start New Scan")
-        width, height = 1290, 930
+        width, height = 1265, 1185
         self.dialog.geometry(f"{width}x{height}")
-        self.dialog.resizable(False, False)
+        self.dialog.resizable(True, True)
         
         # Apply theme
         self.theme.apply_to_widget(self.dialog, "main_window")
@@ -221,6 +231,32 @@ class ScanDialog:
 
         if delta:
             self.content_canvas.yview_scroll(delta, "units")
+
+    def _handle_security_mode_change(self, *_args) -> None:
+        """Prompt when switching into legacy mode."""
+        new_value = (self.security_mode_var.get() or "cautious").lower()
+        if new_value == self._security_mode_previous or self._security_mode_guard:
+            return
+
+        if new_value == "legacy":
+            proceed = messagebox.askokcancel(
+                "Enable Legacy Mode?",
+                "Legacy mode allows SMB1/unsigned SMB sessions and bypasses built-in safeguards.\n"
+                "Use only when you trust the target network.",
+                icon='warning'
+            )
+            if not proceed:
+                self._security_mode_guard = True
+                self.security_mode_var.set(self._security_mode_previous)
+                self._security_mode_guard = False
+                return
+        elif new_value == "cautious":
+            messagebox.showinfo(
+                "Cautious Mode Reminder",
+                "Cautious mode enforces SMB2+/SMB3 and signing. It's extra secure but may return fewer results."
+            )
+
+        self._security_mode_previous = new_value
     
     def _create_header(self) -> None:
         """Create dialog header with title and description."""
@@ -315,6 +351,8 @@ class ScanDialog:
         self._create_recent_hours_option(left_column)
 
         # Right column: execution controls
+        self._create_security_mode_option(right_column)
+        self._create_rce_analysis_option(right_column)
         self._create_rescan_options(right_column)
         self._create_concurrency_options(right_column)
         self._create_rate_limit_options(right_column)
@@ -493,7 +531,8 @@ class ScanDialog:
             "access_concurrency": self.access_concurrency_var.get(),
             "rate_limit_delay": self.rate_limit_delay_var.get(),
             "share_access_delay": self.share_access_delay_var.get(),
-            "api_key_override": self.api_key_var.get()
+            "api_key_override": self.api_key_var.get(),
+            "rce_enabled": self.rce_enabled_var.get()
         }
 
     def _apply_form_state(self, state: Dict[str, Any]) -> None:
@@ -522,6 +561,10 @@ class ScanDialog:
         self.rescan_all_var.set(bool(state.get("rescan_all", False)))
         self.rescan_failed_var.set(bool(state.get("rescan_failed", False)))
 
+        security_mode = state.get("security_mode")
+        if security_mode in ("cautious", "legacy"):
+            self.security_mode_var.set(security_mode)
+
         for var, key in [
             (self.discovery_concurrency_var, "discovery_concurrency"),
             (self.access_concurrency_var, "access_concurrency"),
@@ -533,6 +576,10 @@ class ScanDialog:
                 var.set(str(value))
 
         self.api_key_var.set(state.get("api_key_override", ""))
+
+        # RCE analysis setting (with backward compatibility)
+        self.rce_enabled_var.set(bool(state.get("rce_enabled", False)))
+
         self._update_region_status()
 
     def _apply_template_by_slug(self, slug: str, *, silent: bool = False) -> None:
@@ -842,6 +889,85 @@ class ScanDialog:
         )
         self.theme.apply_to_widget(self.rescan_failed_checkbox, "checkbox")
         self.rescan_failed_checkbox.pack(anchor="w", padx=5)
+
+    def _create_security_mode_option(self, parent_frame: tk.Frame) -> None:
+        """Create security mode toggle."""
+        container = tk.Frame(parent_frame)
+        self.theme.apply_to_widget(container, "card")
+        container.pack(fill=tk.X, padx=15, pady=(0, 10))
+
+        heading = self._create_accent_heading(container, "🛡 Security Mode")
+        heading.pack(fill=tk.X)
+
+        options_frame = tk.Frame(container)
+        self.theme.apply_to_widget(options_frame, "card")
+        options_frame.pack(fill=tk.X, pady=(5, 5))
+
+        cautious_radio = tk.Radiobutton(
+            options_frame,
+            text="Cautious – signed SMB2+/SMB3 only",
+            variable=self.security_mode_var,
+            value="cautious",
+            font=self.theme.fonts["small"]
+        )
+        self.theme.apply_to_widget(cautious_radio, "checkbox")
+        cautious_radio.pack(anchor="w", padx=10, pady=2)
+
+        legacy_radio = tk.Radiobutton(
+            options_frame,
+            text="Legacy – allow SMB1/unsigned connections",
+            variable=self.security_mode_var,
+            value="legacy",
+            font=self.theme.fonts["small"]
+        )
+        self.theme.apply_to_widget(legacy_radio, "checkbox")
+        legacy_radio.pack(anchor="w", padx=10, pady=2)
+
+        warning_label = self.theme.create_styled_label(
+            container,
+            "Legacy mode bypasses built-in safeguards; enable only for trusted targets.",
+            "small",
+            fg=self.theme.colors.get("text_warning", self.theme.colors.get("warning", "#d97706"))
+        )
+        warning_label.pack(anchor="w", padx=15, pady=(0, 5))
+
+    def _create_rce_analysis_option(self, parent_frame: tk.Frame) -> None:
+        """Create RCE vulnerability analysis toggle."""
+        container = tk.Frame(parent_frame)
+        self.theme.apply_to_widget(container, "card")
+        container.pack(fill=tk.X, padx=15, pady=(0, 10))
+
+        heading = self._create_accent_heading(container, "🔍 RCE Vulnerability Analysis")
+        heading.pack(fill=tk.X)
+
+        options_frame = tk.Frame(container)
+        self.theme.apply_to_widget(options_frame, "card")
+        options_frame.pack(fill=tk.X, pady=(5, 5))
+
+        rce_checkbox = tk.Checkbutton(
+            options_frame,
+            text="Check for RCE vulnerabilities during share access testing",
+            variable=self.rce_enabled_var,
+            font=self.theme.fonts["small"]
+        )
+        self.theme.apply_to_widget(rce_checkbox, "checkbox")
+        rce_checkbox.pack(anchor="w", padx=10, pady=2)
+
+        info_label = self.theme.create_styled_label(
+            container,
+            "Experimental feature: analyzes SMB configurations for known RCE vulnerabilities.",
+            "small",
+            fg=self.theme.colors["text_secondary"]
+        )
+        info_label.pack(anchor="w", padx=15, pady=(0, 5))
+
+        confidence_label = self.theme.create_styled_label(
+            container,
+            "Note: All results marked as \"low confidence\" during this initial phase.",
+            "small",
+            fg=self.theme.colors.get("text_warning", self.theme.colors.get("warning", "#d97706"))
+        )
+        confidence_label.pack(anchor="w", padx=15, pady=(0, 5))
 
     def _create_concurrency_options(self, parent_frame: tk.Frame) -> None:
         """Create backend concurrency controls."""
@@ -1480,6 +1606,9 @@ class ScanDialog:
 
         rescan_all = self.rescan_all_var.get()
         rescan_failed = self.rescan_failed_var.get()
+        security_mode = (self.security_mode_var.get() or "cautious").strip().lower()
+        if security_mode not in {"cautious", "legacy"}:
+            security_mode = "cautious"
 
         # Handle API key (empty string means None)
         api_key = self.api_key_var.get().strip()
@@ -1532,6 +1661,8 @@ class ScanDialog:
                 self._settings_manager.set_setting('scan_dialog.access_max_concurrency', access_concurrency)
                 self._settings_manager.set_setting('scan_dialog.rate_limit_delay', rate_limit_delay)
                 self._settings_manager.set_setting('scan_dialog.share_access_delay', share_access_delay)
+                self._settings_manager.set_setting('scan_dialog.security_mode', security_mode)
+                self._settings_manager.set_setting('scan_dialog.rce_enabled', self.rce_enabled_var.get())
 
                 # Save region selections
                 self._settings_manager.set_setting('scan_dialog.region_africa', self.africa_var.get())
@@ -1555,7 +1686,9 @@ class ScanDialog:
             'discovery_max_concurrent_hosts': discovery_concurrency,
             'access_max_concurrent_hosts': access_concurrency,
             'rate_limit_delay': rate_limit_delay,
-            'share_access_delay': share_access_delay
+            'share_access_delay': share_access_delay,
+            'security_mode': security_mode,
+            'rce_enabled': self.rce_enabled_var.get()
         }
 
         return scan_options
@@ -1576,6 +1709,7 @@ class ScanDialog:
                 access_concurrency = self._settings_manager.get_setting('scan_dialog.access_max_concurrency', None)
                 rate_limit_delay = self._settings_manager.get_setting('scan_dialog.rate_limit_delay', None)
                 share_access_delay = self._settings_manager.get_setting('scan_dialog.share_access_delay', None)
+                security_mode = self._settings_manager.get_setting('scan_dialog.security_mode', 'cautious')
 
                 # Set UI variables
                 self.max_results_var.set(max_results)
@@ -1593,6 +1727,12 @@ class ScanDialog:
                     self.rate_limit_delay_var.set(str(rate_limit_delay))
                 if share_access_delay is not None:
                     self.share_access_delay_var.set(str(share_access_delay))
+                if security_mode in ("cautious", "legacy"):
+                    self.security_mode_var.set(security_mode)
+
+                # Load RCE analysis setting
+                rce_enabled = bool(self._settings_manager.get_setting('scan_dialog.rce_enabled', False))
+                self.rce_enabled_var.set(rce_enabled)
 
                 # Load region selections
                 africa = bool(self._settings_manager.get_setting('scan_dialog.region_africa', False))

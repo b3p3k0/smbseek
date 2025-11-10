@@ -251,7 +251,8 @@ class SMBSeekWorkflowDatabase:
         """
         session_id = self.dal.create_scan_session(
             tool_name=session_data.get('tool_name', 'smbseek'),
-            config_snapshot=session_data
+            config_snapshot=session_data,
+            scan_type=session_data.get('scan_type', session_data.get('tool_name', 'smbseek'))
         )
 
         # Map legacy keys to schema column names and update session with actual metrics
@@ -293,12 +294,14 @@ class SMBSeekWorkflowDatabase:
         """
         session_data = {
             'tool_name': tool_name,
+            'scan_type': tool_name,
             'timestamp': datetime.now().isoformat(),
             'config_snapshot': self.config.config if hasattr(self.config, 'config') else None
         }
         return self.dal.create_scan_session(
             tool_name=tool_name,
-            config_snapshot=session_data
+            config_snapshot=session_data,
+            scan_type=tool_name
         )
     
     def get_recent_activity_summary(self, days: int = 7) -> Dict:

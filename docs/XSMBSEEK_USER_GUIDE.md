@@ -628,6 +628,9 @@ All options are directly visible and immediately accessible:
 - **Rescan Options**:
   - ☐ Rescan all existing hosts (force rescan regardless of recent scans)
   - ☐ Rescan previously failed hosts (retry hosts that failed before)
+- **Security Mode**:
+  - (•) Cautious – enforce signed SMB2+/SMB3 connections (default)
+  - ( ) Legacy – allow SMB1/unsigned access (requires explicit confirmation)
 - **API Key Override**: Temporary Shodan API key override (masked input)
 
 #### Settings Persistence
@@ -646,6 +649,125 @@ The GUI seamlessly integrates with the SMBSeek backend:
 - Real-time progress tracking and status updates
 - Complete database access and reporting
 - Configuration management with live editing
+
+## 🔍 RCE Vulnerability Analysis
+
+SMBSeek includes experimental RCE (Remote Code Execution) vulnerability detection to identify known SMB security issues during enumeration.
+
+### Overview
+The RCE analysis system:
+- Uses signature-based detection for known SMB vulnerabilities
+- Analyzes enumeration data without active exploitation
+- Provides risk scores (0-100) with confidence ratings
+- Identifies vulnerability signatures with CVE references
+- All results marked as "low confidence" during this initial phase
+
+### CLI Usage
+
+Enable RCE analysis during scans:
+```bash
+# Include RCE analysis in scan
+./smbseek --country US --check-rce
+
+# RCE analysis with detailed output
+./smbseek --country US --check-rce --verbose
+```
+
+**Sample output:**
+```
+[1/1] Testing 192.168.1.100 (US)...
+Found 3 shares to test on 192.168.1.100
+3/3 shares accessible on 192.168.1.100: IPC$, SYSVOL, NETLOGON
+RCE Analysis: 45/100 (medium, low confidence)
+```
+
+### GUI Usage
+
+1. **Open Scan Dialog**: Click "Start New Scan" in SMBSeek GUI
+2. **Enable RCE Analysis**: Check "Check for RCE vulnerabilities during share access testing"
+3. **Configure Settings**: The checkbox state persists across sessions
+4. **Run Scan**: Execute your scan normally
+5. **View Results**: RCE analysis appears in server details and probe results
+
+### Probe Integration
+
+When enabled, RCE analysis runs during the probe phase:
+- Analysis triggers after successful share enumeration
+- Results cached alongside probe data
+- Available in server details view
+- Includes vulnerability details and evidence
+
+### Understanding Results
+
+**Risk Levels:**
+- **Low (0-24)**: Minimal RCE risk detected
+- **Medium (25-59)**: Moderate vulnerability indicators
+- **High (60-84)**: Significant RCE risk factors
+- **Critical (85-100)**: Severe vulnerability exposure
+
+**Confidence Levels:**
+- **Low Confidence**: All results during initial implementation
+- Future versions may include medium/high confidence ratings
+
+**Matched Signatures:**
+Common vulnerabilities detected include:
+- **EternalBlue (CVE-2017-0144)**: MS17-010 SMB1 vulnerability
+- **SMBGhost (CVE-2020-0796)**: SMB3 compression vulnerability
+- **ZeroLogon (CVE-2020-1472)**: Netlogon privilege escalation
+- **PrintNightmare (CVE-2021-34527)**: Print Spooler RCE
+- **PetitPotam (CVE-2021-36942)**: NTLM relay vulnerability
+
+### Sandbox Investigation Shell
+
+For elevated RCE scores, SMBSeek provides a read-only investigation environment:
+
+**Requirements:**
+- Docker or Podman installed
+- Available as CLI-only feature initially
+
+**Features:**
+- Isolated Alpine Linux container with SMB tools
+- Read-only filesystem for security
+- Command logging to `~/.smbseek/logs/sandbox_sessions/`
+- 30-day automatic log retention
+- Pre-configured with smbclient, nmap-ncat
+
+**Session Logging:**
+```json
+{
+  "ip_address": "192.168.1.100",
+  "rce_score": 75,
+  "start_time": "2024-01-15T14:30:00Z",
+  "commands": [
+    {"timestamp": "...", "type": "COMMAND", "command": "smbclient -L //192.168.1.100"},
+    {"timestamp": "...", "type": "COMMAND", "command": "nmap -p 445 192.168.1.100"}
+  ]
+}
+```
+
+### Security Considerations
+
+**Defensive Focus:**
+- No active exploitation or vulnerability testing
+- Analysis based on enumeration data only
+- Read-only investigation environment
+- Manual signature management (no auto-updates)
+
+**Privacy & Safety:**
+- All analysis performed locally
+- No vulnerability data transmitted externally
+- Sandbox environment isolated from host system
+- Command logging for audit trail
+
+### Managing Signatures
+
+Signatures stored in `signatures/rce_smb/` as YAML files:
+- Manual updates only (no automatic downloads)
+- Comprehensive validation before loading
+- CVE-based organization with metadata
+- Community contributions welcome (with review)
+
+See [`docs/RCE_SIGNATURE_GUIDE.md`](RCE_SIGNATURE_GUIDE.md) for detailed signature management.
 
 ---
 

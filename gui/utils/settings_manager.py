@@ -88,7 +88,8 @@ class SettingsManager:
                 'access_max_concurrency': 1,
                 'rate_limit_delay': 1,
                 'share_access_delay': 1,
-                'remember_api_key': False
+                'remember_api_key': False,
+                'rce_enabled': False
             },
             'probe': {
                 'max_directories_per_share': 3,
