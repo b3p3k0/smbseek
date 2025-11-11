@@ -2,6 +2,60 @@
 
 This guide explains how to manage and update RCE vulnerability signatures for SMBSeek's defensive security analysis.
 
+## RCE Matching at a Glance
+
+SMBSeek already needs to peek at each server just enough to list shares and note basic SMB behavior. The RCE matcher simply reuses those observations to estimate risk—no packets beyond what we were already sending, no exploit attempts, and no guesses based on internet rumor. Every alert references a real CVE (e.g., EternalBlue, ZeroLogon) and comes with a human-readable sentence so busy responders know why a host deserves extra attention.
+
+Put differently, we look at the same clues a seasoned responder would jot down in a notebook: Which shared folders are visible? Does the server still speak the decade-old SMB1 dialect? Can we see system roles like `NETLOGON`/`SYSVOL` that suggest it is a domain controller? When those puzzle pieces line up with well-known attack stories, we flag the host. No code is run on the target—we’re matching “looks like” patterns the way a doctor matches symptoms to a diagnosis.
+
+Key promises:
+- **Passive only.** We never poke a system harder than the normal probe.
+- **Named findings.** Results cite the CVE family that triggered the heuristic.
+- **Actionable scores.** Analysts see “RCE Analysis: 60/100 (medium)” instead of rummaging through logs.
+
+### Limitations & Risks
+
+- **Telemetry dependent.** If a probe cannot authenticate or enumerate shares, the engine simply reports “insufficient data.” Lack of coverage is a feature, but it also means low-visibility hosts will never receive a meaningful score.
+- **Heuristics ≠ proof.** A matched signature signals “configuration looks like CVE-XXXX” — it is not confirmation that the exploit is still feasible or that compromise occurred. All reports intentionally stay at “low confidence.”
+- **Manual signature upkeep.** Because every rule is hand-authored, coverage only grows when an analyst adds a new YAML file. Expect a lag between emerging CVEs and signature availability.
+- **Context modifiers mirror attacker bias.** Bonuses for anonymous access, SMB1, or admin shares assume the environment behaves like typical Windows networks. Highly customized deployments may need bespoke modifiers to avoid false positives/negatives.
+- **Local-only insight.** The scanner never calls out to external feeds. If your inventory lacks Shodan data or OS hints, the engine cannot infer them on its own.
+
+## How the Engine Works (and Why You Can Trust It)
+
+```
+Probe / Access data
+  (shares, SMB dialects, auth hints)
+        │
+        ▼
++-----------------+
+| Fact Collector  |  → normalized signals + missing-telemetry log
++-----------------+
+        │
+        ▼
++-----------------+
+| Signature Engine|  → YAML rules check those signals
++-----------------+
+        │
+        ▼
++-----------------+
+| Scoring Model   |  → additive score + context modifiers
++-----------------+
+        │
+        ▼
++-----------------+
+| Reporter        |  → GUI summary + cached report
++-----------------+
+```
+
+1. **Deterministic inputs.** `FactCollector` converts whatever telemetry we gathered into canonical signals like `supports_smb1`, `has_netlogon_share`, `host.os_detection`, etc. Because every signature consumes the same schema, adding a new rule cannot silently change existing results.
+2. **Schema-enforced rules.** YAML files must pass `SignatureValidator` before loading. Missing sections, malformed CVE IDs, or out-of-range weights are rejected up front, so the engine never runs half-baked heuristics.
+3. **Additive scoring with transparent modifiers.** `RCEScorer` just sums rule weights and contextual bonuses (admin share access, anonymous auth, SMB1). There is no ML model: identical inputs always produce identical scores, capped at 100.
+4. **Human-auditable evidence.** `RCEReporter` records which rules matched, the evidence strings they produced, and the normalized facts consulted. Analysts can follow the breadcrumbs from “ZeroLogon flagged” straight to “NETLOGON + SYSVOL observed, IPC$ accessible.”
+5. **Safe failure modes.** Missing telemetry results in an “insufficient-data” verdict instead of speculation. If the scanner or a dependency is unavailable, the GUI says so rather than returning stale data.
+
+With those guarantees in place, the rest of this document focuses on how to author and maintain the YAML signatures that fuel the engine.
+
 ## Overview
 
 SMBSeek includes a signature-based RCE (Remote Code Execution) vulnerability detection system that analyzes SMB enumeration results for known security issues. The system uses YAML-based signature files that describe vulnerability patterns and scoring heuristics.

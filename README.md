@@ -100,7 +100,7 @@ cp conf/config.json.example conf/config.json
 
 ### API Key Setup
 
-1. Sign up for a Shodan membership at [shodan.io](https://shodan.io) (paid membership required for API access)
+1. Sign up for a Shodan membership at [shodan.io](https://shodan.io) (one-time paid membership required for API access)
 2. Copy your API key from your account dashboard
 3. Edit `conf/config.json` and add your API key:
 
@@ -372,12 +372,14 @@ The GUI provides an intuitive interface for SMBSeek operations:
 - Launch per-host file collection runs with configurable limits for file size, total bytes, runtime, and count
 - Results are automatically quarantined under `~/.smbseek/quarantine/<purpose>/<timestamp>` alongside JSON audit logs
 - Analysts review and promote quarantined artifacts manually, keeping risky files out of trusted folders by default
+- See [`docs/EXTRACT_WORKFLOW_GUIDE.md`](docs/EXTRACT_WORKFLOW_GUIDE.md) for architecture details, safeguards, and troubleshooting advice.
 
 ### Sandboxed Explore Workflow (Linux)
 
 - When Podman or Docker is installed, the Server Details window’s **Explore** button launches a GUI file manager inside a throwaway container. All browsing happens within the sandbox and the remote share is opened via `pcmanfm`/GVFS from that isolated session.
 - The host OS never mounts the remote share directly; the container streams stdout/stderr back to the GUI for transparency.
 - If a supported container runtime or display binding isn’t available, the button stays disabled (or errors gracefully) so operators know they must remediate the sandbox before exploring.
+- See [`docs/SANDBOXED_EXPLORER_GUIDE.md`](docs/SANDBOXED_EXPLORER_GUIDE.md) for the full architecture, proof points, and troubleshooting tips.
 
 #### macOS and Windows (experimental)
 
@@ -389,7 +391,7 @@ We have not validated the sandbox workflow on macOS or Windows yet, but the tool
 <details>
 <summary><strong>Setting up the sandbox runtime (Ubuntu, Fedora, Arch)</strong></summary>
 
-Pick the distro you care about, paste the block, and you’ll have Podman plus the lightweight Alpine image we use for `smbclient` inside the sandbox. You can swap in Docker if you prefer, but Podman stays rootless by default.
+Pick the distro you love, paste the block, and you’ll have Podman plus the lightweight Alpine image we use for `smbclient` inside the sandbox. You can swap in Docker if you prefer, but Podman stays rootless by default.
 
 ```bash
 # Ubuntu / Debian

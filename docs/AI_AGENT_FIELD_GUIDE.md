@@ -39,6 +39,8 @@ A compact onboarding guide for any AI/HI collaboration. Here “HI” refers to 
 ## Delivery Playbook
 - **Planning pattern:** name the files/systems you’ll touch, call out downstream effects, highlight blockers. Avoid vague steps or assuming past instructions still apply.
 - **Documentation & attribution:** update READMEs/CHANGELOGs/DEVNOTES, cite inspirations, and keep sensitive notes out of version control.
+- **Dual-audience documentation:** lead with a plain-language overview (what problem the feature solves, what signals it watches) before diving into technical detail. Mimic the “general + proof” pattern used in the RCE, sandbox, and extract guides.
+- **Risk transparency:** every feature write-up should dedicate a section to risks, limitations, assumptions, and failure modes so operators know when *not* to trust the output. 
 - **UI/UX conventions:** favor clear groupings, consistent spacing, predictable CTAs, and focus order that matches the visual flow.
 - **Seed data & templates:** ensure paths work in repo + user space, ship sanitized samples, and avoid overwriting user data without confirmation.
 - **Status & logging:** decide whether banners or logs own real-time messaging; prevent double-reporting and flicker.
