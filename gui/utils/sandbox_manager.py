@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional
 
 
 DEFAULT_IMAGE = os.environ.get("SMBSEEK_SANDBOX_IMAGE", "docker.io/library/alpine:latest")
+DEFAULT_FILE_BROWSER = os.environ.get("SMBSEEK_SANDBOX_FILE_BROWSER", "pcmanfm")
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,36 @@ class SandboxManager:
 
         self.require_available()
         command = self._build_command(ip_address, username, password)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False
+        )
+        return SandboxResult(command, result.stdout, result.stderr, result.returncode)
+
+    def launch_file_browser(
+        self,
+        ip_address: str,
+        username: str,
+        password: str,
+        *,
+        share: Optional[str] = None,
+        timeout: int = 120
+    ) -> SandboxResult:
+        """Launch a sandboxed GUI file browser pointed at the target SMB server."""
+
+        self.require_available()
+        display_env = self._detect_display_env()
+        if not display_env:
+            raise SandboxUnavailable(
+                "Sandboxed explorer requires an active X11 or Wayland display session."
+            )
+
+        browser_cmd = self._build_file_browser_command(ip_address, share)
+        command = self._build_gui_command(username, password, display_env, browser_cmd)
+
         result = subprocess.run(
             command,
             capture_output=True,
@@ -237,6 +268,78 @@ class SandboxManager:
             "apk add --no-cache samba-client nmap-ncat && exec sh"
         ]
         return base_cmd
+
+    def _detect_display_env(self) -> Optional[Dict[str, str]]:
+        """Determine whether X11 or Wayland display is available."""
+        display = os.environ.get("DISPLAY")
+        wayland = os.environ.get("WAYLAND_DISPLAY")
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+
+        if wayland and runtime_dir:
+            wayland_path = os.path.join(runtime_dir, wayland)
+            if os.path.exists(wayland_path):
+                return {
+                    "type": "wayland",
+                    "display": wayland,
+                    "runtime_dir": runtime_dir,
+                    "socket": wayland_path
+                }
+
+        if display:
+            x11_socket_dir = "/tmp/.X11-unix"
+            if os.path.isdir(x11_socket_dir):
+                return {
+                    "type": "x11",
+                    "display": display,
+                    "socket": x11_socket_dir
+                }
+
+        return None
+
+    def _build_file_browser_command(self, ip_address: str, share: Optional[str]) -> str:
+        target = f"smb://{ip_address}/"
+        if share:
+            target = f"smb://{ip_address}/{share.strip('/')}"
+
+        apk_packages = (
+            "apk add --no-cache pcmanfm gvfs gvfs-smb gvfs-fuse samba-client > /dev/null"
+        )
+        export_cmd = "export GVFS_DISABLE_FUSE=1"
+        browser = DEFAULT_FILE_BROWSER
+        return f"{apk_packages} && {export_cmd} && exec {browser} '{target}'"
+
+    def _build_gui_command(
+        self,
+        username: str,
+        password: str,
+        display_env: Dict[str, str],
+        browser_cmd: str
+    ) -> List[str]:
+        base = [self.runner, "run", "--rm", "--network", "host"]
+
+        env_args = [
+            "-e", f"SMB_USER={username}",
+            "-e", f"SMB_PASS={password}",
+        ]
+
+        if display_env["type"] == "wayland":
+            env_args.extend([
+                "-e", f"WAYLAND_DISPLAY={display_env['display']}",
+                "-e", f"XDG_RUNTIME_DIR={display_env['runtime_dir']}",
+            ])
+            base.extend([
+                "-v", f"{display_env['runtime_dir']}:{display_env['runtime_dir']}:rw",
+            ])
+        else:
+            env_args.extend(["-e", f"DISPLAY={display_env['display']}"])
+            base.extend([
+                "-v", "/tmp/.X11-unix:/tmp/.X11-unix:rw"
+            ])
+
+        base.extend(env_args)
+        base.append(self.image)
+        base.extend(["sh", "-c", browser_cmd])
+        return base
 
     def _log_command(self, session_metadata: Dict[str, Any], event_type: str, command: str) -> None:
         """Log a command or event to the session metadata."""

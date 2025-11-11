@@ -123,28 +123,19 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     explore_button = tk.Button(
         button_frame,
         text="Explore",
-        command=lambda: explore_server(server_data)
-    )
-    theme.apply_to_widget(explore_button, "button_secondary")
-    explore_button.pack(side=tk.LEFT, padx=(0, 10))
-
-    sandbox_button = tk.Button(
-        button_frame,
-        text="Sandbox Shares",
-        command=lambda: _open_sandbox_dialog(
+        command=lambda: _launch_sandbox_explorer(
             detail_window,
             server_data,
             sandbox_manager,
             sandbox_state,
             status_var,
-            theme,
-            sandbox_button
+            explore_button
         )
     )
-    theme.apply_to_widget(sandbox_button, "button_secondary")
-    sandbox_button.pack(side=tk.LEFT, padx=(0, 10))
+    theme.apply_to_widget(explore_button, "button_secondary")
+    explore_button.pack(side=tk.LEFT, padx=(0, 10))
     if not sandbox_manager.is_available():
-        sandbox_button.configure(state=tk.DISABLED)
+        explore_button.configure(state=tk.DISABLED)
 
     # Close button
     close_button = tk.Button(
@@ -160,141 +151,6 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     detail_window.grab_set()
 
 
-def explore_server(server_data):
-    """
-    Open server in system file explorer via SMB/CIFS protocol.
-
-    Args:
-        server_data: Server dictionary containing IP address and authentication info
-    """
-    ip_address = server_data.get('ip_address')
-    auth_method = server_data.get('auth_method', 'Unknown')
-
-    if not ip_address:
-        messagebox.showerror(
-            "Invalid Server",
-            "Server IP address is not available."
-        )
-        return
-
-    try:
-        system = platform.system()
-
-        if system == "Linux":
-            # Use xdg-open to open SMB URL in default file manager
-            subprocess.run(['xdg-open', f'smb://{ip_address}/'], check=True)
-        elif system == "Windows":
-            # Use explorer to open UNC path
-            subprocess.run(['explorer', f'\\\\{ip_address}\\'], check=True)
-        elif system == "Darwin":  # macOS
-            # Use open to launch SMB URL in Finder
-            subprocess.run(['open', f'smb://{ip_address}/'], check=True)
-        else:
-            raise OSError(f"Unsupported operating system: {system}")
-
-    except subprocess.CalledProcessError as e:
-        messagebox.showerror(
-            "Connection Failed",
-            f"Could not open SMB connection to {ip_address}\n\n"
-            f"The server may be offline, unreachable, or your system may not support SMB connections.\n\n"
-            f"Authentication method: {auth_method}\n"
-            f"Command failed with exit code: {e.returncode}"
-        )
-    except FileNotFoundError:
-        messagebox.showerror(
-            "System Error",
-            f"Could not find system file explorer.\n\n"
-            f"Please ensure your system supports SMB connections and has a file manager installed."
-        )
-    except Exception as e:
-        messagebox.showerror(
-            "Unexpected Error",
-            f"An unexpected error occurred while trying to connect to {ip_address}\n\n"
-            f"Error: {str(e)}\n\n"
-            f"Please check your network connection and SMB client configuration."
-        )
-
-
-def _open_sandbox_dialog(parent_window, server_data, sandbox_manager, sandbox_state,
-                         status_var: tk.StringVar, theme, sandbox_button: Optional[tk.Button]):
-    """Launch a sandbox share listing and display output in a dialog."""
-    if sandbox_state.get("running"):
-        messagebox.showinfo("Sandbox Running", "A sandbox listing is already in progress.")
-        return
-
-    ip_address = server_data.get('ip_address')
-    if not ip_address:
-        messagebox.showerror("Sandbox Unavailable", "Server IP address is missing.")
-        return
-
-    if not sandbox_manager.is_available():
-        messagebox.showerror(
-            "Sandbox Unavailable",
-            "Sandbox browsing requires Podman or Docker on Linux."
-        )
-        return
-
-    username, password = _derive_credentials(server_data.get('auth_method', ''))
-
-    dialog = tk.Toplevel(parent_window)
-    dialog.title("Sandbox Share Listing")
-    dialog.geometry("640x420")
-    dialog.transient(parent_window)
-    if theme:
-        theme.apply_to_widget(dialog, "main_window")
-
-    text_widget = tk.Text(dialog, wrap=tk.WORD, state=tk.DISABLED)
-    text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-    def append_line(message: str):
-        text_widget.configure(state=tk.NORMAL)
-        text_widget.insert(tk.END, message + "\n")
-        text_widget.configure(state=tk.DISABLED)
-        text_widget.see(tk.END)
-
-    button_frame = tk.Frame(dialog)
-    button_frame.pack(pady=(0, 10))
-    tk.Button(button_frame, text="Close", command=dialog.destroy).pack()
-
-    sandbox_state["running"] = True
-    if sandbox_button:
-        sandbox_button.configure(state=tk.DISABLED)
-    status_var.set("Running sandbox share listing…")
-    append_line("Launching sandbox… This may take a few seconds the first time an image is used.")
-
-    def finish(result: Optional[SandboxResult], error_message: Optional[str]):
-        sandbox_state["running"] = False
-        if sandbox_button and sandbox_manager.is_available():
-            sandbox_button.configure(state=tk.NORMAL)
-
-        if error_message:
-            append_line("")
-            append_line("Error:")
-            append_line(error_message)
-            status_var.set("Sandbox listing failed")
-            return
-
-        output = result.stdout.strip() or "(no output)"
-        append_line("")
-        append_line(output)
-        if result.stderr.strip():
-            append_line("")
-            append_line("--- stderr ---")
-            append_line(result.stderr.strip())
-        status_var.set(f"Sandbox listing complete (exit {result.returncode})")
-
-    def worker():
-        try:
-            sandbox_result = sandbox_manager.list_shares(ip_address, username, password)
-            dialog.after(0, lambda: finish(sandbox_result, None))
-        except SandboxUnavailable as exc:
-            dialog.after(0, lambda: finish(None, str(exc)))
-        except subprocess.TimeoutExpired:
-            dialog.after(0, lambda: finish(None, "Sandbox timed out"))
-        except Exception as exc:  # pragma: no cover - defensive
-            dialog.after(0, lambda: finish(None, f"Unexpected error: {exc}"))
-
-    threading.Thread(target=worker, daemon=True).start()
 
 
 def _format_server_details(server: Dict[str, Any], probe_section: Optional[str] = None) -> str:
@@ -997,3 +853,67 @@ def _derive_credentials(auth_method: Optional[str]) -> Tuple[str, str]:
     if "guest/guest" in method:
         return "guest", "guest"
     return "guest", ""
+def _launch_sandbox_explorer(
+    parent_window: tk.Toplevel,
+    server_data: Dict[str, Any],
+    sandbox_manager,
+    sandbox_state: Dict[str, Any],
+    status_var: tk.StringVar,
+    explore_button: Optional[tk.Button]
+) -> None:
+    """Launch sandboxed GUI explorer for the selected server."""
+
+    if sandbox_state.get("running"):
+        messagebox.showinfo("Sandbox Running", "A sandbox session is already in progress.")
+        return
+
+    ip_address = server_data.get('ip_address')
+    if not ip_address:
+        messagebox.showerror("Explore Unavailable", "Server IP address is missing.")
+        return
+
+    if not sandbox_manager.is_available():
+        messagebox.showerror(
+            "Sandbox Unavailable",
+            "Sandboxed exploration requires Podman or Docker on Linux."
+        )
+        return
+
+    username, password = _derive_credentials(server_data.get('auth_method', ''))
+    sandbox_state["running"] = True
+    status_var.set("Launching sandboxed explorer…")
+    if explore_button:
+        explore_button.configure(state=tk.DISABLED)
+
+    def finish(result: Optional[SandboxResult], error_message: Optional[str]):
+        sandbox_state["running"] = False
+        if explore_button and sandbox_manager.is_available():
+            explore_button.configure(state=tk.NORMAL)
+
+        if error_message:
+            status_var.set("Sandbox explorer failed")
+            messagebox.showerror("Sandbox Explorer", error_message)
+            return
+
+        if result and result.returncode == 0:
+            status_var.set("Sandbox explorer launched")
+        else:
+            stderr = (result.stderr if result else "Unknown error").strip()
+            status_var.set("Sandbox explorer failed")
+            messagebox.showerror(
+                "Sandbox Explorer",
+                f"Failed to launch sandboxed explorer.\n\n{stderr or 'No additional details provided.'}"
+            )
+
+    def worker():
+        try:
+            sandbox_result = sandbox_manager.launch_file_browser(ip_address, username, password)
+            parent_window.after(0, lambda: finish(sandbox_result, None))
+        except SandboxUnavailable as exc:
+            parent_window.after(0, lambda: finish(None, str(exc)))
+        except subprocess.TimeoutExpired:
+            parent_window.after(0, lambda: finish(None, "Sandbox explorer timed out"))
+        except Exception as exc:  # pragma: no cover
+            parent_window.after(0, lambda: finish(None, f"Unexpected error: {exc}"))
+
+    threading.Thread(target=worker, daemon=True).start()

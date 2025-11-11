@@ -373,11 +373,11 @@ The GUI provides an intuitive interface for SMBSeek operations:
 - Results are automatically quarantined under `~/.smbseek/quarantine/<purpose>/<timestamp>` alongside JSON audit logs
 - Analysts review and promote quarantined artifacts manually, keeping risky files out of trusted folders by default
 
-### Sandbox Share Browsing (Linux)
+### Sandboxed Explore Workflow (Linux)
 
-- When Podman or Docker is installed, the Server Details window shows a **Sandbox Shares** button that lists shares via `smbclient` running inside a throwaway container.
-- The host OS never opens the remote share; all enumeration happens inside the sandbox and the output is streamed back into the GUI.
-- If a supported container runtime is not detected, the button stays disabled so operators know they are outside the sandboxed path.
+- When Podman or Docker is installed, the Server Details window’s **Explore** button launches a GUI file manager inside a throwaway container. All browsing happens within the sandbox and the remote share is opened via `pcmanfm`/GVFS from that isolated session.
+- The host OS never mounts the remote share directly; the container streams stdout/stderr back to the GUI for transparency.
+- If a supported container runtime or display binding isn’t available, the button stays disabled (or errors gracefully) so operators know they must remediate the sandbox before exploring.
 
 #### macOS and Windows (experimental)
 
@@ -405,7 +405,7 @@ sudo pacman -Sy --noconfirm podman
 podman info >/dev/null && podman pull docker.io/library/alpine:latest
 ```
 
-Verification tip: run `podman run --rm --network host alpine:latest sh -c "apk add --no-cache samba-client && smbclient --help"`. Once that succeeds, relaunch xsmbseek and the **Sandbox Shares** button should enable itself automatically.
+Verification tip: run `podman run --rm --network host alpine:latest sh -c "apk add --no-cache samba-client pcmanfm gvfs gvfs-smb && pcmanfm --help"`. Once that succeeds, relaunch xsmbseek and the **Explore** button should enable itself automatically.
 
 </details>
 

@@ -717,6 +717,26 @@ Common vulnerabilities detected include:
 - **PrintNightmare (CVE-2021-34527)**: Print Spooler RCE
 - **PetitPotam (CVE-2021-36942)**: NTLM relay vulnerability
 
+### Sandboxed Explore (GUI)
+
+The Server Details window’s **Explore** button launches a sandboxed file manager so the host desktop never mounts untrusted SMB shares directly.
+
+**Requirements:**
+- Linux workstation with Podman or Docker on `PATH`
+- Active X11 (`$DISPLAY`) or Wayland (`$WAYLAND_DISPLAY` + `$XDG_RUNTIME_DIR`) session that permits container clients
+- Network access from the container to the target host (the sandbox shares the host network namespace)
+
+**Workflow:**
+1. SMBSeek spawns an Alpine-based container via Podman/Docker using the existing sandbox manager.
+2. The container installs `pcmanfm`, `gvfs`, and `gvfs-smb`, exports the derived SMB credentials, and bind-mounts the host display socket (X11 or Wayland) plus `/tmp/.X11-unix` when needed.
+3. `pcmanfm smb://<ip>/<share>` runs inside the container, so all browsing stays isolated. stdout/stderr stream back to the GUI for transparency.
+
+**Failure Modes & Recovery:**
+- **No sandbox runtime/display:** the Explore button stays disabled or shows “Sandboxed exploration requires Podman or Docker” when clicked.
+- **Display permission denied:** the dialog surfaces the error (e.g., “Cannot open display :0”). On X11 grant access via `xhost +si:localuser:$USER` and retry.
+- **Package/network errors:** stderr from `apk`/`pcmanfm` is shown so analysts can determine whether to pull the image again or adjust firewall rules.
+- **Timeouts (120s default):** GUI reports “Sandbox explorer timed out,” indicating the container could not bootstrap in time.
+
 ### Sandbox Investigation Shell
 
 For elevated RCE scores, SMBSeek provides a read-only investigation environment:

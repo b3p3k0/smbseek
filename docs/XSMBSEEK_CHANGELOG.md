@@ -10,7 +10,7 @@ All notable changes to the SMBSeek GUI project will be documented in this file.
 - **Server List Probe Column**: The server list now shows a 🧪 status indicator (○ = unprobed, ✔ = probed, ✖ reserved) next to the favorite/avoid columns so analysts can immediately see which hosts have snapshots.
 - **Server Detail Probe**: Added a Probe dialog to the Server Details view. It lets analysts adjust limits, enumerate a bounded number of directories/files per accessible share using the original anonymous credentials, caches the result under `~/.smbseek/probes/`, and renders an ASCII tree inside the details view. Requires the `impacket` library.
 - **Server Detail Extract**: Introduced an Extract button between Probe and Explore. It reuses the known credentials to download a capped set of files (config-driven allow/deny lists, per-file size, cumulative size, time, and file-count limits) into a timestamped folder, surfaces live “downloading X/Y” status, and writes a JSON audit log under `~/.smbseek/extract_logs/`.
-- **Sandbox Shares (Linux)**: When Podman or Docker is available, the Server Details dialog exposes a Sandbox Shares button that runs share enumeration inside a disposable container instead of opening the host file explorer.
+- **Sandboxed Explore (Linux)**: The Server Details dialog now routes the Explore button through the container sandbox, launching a lightweight GUI file manager (pcmanfm/GVFS) inside Podman or Docker instead of using the host file explorer.
 - **Probe Indicator Matching**: GUI now loads `security.ransomware_indicators` from the SMBSeek backend config and marks any host whose probe results include those filenames with a ✖ glyph plus a detail-view alert listing the hits.
 
 ### Changed
