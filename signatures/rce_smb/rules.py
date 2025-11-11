@@ -299,6 +299,8 @@ class RuleEngine:
         """
         # Handle None/missing values
         if signal_value is None:
+            if isinstance(expectation, str) and expectation.lower() == "missing":
+                return True
             return expectation is None
 
         # Direct equality comparison
@@ -307,11 +309,12 @@ class RuleEngine:
 
         # String-based comparisons
         if isinstance(expectation, str):
-            if expectation == "missing" and not signal_value:
+            expectation_lower = expectation.lower()
+            if expectation_lower == "missing" and not signal_value:
                 return True
-            if expectation == "present" and signal_value:
+            if expectation_lower == "present" and bool(signal_value):
                 return True
-            if isinstance(signal_value, str) and expectation.lower() in signal_value.lower():
+            if isinstance(signal_value, str) and expectation_lower in signal_value.lower():
                 return True
 
         # Boolean comparisons

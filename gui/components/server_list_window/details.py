@@ -405,6 +405,11 @@ def _format_probe_section(probe_result: Optional[Dict[str, Any]]) -> str:
     else:
         lines.append("   No shares were successfully probed.")
 
+    rce_lines = _format_rce_summary(probe_result.get("rce_analysis"))
+    if rce_lines:
+        lines.append("")
+        lines.extend(rce_lines)
+
     analysis = probe_result.get("indicator_analysis") if probe_result else None
     if analysis:
         matches = analysis.get("matches", [])
@@ -429,6 +434,62 @@ def _format_probe_section(probe_result: Optional[Dict[str, Any]]) -> str:
 
     lines.append("")
     return "\n".join(lines)
+
+
+def _format_rce_summary(rce_report: Optional[Dict[str, Any]]) -> List[str]:
+    """Generate formatted RCE analysis summary lines."""
+    prefix = "   RCE Vuln scan:"
+
+    if rce_report is None:
+        return [f"{prefix} not requested"]
+
+    if not isinstance(rce_report, dict):
+        return [f"{prefix} unavailable"]
+
+    status = (rce_report.get("status") or "").lower()
+    error_message = rce_report.get("error")
+
+    if status in {"scanner-unavailable", "analysis-failed"}:
+        reason = error_message or ("scanner unavailable" if status == "scanner-unavailable" else "analysis failed")
+        return [f"{prefix} unavailable – {reason}"]
+
+    if status == "insufficient-data":
+        return [f"{prefix} limited telemetry; no verdict"]
+
+    score = rce_report.get("score", 0)
+    metadata = rce_report.get("analysis_metadata") or {}
+    risk_level = metadata.get("risk_level") or (rce_report.get("level", "low").split(" ")[0])
+    risk_display = (risk_level or "low").strip().lower()
+
+    matched_rules = rce_report.get("matched_rules") or []
+    if not matched_rules:
+        return [f"{prefix} none found (score {score}/100)"]
+
+    sorted_rules = sorted(matched_rules, key=lambda rule: rule.get("score", 0), reverse=True)
+    primary_rule = sorted_rules[0]
+    primary_label = _format_rce_rule_label(primary_rule)
+    summary = f"{prefix} {risk_display} likelihood of {primary_label} (score {score}/100)"
+
+    lines = [summary]
+    for rule in sorted_rules[:3]:
+        label = _format_rce_rule_label(rule)
+        severity = (rule.get("severity") or "unknown").lower()
+        rule_score = rule.get("score", 0)
+        lines.append(f"      • {label} — {severity} severity (+{rule_score})")
+
+    if len(sorted_rules) > 3:
+        lines.append(f"      … {len(sorted_rules) - 3} additional signatures")
+
+    return lines
+
+
+def _format_rce_rule_label(rule: Dict[str, Any]) -> str:
+    """Return friendly label combining rule name and primary CVE."""
+    name = rule.get("name") or "Unknown"
+    cve_ids = rule.get("cve_ids") or []
+    if cve_ids:
+        return f"{name} ({cve_ids[0]})"
+    return name
 
 
 def _parse_accessible_shares(raw_value: Optional[str]) -> List[str]:
@@ -470,7 +531,8 @@ def _start_probe(
     settings_manager,
     probe_button: Optional[tk.Button],
     config_override: Optional[Dict[str, int]] = None,
-    probe_status_callback=None
+    probe_status_callback=None,
+    enable_rce_override: Optional[bool] = None
 ) -> None:
     """Trigger background probe run."""
     if probe_state.get("running"):
@@ -490,7 +552,13 @@ def _start_probe(
     indicator_patterns = probe_state.get("indicator_patterns") or []
 
     # Check if RCE analysis is enabled
-    enable_rce = settings_manager.get_setting('scan_dialog.rce_enabled', False) if settings_manager else False
+    if enable_rce_override is not None:
+        enable_rce = enable_rce_override
+    elif settings_manager:
+        probe_pref = settings_manager.get_setting('probe_dialog.rce_enabled', None)
+        enable_rce = probe_pref if probe_pref is not None else settings_manager.get_setting('scan_dialog.rce_enabled', False)
+    else:
+        enable_rce = False
     status_var.set("Probing accessible shares…")
     probe_state["running"] = True
     if probe_button:
@@ -579,6 +647,31 @@ def _open_probe_dialog(
     timeout_var = tk.IntVar(value=config["timeout_seconds"])
     tk.Entry(dialog, textvariable=timeout_var, width=10).grid(row=2, column=1, padx=10, pady=5)
 
+    if settings_manager:
+        stored_rce_pref = settings_manager.get_setting('probe_dialog.rce_enabled', None)
+        if stored_rce_pref is None:
+            stored_rce_pref = settings_manager.get_setting('scan_dialog.rce_enabled', False)
+    else:
+        stored_rce_pref = False
+
+    rce_var = tk.BooleanVar(value=bool(stored_rce_pref))
+    rce_frame = tk.Frame(dialog)
+    rce_frame.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+
+    rce_checkbox = tk.Checkbutton(
+        rce_frame,
+        text="Include RCE vulnerability scan",
+        variable=rce_var
+    )
+    rce_checkbox.pack(anchor="w")
+
+    rce_hint = tk.Label(
+        rce_frame,
+        text="Adds heuristic RCE detection with summary output.",
+        fg="#666666"
+    )
+    rce_hint.pack(anchor="w", padx=(24, 0))
+
     def start_probe_from_dialog():
         try:
             new_config = {
@@ -594,6 +687,7 @@ def _open_probe_dialog(
             settings_manager.set_setting('probe.max_directories_per_share', new_config["max_directories"])
             settings_manager.set_setting('probe.max_files_per_directory', new_config["max_files"])
             settings_manager.set_setting('probe.share_timeout_seconds', new_config["timeout_seconds"])
+            settings_manager.set_setting('probe_dialog.rce_enabled', bool(rce_var.get()))
 
         dialog.destroy()
         _start_probe(
@@ -605,11 +699,12 @@ def _open_probe_dialog(
             settings_manager,
             probe_button,
             config_override=new_config,
-            probe_status_callback=probe_status_callback
+            probe_status_callback=probe_status_callback,
+            enable_rce_override=bool(rce_var.get())
         )
 
     button_frame = tk.Frame(dialog)
-    button_frame.grid(row=3, column=0, columnspan=2, pady=10)
+    button_frame.grid(row=4, column=0, columnspan=2, pady=10)
 
     tk.Button(button_frame, text="Start Probe", command=start_probe_from_dialog).pack(side=tk.LEFT, padx=(0, 5))
     tk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)

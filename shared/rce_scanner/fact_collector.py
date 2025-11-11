@@ -168,6 +168,9 @@ class FactCollector:
         facts["admin_shares_accessible"] = admin_accessible
         facts["has_admin_access"] = len(admin_accessible) > 0
 
+        # Normalized share names for heuristics
+        normalized_accessible = [share.lower() for share in accessible_shares if isinstance(share, str)]
+
         # Share details if available
         share_details = host_context.get("share_details", [])
         facts["share_details"] = share_details
@@ -176,6 +179,18 @@ class FactCollector:
         shares_found = host_context.get("shares_found", [])
         facts["shares_found"] = shares_found
         facts["share_enumeration_successful"] = len(shares_found) > 0
+
+        normalized_found = [share.lower() for share in shares_found if isinstance(share, str)]
+        combined_shares = set(normalized_accessible + normalized_found)
+
+        # Derived role indicators for domain-aware signatures
+        facts["has_netlogon_share"] = "netlogon" in combined_shares
+        facts["has_sysvol_share"] = "sysvol" in combined_shares
+        facts["has_print_share"] = "print$" in combined_shares
+        facts["ipc_share_accessible"] = "ipc$" in normalized_accessible
+        facts["has_domain_role_indicators"] = (
+            facts["has_netlogon_share"] or facts["has_sysvol_share"]
+        )
 
         return facts
 
