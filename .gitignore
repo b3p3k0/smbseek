@@ -71,6 +71,9 @@ docs/KEV.md
 docs/PERFORMANCE_OPTIMIZATIONS.md
 docs/CODEX_smbseek.md
 
+# Research scratchpads
+notes/
+
 # Configuration files with sensitive data
 conf/config.json
 conf/config.json.backup*
@@ -109,7 +112,6 @@ legacy/
 *test*.json
 *test*.csv
 tests/
-tools/
 
 # Enhanced share tracking test files
 test_enhanced_share_tracking.py
