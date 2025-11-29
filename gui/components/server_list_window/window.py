@@ -101,6 +101,9 @@ class ServerListWindow:
         self.extract_button = None
         self.explore_button = None
         self.stop_button = None
+        self.table_overlay = None
+        self.table_overlay_label = None
+        self._stop_button_original_style = None
 
         # Date filtering state
         self.filter_recent = self.window_data.get("filter_recent", False)
@@ -112,6 +115,8 @@ class ServerListWindow:
         self.selected_servers = []
         self.batch_job = None
         self.sandbox_manager = get_sandbox_manager()
+        self._pending_table_refresh = False
+        self._pending_selection = []
 
         # Window state
         self.is_advanced_mode = False
@@ -295,6 +300,7 @@ class ServerListWindow:
 
         self._create_context_menu(self.tree)
         self._bind_context_menu_events(self.tree)
+        self._create_table_overlay()
 
         # Pack table frame
         self.table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -311,6 +317,26 @@ class ServerListWindow:
         if platform.system() == "Darwin":
             tree.bind("<Button-2>", self._show_context_menu)
             tree.bind("<Control-Button-1>", self._show_context_menu)
+
+    def _create_table_overlay(self) -> None:
+        self.table_overlay = tk.Frame(self.table_frame, bg="#f0f0f0")
+        self.table_overlay.place_forget()
+        self.table_overlay_label = tk.Label(
+            self.table_overlay,
+            text="Batch in progress… Server list locked",
+            bg="#f0f0f0",
+            fg="#555555"
+        )
+        self.table_overlay_label.pack(expand=True)
+
+    def _set_table_interaction_enabled(self, enabled: bool) -> None:
+        if not self.table_overlay:
+            return
+        if enabled:
+            self.table_overlay.place_forget()
+        else:
+            self.table_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self.table_overlay.lift()
 
     def _create_button_panel(self) -> None:
         """Create bottom button panel with actions."""
@@ -419,8 +445,14 @@ class ServerListWindow:
         self.window.bind("<Escape>", lambda e: self._close_window())
         self.window.bind("<F5>", lambda e: self._refresh_data())
 
-    def _apply_filters(self) -> None:
+    def _apply_filters(self, *, force: bool = False) -> None:
         """Apply current filters to server list using filter module functions."""
+        if self._is_batch_active() and not force:
+            if not self._pending_table_refresh:
+                self._pending_selection = self._get_selected_ips()
+            self._pending_table_refresh = True
+            return
+
         filtered = self.all_servers[:]
 
         # Apply search filter
@@ -892,6 +924,8 @@ class ServerListWindow:
             future = executor.submit(self._run_batch_task, job_type, target, options, cancel_event)
             future.add_done_callback(lambda fut, target=target: self.window.after(0, self._on_batch_future_done, target, fut))
 
+        self._set_table_interaction_enabled(False)
+
     def _run_batch_task(self, job_type: str, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
         if cancel_event.is_set():
             return {
@@ -1087,6 +1121,8 @@ class ServerListWindow:
         self.batch_job = None
         self._update_action_buttons_state()
         self._set_status(f"{job_type.title()} batch finished")
+        self._flush_pending_refresh()
+        self._set_table_interaction_enabled(True)
         if results:
             self._show_batch_summary(job_type, results)
 
@@ -1280,6 +1316,15 @@ class ServerListWindow:
 
         messagebox.showinfo("Summary Saved", f"Saved batch summary to {path}", parent=parent)
 
+    def _flush_pending_refresh(self) -> None:
+        if not self._pending_table_refresh:
+            return
+        self._apply_filters(force=True)
+        if self._pending_selection:
+            self._restore_selection(self._pending_selection)
+        self._pending_table_refresh = False
+        self._pending_selection = []
+
     # Probe status helpers
 
     def _attach_probe_status(self, servers: List[Dict[str, Any]]) -> None:
@@ -1341,9 +1386,14 @@ class ServerListWindow:
                 server["probe_status"] = status
                 server["probe_status_emoji"] = self._probe_status_to_emoji(status)
 
-        selected_ips = self._get_selected_ips()
-        self._apply_filters()
-        self._restore_selection(selected_ips)
+        if self._is_batch_active():
+            if not self._pending_table_refresh:
+                self._pending_selection = self._get_selected_ips()
+            self._pending_table_refresh = True
+        else:
+            selected_ips = self._get_selected_ips()
+            self._apply_filters()
+            self._restore_selection(selected_ips)
 
     def _get_selected_ips(self) -> List[str]:
         ips = []
