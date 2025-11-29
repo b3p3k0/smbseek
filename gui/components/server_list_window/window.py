@@ -34,6 +34,7 @@ except ImportError:
 
 # Import modular components
 from . import export, details, filters, table
+from ..batch_extract_dialog import BatchExtractSettingsDialog
 from gui.utils import probe_cache, probe_patterns, probe_runner, extract_runner
 from gui.utils.sandbox_manager import get_sandbox_manager, SandboxUnavailable
 from shared.quarantine import create_quarantine_dir
@@ -677,7 +678,23 @@ class ServerListWindow:
             messagebox.showwarning("No Selection", "Please select at least one server to extract from.")
             return
 
-        dialog_config = self._prompt_extract_batch_settings(len(targets))
+        # Get config path from settings manager
+        config_path = None
+        if self.settings_manager:
+            config_path = self.settings_manager.get_setting('backend.config_path', None)
+            if not config_path and hasattr(self.settings_manager, "get_smbseek_config_path"):
+                config_path = self.settings_manager.get_smbseek_config_path()
+
+        # Use consolidated batch extract dialog
+        dialog_config = BatchExtractSettingsDialog(
+            parent=self.window,
+            theme=self.theme,
+            settings_manager=self.settings_manager,
+            config_path=config_path,
+            mode="on-demand",
+            target_count=len(targets)
+        ).show()
+
         if not dialog_config:
             return
 
@@ -783,108 +800,7 @@ class ServerListWindow:
         dialog.wait_window()
         return result or None
 
-    def _prompt_extract_batch_settings(self, target_count: int) -> Optional[Dict[str, Any]]:
-        config = details._load_file_collection_config(self.settings_manager)
-        default_dir = config.get("default_path") or str(Path.home() / ".smbseek" / "quarantine")
-        if self.settings_manager:
-            default_dir = self.settings_manager.get_setting('extract.last_directory', default_dir)
-
-        default_workers = 2
-        if self.settings_manager:
-            default_workers = int(self.settings_manager.get_setting('extract.batch_max_workers', default_workers))
-
-        dialog = tk.Toplevel(self.window)
-        dialog.title("Batch Extract Settings")
-        dialog.transient(self.window)
-        dialog.grab_set()
-        self.theme.apply_to_widget(dialog, "main_window")
-
-        tk.Label(dialog, text=f"Targets selected: {target_count}").grid(row=0, column=0, columnspan=3, padx=10, pady=(10, 5), sticky="w")
-
-        worker_var = tk.IntVar(value=max(1, min(8, default_workers)))
-        path_var = tk.StringVar(value=default_dir)
-        max_file_var = tk.IntVar(value=config["max_file_size_mb"])
-        max_total_var = tk.IntVar(value=config["max_total_size_mb"])
-        max_time_var = tk.IntVar(value=config["max_time_seconds"])
-        max_count_var = tk.IntVar(value=config["max_files_per_target"])
-
-        tk.Label(dialog, text="Worker threads (max 8):").grid(row=1, column=0, padx=10, pady=5, sticky="w")
-        tk.Entry(dialog, textvariable=worker_var, width=10).grid(row=1, column=1, padx=10, pady=5, sticky="w")
-
-        tk.Label(dialog, text="Quarantine root:").grid(row=2, column=0, padx=10, pady=5, sticky="w")
-        path_frame = tk.Frame(dialog)
-        path_frame.grid(row=2, column=1, columnspan=2, padx=10, pady=5, sticky="we")
-        tk.Entry(path_frame, textvariable=path_var, width=40).pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        def browse_path():
-            selected = filedialog.askdirectory(parent=dialog, title="Select Quarantine Root")
-            if selected:
-                path_var.set(selected)
-
-        tk.Button(path_frame, text="Browse…", command=browse_path).pack(side=tk.LEFT, padx=(5, 0))
-
-        def add_limit(row: int, label: str, var: tk.Variable):
-            tk.Label(dialog, text=label).grid(row=row, column=0, padx=10, pady=5, sticky="w")
-            tk.Entry(dialog, textvariable=var, width=10).grid(row=row, column=1, padx=10, pady=5, sticky="w")
-
-        add_limit(3, "Max file size (MB):", max_file_var)
-        add_limit(4, "Max total size (MB):", max_total_var)
-        add_limit(5, "Max run time (s):", max_time_var)
-        add_limit(6, "Max files per host:", max_count_var)
-
-        info_text = (
-            f"Allowed extensions: {', '.join(config['included_extensions']) or 'All'}\n"
-            f"Blocked extensions: {', '.join(config['excluded_extensions']) or 'None'}"
-        )
-        tk.Label(dialog, text=info_text, justify="left").grid(row=7, column=0, columnspan=3, padx=10, pady=(5, 10), sticky="w")
-
-        result: Dict[str, Any] = {}
-
-        def on_start():
-            try:
-                workers = max(1, min(8, int(worker_var.get())))
-                max_file = max(1, int(max_file_var.get()))
-                max_total = max(1, int(max_total_var.get()))
-                max_time = max(30, int(max_time_var.get()))
-                max_count = max(1, int(max_count_var.get()))
-            except (ValueError, tk.TclError):
-                messagebox.showerror("Invalid Input", "Please enter numeric values for extraction limits.", parent=dialog)
-                return
-
-            base_path = path_var.get().strip() or default_dir
-            if self.settings_manager:
-                self.settings_manager.set_setting('extract.batch_max_workers', workers)
-                self.settings_manager.set_setting('extract.last_directory', base_path)
-                self.settings_manager.set_setting('extract.max_file_size_mb', max_file)
-                self.settings_manager.set_setting('extract.max_total_size_mb', max_total)
-                self.settings_manager.set_setting('extract.max_time_seconds', max_time)
-                self.settings_manager.set_setting('extract.max_files_per_target', max_count)
-
-            result.update({
-                "worker_count": workers,
-                "download_path": base_path,
-                "max_file_size_mb": max_file,
-                "max_total_size_mb": max_total,
-                "max_time_seconds": max_time,
-                "max_files_per_target": max_count,
-                "max_directory_depth": config["max_directory_depth"],
-                "download_delay_seconds": config["download_delay_seconds"],
-                "included_extensions": config["included_extensions"],
-                "excluded_extensions": config["excluded_extensions"],
-                "connection_timeout": config["connection_timeout"]
-            })
-            dialog.destroy()
-
-        def on_cancel():
-            dialog.destroy()
-
-        button_frame = tk.Frame(dialog)
-        button_frame.grid(row=8, column=0, columnspan=3, pady=(0, 10))
-        tk.Button(button_frame, text="Cancel", command=on_cancel).pack(side=tk.RIGHT, padx=5)
-        tk.Button(button_frame, text="Start", command=on_start).pack(side=tk.RIGHT)
-
-        dialog.wait_window()
-        return result or None
+    # _prompt_extract_batch_settings removed - replaced by BatchExtractSettingsDialog
 
     def _build_selected_targets(self) -> List[Dict[str, Any]]:
         selected_servers = table.get_selected_server_data(self.tree, self.filtered_servers)

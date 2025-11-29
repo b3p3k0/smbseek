@@ -9,6 +9,8 @@ from tkinter import messagebox, filedialog
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
+from .batch_extract_dialog import BatchExtractSettingsDialog
+
 
 class ProbeConfigDialog:
     """Collect probe batch settings before a scan begins."""
@@ -118,126 +120,7 @@ class ProbeConfigDialog:
         self.dialog.destroy()
 
 
-class ExtractConfigDialog:
-    """Collect extract batch settings before a scan begins."""
-
-    def __init__(self, parent: tk.Toplevel, theme, settings_manager) -> None:
-        self.parent = parent
-        self.theme = theme
-        self.settings = settings_manager
-        self.dialog: Optional[tk.Toplevel] = None
-        self.result: Optional[Dict[str, Any]] = None
-
-        defaults = {
-            "workers": 2,
-            "path": str(Path.home()),
-            "max_file": 50,
-            "max_total": 200,
-            "max_time": 300,
-            "max_files": 10
-        }
-        if self.settings:
-            try:
-                defaults["workers"] = int(self.settings.get_setting('extract.batch_max_workers', defaults['workers']))
-                defaults["path"] = str(self.settings.get_setting('extract.last_directory', defaults['path']))
-                defaults["max_file"] = int(self.settings.get_setting('extract.max_file_size_mb', defaults['max_file']))
-                defaults["max_total"] = int(self.settings.get_setting('extract.max_total_size_mb', defaults['max_total']))
-                defaults["max_time"] = int(self.settings.get_setting('extract.max_time_seconds', defaults['max_time']))
-                defaults["max_files"] = int(self.settings.get_setting('extract.max_files_per_target', defaults['max_files']))
-            except Exception:
-                pass
-
-        self.worker_var = tk.IntVar(value=defaults['workers'])
-        self.path_var = tk.StringVar(value=defaults['path'])
-        self.max_file_var = tk.IntVar(value=defaults['max_file'])
-        self.max_total_var = tk.IntVar(value=defaults['max_total'])
-        self.max_time_var = tk.IntVar(value=defaults['max_time'])
-        self.max_files_var = tk.IntVar(value=defaults['max_files'])
-
-    def show(self) -> Dict[str, Any]:
-        self.dialog = tk.Toplevel(self.parent)
-        self.dialog.title("Configure Bulk Extract")
-        self.dialog.transient(self.parent)
-        self.dialog.grab_set()
-        if self.theme:
-            self.theme.apply_to_widget(self.dialog, "main_window")
-
-        frame = tk.Frame(self.dialog)
-        frame.pack(padx=20, pady=20)
-
-        self._add_entry(frame, "Worker threads (max 8):", self.worker_var, 0)
-
-        tk.Label(frame, text="Quarantine path:").grid(row=1, column=0, sticky="w", pady=5)
-        path_frame = tk.Frame(frame)
-        path_frame.grid(row=1, column=1, sticky="w", pady=5)
-        tk.Entry(path_frame, textvariable=self.path_var, width=30).pack(side=tk.LEFT)
-        browse_btn = tk.Button(path_frame, text="Browse", command=self._browse)
-        browse_btn.pack(side=tk.LEFT, padx=(5, 0))
-
-        self._add_entry(frame, "Max file size (MB):", self.max_file_var, 2)
-        self._add_entry(frame, "Max total size (MB):", self.max_total_var, 3)
-        self._add_entry(frame, "Max run time (seconds):", self.max_time_var, 4)
-        self._add_entry(frame, "Max files per host:", self.max_files_var, 5)
-
-        btn_frame = tk.Frame(frame)
-        btn_frame.grid(row=6, column=0, columnspan=2, pady=(15, 0))
-        save_btn = tk.Button(btn_frame, text="Save & Continue", command=self._save)
-        disable_btn = tk.Button(btn_frame, text="Disable Extract", command=self._disable)
-        abort_btn = tk.Button(btn_frame, text="Abort Scan", command=self._abort)
-        for btn in (save_btn, disable_btn, abort_btn):
-            if self.theme:
-                self.theme.apply_to_widget(btn, "button_secondary")
-            btn.pack(side=tk.LEFT, padx=5)
-
-        self.dialog.protocol("WM_DELETE_WINDOW", self._abort)
-        self.parent.wait_window(self.dialog)
-        return self.result or {"status": "abort"}
-
-    def _browse(self):
-        selection = filedialog.askdirectory(parent=self.dialog, title="Select Quarantine Path")
-        if selection:
-            self.path_var.set(selection)
-
-    def _add_entry(self, parent, label, var, row):
-        tk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=5)
-        tk.Entry(parent, textvariable=var, width=15).grid(row=row, column=1, sticky="w", pady=5)
-
-    def _save(self):
-        try:
-            data = {
-                "status": "ok",
-                "workers": max(1, min(8, int(self.worker_var.get()))),
-                "path": self.path_var.get().strip() or str(Path.home()),
-                "max_file": max(1, int(self.max_file_var.get())),
-                "max_total": max(1, int(self.max_total_var.get())),
-                "max_time": max(30, int(self.max_time_var.get())),
-                "max_files": max(1, int(self.max_files_var.get()))
-            }
-        except (ValueError, tk.TclError):
-            messagebox.showerror("Invalid Input", "Please enter numeric values for extract limits.", parent=self.dialog)
-            return
-
-        if self.settings:
-            try:
-                self.settings.set_setting('extract.batch_max_workers', data['workers'])
-                self.settings.set_setting('extract.last_directory', data['path'])
-                self.settings.set_setting('extract.max_file_size_mb', data['max_file'])
-                self.settings.set_setting('extract.max_total_size_mb', data['max_total'])
-                self.settings.set_setting('extract.max_time_seconds', data['max_time'])
-                self.settings.set_setting('extract.max_files_per_target', data['max_files'])
-            except Exception:
-                pass
-
-        self.result = data
-        self.dialog.destroy()
-
-    def _disable(self):
-        self.result = {"status": "disable"}
-        self.dialog.destroy()
-
-    def _abort(self):
-        self.result = {"status": "abort"}
-        self.dialog.destroy()
+# ExtractConfigDialog removed - replaced by BatchExtractSettingsDialog
 
 
 class SummaryDialog:
@@ -325,8 +208,21 @@ class ScanPreflightController:
                 self.scan_options['bulk_probe_enabled'] = True
                 self.scan_options['rce_enabled'] = outcome['rce']
         if extract_enabled:
-            outcome = ExtractConfigDialog(self.parent, self.theme, self.settings).show()
-            status = outcome.get('status')
+            # Get config path from settings manager
+            config_path = None
+            if self.settings:
+                config_path = self.settings.get_setting('backend.config_path', None)
+                if not config_path and hasattr(self.settings, "get_smbseek_config_path"):
+                    config_path = self.settings.get_smbseek_config_path()
+
+            outcome = BatchExtractSettingsDialog(
+                parent=self.parent,
+                theme=self.theme,
+                settings_manager=self.settings,
+                config_path=config_path,
+                mode="preflight"
+            ).show()
+            status = outcome.get('status') if outcome else 'abort'
             if status == 'abort':
                 return None
             if status == 'disable':
