@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 
 from style import get_theme
 from template_store import TemplateStore
+from .scan_preflight import run_preflight
 
 
 class ScanDialog:
@@ -2028,6 +2029,17 @@ class ScanDialog:
         try:
             # Build complete scan options dict
             scan_options = self._build_scan_options(country_param)
+
+            preflight_result = run_preflight(
+                self.dialog,
+                self.theme,
+                self._settings_manager,
+                scan_options,
+                scan_desc
+            )
+            if preflight_result is None:
+                return
+            scan_options = preflight_result
 
             # Set results and close dialog
             self.result = "start"
