@@ -404,6 +404,13 @@ class ServerListWindow:
         )
         self.theme.apply_to_widget(self.stop_button, "button_secondary")
         self.stop_button.pack(side=tk.LEFT, padx=(0, 20))
+        self._stop_button_original_style = {
+            "bg": self.stop_button.cget("bg"),
+            "fg": self.stop_button.cget("fg"),
+            "activebackground": self.stop_button.cget("activebackground"),
+            "activeforeground": self.stop_button.cget("activeforeground"),
+            "text": self.stop_button.cget("text")
+        }
 
         # Server details button
         details_button = tk.Button(
@@ -1125,6 +1132,7 @@ class ServerListWindow:
         self._set_table_interaction_enabled(True)
         if results:
             self._show_batch_summary(job_type, results)
+        self._update_stop_button_style(False)
 
     def _stop_active_batch(self) -> None:
         if not self._is_batch_active():
@@ -1137,6 +1145,7 @@ class ServerListWindow:
             executor.shutdown(wait=False, cancel_futures=True)
         self._set_status("Stopping batch…")
         self._update_action_buttons_state()
+        self._update_stop_button_style(False)
 
     def _is_batch_active(self) -> bool:
         return bool(self.batch_job and self.batch_job.get("completed", 0) < self.batch_job.get("total", 0))
