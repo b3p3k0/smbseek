@@ -1125,8 +1125,41 @@ class ServerListWindow:
 
         if self.stop_button:
             self.stop_button.configure(state=tk.NORMAL if batch_active else tk.DISABLED)
+            self._update_stop_button_style(batch_active)
 
         self._update_context_menu_state()
+
+    def _update_stop_button_style(self, batch_active: bool) -> None:
+        if not self.stop_button:
+            return
+
+        if not hasattr(self, "_stop_button_original_style"):
+            self._stop_button_original_style = {
+                "bg": self.stop_button.cget("bg"),
+                "fg": self.stop_button.cget("fg"),
+                "activebackground": self.stop_button.cget("activebackground"),
+                "activeforeground": self.stop_button.cget("activeforeground"),
+                "text": self.stop_button.cget("text")
+            }
+
+        if batch_active:
+            self.stop_button.configure(
+                bg="#b00020",
+                fg="#ffffff",
+                activebackground="#d32f2f",
+                activeforeground="#ffffff",
+                text="⏹ Stop Batch (running)"
+            )
+        else:
+            original = getattr(self, "_stop_button_original_style", None)
+            if original:
+                self.stop_button.configure(
+                    bg=original.get("bg"),
+                    fg=original.get("fg"),
+                    activebackground=original.get("activebackground"),
+                    activeforeground=original.get("activeforeground"),
+                    text=original.get("text", "⏹ Stop Batch")
+                )
 
     def _update_context_menu_state(self) -> None:
         if not self.context_menu:
