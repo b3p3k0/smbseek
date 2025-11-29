@@ -127,6 +127,10 @@ class ScanDialog:
         # RCE vulnerability analysis toggle (default disabled)
         self.rce_enabled_var = tk.BooleanVar(value=False)
 
+        # Bulk operation toggles (default disabled)
+        self.bulk_probe_enabled_var = tk.BooleanVar(value=False)
+        self.bulk_extract_enabled_var = tk.BooleanVar(value=False)
+
         self._concurrency_upper_limit = 256
         self._delay_upper_limit = 3600
 
@@ -349,13 +353,15 @@ class ScanDialog:
         self._create_region_selection(left_column)
         self._create_max_results_option(left_column)
         self._create_recent_hours_option(left_column)
+        self._create_concurrency_options(left_column)
+        self._create_rate_limit_options(left_column)
 
         # Right column: execution controls
         self._create_security_mode_option(right_column)
+        self._create_bulk_probe_option(right_column)
+        self._create_bulk_extract_option(right_column)
         self._create_rce_analysis_option(right_column)
         self._create_rescan_options(right_column)
-        self._create_concurrency_options(right_column)
-        self._create_rate_limit_options(right_column)
         self._create_api_key_option(right_column)
 
     def _create_template_toolbar(self, parent_frame: tk.Frame) -> None:
@@ -532,7 +538,9 @@ class ScanDialog:
             "rate_limit_delay": self.rate_limit_delay_var.get(),
             "share_access_delay": self.share_access_delay_var.get(),
             "api_key_override": self.api_key_var.get(),
-            "rce_enabled": self.rce_enabled_var.get()
+            "rce_enabled": self.rce_enabled_var.get(),
+            "bulk_probe_enabled": self.bulk_probe_enabled_var.get(),
+            "bulk_extract_enabled": self.bulk_extract_enabled_var.get()
         }
 
     def _apply_form_state(self, state: Dict[str, Any]) -> None:
@@ -579,6 +587,10 @@ class ScanDialog:
 
         # RCE analysis setting (with backward compatibility)
         self.rce_enabled_var.set(bool(state.get("rce_enabled", False)))
+
+        # Bulk operation settings (with backward compatibility)
+        self.bulk_probe_enabled_var.set(bool(state.get("bulk_probe_enabled", False)))
+        self.bulk_extract_enabled_var.set(bool(state.get("bulk_extract_enabled", False)))
 
         self._update_region_status()
 
@@ -968,6 +980,66 @@ class ScanDialog:
             fg=self.theme.colors.get("text_warning", self.theme.colors.get("warning", "#d97706"))
         )
         confidence_label.pack(anchor="w", padx=15, pady=(0, 5))
+
+    def _create_bulk_probe_option(self, parent_frame: tk.Frame) -> None:
+        """Create bulk probe automation checkbox."""
+        container = tk.Frame(parent_frame)
+        self.theme.apply_to_widget(container, "card")
+        container.pack(fill=tk.X, padx=15, pady=(0, 10))
+
+        heading = self._create_accent_heading(container, "🔍 Bulk Probe")
+        heading.pack(fill=tk.X)
+
+        options_frame = tk.Frame(container)
+        self.theme.apply_to_widget(options_frame, "card")
+        options_frame.pack(fill=tk.X, pady=(5, 5))
+
+        bulk_probe_checkbox = tk.Checkbutton(
+            options_frame,
+            text="Run bulk probe after scan",
+            variable=self.bulk_probe_enabled_var,
+            font=self.theme.fonts["small"]
+        )
+        self.theme.apply_to_widget(bulk_probe_checkbox, "checkbox")
+        bulk_probe_checkbox.pack(anchor="w", padx=10, pady=2)
+
+        info_label = self.theme.create_styled_label(
+            container,
+            "Automatically probe all servers with successful authentication.",
+            "small",
+            fg=self.theme.colors["text_secondary"]
+        )
+        info_label.pack(anchor="w", padx=15, pady=(0, 5))
+
+    def _create_bulk_extract_option(self, parent_frame: tk.Frame) -> None:
+        """Create bulk extract automation checkbox."""
+        container = tk.Frame(parent_frame)
+        self.theme.apply_to_widget(container, "card")
+        container.pack(fill=tk.X, padx=15, pady=(0, 10))
+
+        heading = self._create_accent_heading(container, "📦 Bulk Extract")
+        heading.pack(fill=tk.X)
+
+        options_frame = tk.Frame(container)
+        self.theme.apply_to_widget(options_frame, "card")
+        options_frame.pack(fill=tk.X, pady=(5, 5))
+
+        bulk_extract_checkbox = tk.Checkbutton(
+            options_frame,
+            text="Run bulk extract after scan",
+            variable=self.bulk_extract_enabled_var,
+            font=self.theme.fonts["small"]
+        )
+        self.theme.apply_to_widget(bulk_extract_checkbox, "checkbox")
+        bulk_extract_checkbox.pack(anchor="w", padx=10, pady=2)
+
+        info_label = self.theme.create_styled_label(
+            container,
+            "Automatically extract files from servers with successful authentication.",
+            "small",
+            fg=self.theme.colors["text_secondary"]
+        )
+        info_label.pack(anchor="w", padx=15, pady=(0, 5))
 
     def _create_concurrency_options(self, parent_frame: tk.Frame) -> None:
         """Create backend concurrency controls."""
@@ -1663,6 +1735,8 @@ class ScanDialog:
                 self._settings_manager.set_setting('scan_dialog.share_access_delay', share_access_delay)
                 self._settings_manager.set_setting('scan_dialog.security_mode', security_mode)
                 self._settings_manager.set_setting('scan_dialog.rce_enabled', self.rce_enabled_var.get())
+                self._settings_manager.set_setting('scan_dialog.bulk_probe_enabled', self.bulk_probe_enabled_var.get())
+                self._settings_manager.set_setting('scan_dialog.bulk_extract_enabled', self.bulk_extract_enabled_var.get())
 
                 # Save region selections
                 self._settings_manager.set_setting('scan_dialog.region_africa', self.africa_var.get())
@@ -1688,7 +1762,9 @@ class ScanDialog:
             'rate_limit_delay': rate_limit_delay,
             'share_access_delay': share_access_delay,
             'security_mode': security_mode,
-            'rce_enabled': self.rce_enabled_var.get()
+            'rce_enabled': self.rce_enabled_var.get(),
+            'bulk_probe_enabled': self.bulk_probe_enabled_var.get(),
+            'bulk_extract_enabled': self.bulk_extract_enabled_var.get()
         }
 
         return scan_options
@@ -1733,6 +1809,12 @@ class ScanDialog:
                 # Load RCE analysis setting
                 rce_enabled = bool(self._settings_manager.get_setting('scan_dialog.rce_enabled', False))
                 self.rce_enabled_var.set(rce_enabled)
+
+                # Load bulk operation settings
+                bulk_probe_enabled = bool(self._settings_manager.get_setting('scan_dialog.bulk_probe_enabled', False))
+                bulk_extract_enabled = bool(self._settings_manager.get_setting('scan_dialog.bulk_extract_enabled', False))
+                self.bulk_probe_enabled_var.set(bulk_probe_enabled)
+                self.bulk_extract_enabled_var.set(bulk_extract_enabled)
 
                 # Load region selections
                 africa = bool(self._settings_manager.get_setting('scan_dialog.region_africa', False))

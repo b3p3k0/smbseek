@@ -61,10 +61,6 @@ SMBSeek ships its Python libraries via `requirements.txt`, but a handful of host
 | `smbclient` | Enables native share enumeration and access testing; the CLI falls back to reduced functionality if it is missing. |
 | `podman` (or Docker) | Only required for the optional sandboxed Explore workflow and investigation shell on Linux. Drop it if you never launch those features. |
 
-#### Copy/paste install commands
-
-The commands below target current LTS releases. Feel free to remove `podman` if you do not need the sandbox runtime.
-
 ##### Ubuntu 24.04 LTS / Debian-based
 
 ```bash

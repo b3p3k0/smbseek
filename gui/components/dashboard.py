@@ -69,6 +69,7 @@ class DashboardWidget:
         
         # Dashboard state
         self.current_scan = None
+        self.current_scan_options = None  # Store options for post-scan batch operations
         self.last_update = None
         
         # Scan management
@@ -826,6 +827,9 @@ class DashboardWidget:
             if self.scan_button_state != "idle":
                 return  # External scan detected, don't proceed
 
+            # Store scan options for post-scan batch operations
+            self.current_scan_options = scan_options
+
             # Get backend path for external SMBSeek installation
             backend_path = getattr(self.backend_interface, "backend_path", "./smbseek")
             backend_path = str(backend_path)
@@ -980,6 +984,11 @@ class DashboardWidget:
                     elif results:
                         # Show normal results dialog for completed/failed scans
                         self._show_scan_results(results)
+
+                        # Check if post-scan batch operations should run
+                        if self.current_scan_options and results.get("status") == "success":
+                            self._run_post_scan_batch_operations(self.current_scan_options, results)
+
                         try:
                             self.parent.after(5000, self._reset_scan_status)
                         except tk.TclError:
@@ -1027,7 +1036,86 @@ class DashboardWidget:
         except tk.TclError:
             # UI not available
             pass
-    
+
+    def _run_post_scan_batch_operations(self, scan_options: Dict[str, Any], scan_results: Dict[str, Any]) -> None:
+        """Run bulk probe/extract operations after successful scan completion."""
+        try:
+            # Check if any bulk operations are enabled
+            bulk_probe_enabled = scan_options.get('bulk_probe_enabled', False)
+            bulk_extract_enabled = scan_options.get('bulk_extract_enabled', False)
+
+            if not (bulk_probe_enabled or bulk_extract_enabled):
+                return  # No bulk operations requested
+
+            # Query database for servers with successful authentication
+            successful_servers = self._get_servers_with_successful_auth()
+
+            if not successful_servers:
+                # Show info message only if bulk operations were enabled
+                messagebox.showinfo(
+                    "Bulk Operations Skipped",
+                    "No servers with successful authentication found.\n\n"
+                    "Bulk probe/extract operations require at least one accessible server."
+                )
+                return
+
+            # TODO: Implement actual batch operation execution
+            # For now, show a notification about what would happen
+            ops = []
+            if bulk_probe_enabled:
+                ops.append("bulk probe")
+            if bulk_extract_enabled:
+                ops.append("bulk extract")
+
+            messagebox.showinfo(
+                "Post-Scan Batch Operations",
+                f"Ready to run {' and '.join(ops)} on {len(successful_servers)} server(s).\n\n"
+                f"Full implementation coming soon.\n\n"
+                f"This will use the existing batch infrastructure from Server List Browser:\n"
+                f"- ThreadPoolExecutor with configurable workers\n"
+                f"- Progress dialog with cancel button\n"
+                f"- Probe results → probe cache\n"
+                f"- Extract results → quarantine directories"
+            )
+
+            # TODO: Actual implementation should:
+            # 1. Load settings from settings_manager (probe.batch_max_workers, extract.*, etc.)
+            # 2. Create progress dialog with cancel button
+            # 3. Use probe_runner.run_probe() for each server (if bulk_probe_enabled)
+            # 4. Use extract_runner.run_extract() for each server (if bulk_extract_enabled)
+            # 5. Show summary when complete
+            # 6. Handle errors gracefully
+
+        except Exception as e:
+            messagebox.showerror(
+                "Batch Operations Error",
+                f"Error initializing post-scan batch operations: {str(e)}\n\n"
+                f"The scan completed successfully but bulk operations could not start."
+            )
+
+    def _get_servers_with_successful_auth(self) -> list:
+        """Query database for servers with successful authentication."""
+        try:
+            # Query the database for servers where authentication succeeded
+            # This should match the logic used in Server List Browser
+            if not self.db_reader:
+                return []
+
+            servers = self.db_reader.get_all_servers()
+
+            # Filter for servers with successful authentication
+            # A server has successful auth if it has at least one accessible share
+            successful = []
+            for server in servers:
+                if server.get('accessible_shares_count', 0) > 0:
+                    successful.append(server)
+
+            return successful
+
+        except Exception as e:
+            print(f"Error querying servers with successful auth: {e}")
+            return []
+
     def _show_scan_results(self, results: Dict[str, Any]) -> None:
         """Show scan results dialog."""
         try:
