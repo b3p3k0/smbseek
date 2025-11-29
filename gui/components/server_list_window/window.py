@@ -104,6 +104,8 @@ class ServerListWindow:
         self.table_overlay = None
         self.table_overlay_label = None
         self._stop_button_original_style = None
+        self._context_menu_visible = False
+        self._context_menu_bindings = []
 
         # Date filtering state
         self.filter_recent = self.window_data.get("filter_recent", False)
@@ -648,6 +650,7 @@ class ServerListWindow:
     # Batch + context actions
 
     def _on_probe_selected(self) -> None:
+        self._hide_context_menu()
         if self._is_batch_active():
             messagebox.showinfo("Batch Running", "Please wait for the current batch to finish or stop it before starting a new probe batch.")
             return
@@ -664,6 +667,7 @@ class ServerListWindow:
         self._start_batch_job("probe", targets, dialog_config)
 
     def _on_extract_selected(self) -> None:
+        self._hide_context_menu()
         if self._is_batch_active():
             messagebox.showinfo("Batch Running", "Please wait for the current batch to finish or stop it before starting a new extract batch.")
             return
@@ -680,6 +684,7 @@ class ServerListWindow:
         self._start_batch_job("extract", targets, dialog_config)
 
     def _handle_explore_selected(self) -> None:
+        self._hide_context_menu()
         if not self.sandbox_manager or not self.sandbox_manager.is_available():
             messagebox.showwarning("Sandbox Required", "Podman or Docker is required for sandboxed Explore. Install it and try again.")
             return
@@ -1252,6 +1257,8 @@ class ServerListWindow:
     def _show_context_menu(self, event) -> str:
         if not self.tree or not self.context_menu:
             return "break"
+        if self._context_menu_visible:
+            self._hide_context_menu()
         row = self.tree.identify_row(event.y)
         if not row:
             return "break"
@@ -1263,7 +1270,39 @@ class ServerListWindow:
             self.context_menu.tk_popup(event.x_root, event.y_root)
         finally:
             self.context_menu.grab_release()
+        self._context_menu_visible = True
+        self._install_context_dismiss_handlers()
         return "break"
+
+    def _install_context_dismiss_handlers(self) -> None:
+        self._remove_context_dismiss_handlers()
+        for sequence in ("<Button-1>", "<Button-3>"):
+            bind_id = self.tree.bind(sequence, self._handle_context_dismiss_click, add="+")
+            if bind_id:
+                self._context_menu_bindings.append((sequence, bind_id))
+
+    def _remove_context_dismiss_handlers(self) -> None:
+        if not self._context_menu_bindings:
+            return
+        for sequence, bind_id in self._context_menu_bindings:
+            try:
+                self.tree.unbind(sequence, bind_id)
+            except Exception:
+                pass
+        self._context_menu_bindings = []
+
+    def _handle_context_dismiss_click(self, event=None):
+        self._hide_context_menu()
+
+    def _hide_context_menu(self) -> None:
+        if not self._context_menu_visible or not self.context_menu:
+            return
+        try:
+            self.context_menu.unpost()
+        except Exception:
+            pass
+        self._context_menu_visible = False
+        self._remove_context_dismiss_handlers()
 
     def _confirm_explore_many(self, count: int) -> bool:
         return messagebox.askokcancel(
