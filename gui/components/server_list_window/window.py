@@ -921,7 +921,8 @@ class ServerListWindow:
             "cancel_event": cancel_event,
             "results": [],
             "completed": 0,
-            "total": len(targets)
+            "total": len(targets),
+            "futures": []
         }
 
         self._set_status(f"Running {job_type} batch (0/{len(targets)})…")
@@ -929,6 +930,7 @@ class ServerListWindow:
 
         for target in targets:
             future = executor.submit(self._run_batch_task, job_type, target, options, cancel_event)
+            self.batch_job["futures"].append((target, future))
             future.add_done_callback(lambda fut, target=target: self.window.after(0, self._on_batch_future_done, target, fut))
 
         self._set_table_interaction_enabled(False)
@@ -1143,9 +1145,25 @@ class ServerListWindow:
         executor = self.batch_job.get("executor")
         if executor:
             executor.shutdown(wait=False, cancel_futures=True)
-        self._set_status("Stopping batch…")
-        self._update_action_buttons_state()
-        self._update_stop_button_style(False)
+
+        pending = []
+        futures = self.batch_job.get("futures", [])
+        for target, future in futures:
+            if not future.done():
+                future.cancel()
+                pending.append(target)
+
+        for target in pending:
+            self.batch_job["results"].append({
+                "ip_address": target.get("ip_address"),
+                "action": self.batch_job.get("type", "batch"),
+                "status": "cancelled",
+                "notes": "Stopped by user"
+            })
+
+        self.batch_job["completed"] = self.batch_job["total"]
+        self._set_status("Batch stopped")
+        self._finalize_batch_job()
 
     def _is_batch_active(self) -> bool:
         return bool(self.batch_job and self.batch_job.get("completed", 0) < self.batch_job.get("total", 0))
