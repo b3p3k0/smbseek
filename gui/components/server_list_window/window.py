@@ -413,31 +413,31 @@ class ServerListWindow:
         }
 
         # Server details button
-        details_button = tk.Button(
+        self.details_button = tk.Button(
             button_container,
             text="📋 View Details",
             command=self._view_server_details
         )
-        self.theme.apply_to_widget(details_button, "button_secondary")
-        details_button.pack(side=tk.LEFT, padx=(0, 5))
+        self.theme.apply_to_widget(self.details_button, "button_secondary")
+        self.details_button.pack(side=tk.LEFT, padx=(0, 5))
 
         # Export selected button
-        export_selected_button = tk.Button(
+        self.export_selected_button = tk.Button(
             button_container,
             text="📤 Export Selected",
             command=self._export_selected_servers
         )
-        self.theme.apply_to_widget(export_selected_button, "button_secondary")
-        export_selected_button.pack(side=tk.LEFT, padx=(0, 5))
+        self.theme.apply_to_widget(self.export_selected_button, "button_secondary")
+        self.export_selected_button.pack(side=tk.LEFT, padx=(0, 5))
 
         # Export all button
-        export_all_button = tk.Button(
+        self.export_all_button = tk.Button(
             button_container,
             text="📊 Export All",
             command=self._export_all_servers
         )
-        self.theme.apply_to_widget(export_all_button, "button_primary")
-        export_all_button.pack(side=tk.LEFT)
+        self.theme.apply_to_widget(self.export_all_button, "button_primary")
+        self.export_all_button.pack(side=tk.LEFT)
 
         self._update_action_buttons_state()
 
@@ -1171,6 +1171,18 @@ class ServerListWindow:
         if self.stop_button:
             self.stop_button.configure(state=tk.NORMAL if batch_active else tk.DISABLED)
             self._update_stop_button_style(batch_active)
+
+        detail_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
+        if self.details_button:
+            self.details_button.configure(state=detail_state)
+
+        export_selected_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
+        if self.export_selected_button:
+            self.export_selected_button.configure(state=export_selected_state)
+
+        export_all_state = tk.NORMAL if not batch_active else tk.DISABLED
+        if self.export_all_button:
+            self.export_all_button.configure(state=export_all_state)
 
         self._update_context_menu_state()
 
