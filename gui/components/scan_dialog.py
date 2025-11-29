@@ -1041,6 +1041,56 @@ class ScanDialog:
         )
         info_label.pack(anchor="w", padx=15, pady=(0, 5))
 
+        # Load extension filters and display counts
+        filters = self._load_extension_filters()
+        allowed_count = len(filters["included_extensions"])
+        denied_count = len(filters["excluded_extensions"])
+
+        # Build count display text
+        if allowed_count == 0:
+            allowed_text = "None configured"
+        else:
+            allowed_text = f"{allowed_count} allowed"
+
+        if denied_count == 0:
+            denied_text = "No restrictions"
+        else:
+            denied_text = f"{denied_count} denied"
+
+        # Extension count label
+        ext_label = self.theme.create_styled_label(
+            container,
+            f"Extensions: {allowed_text}, {denied_text}",
+            "small",
+            fg=self.theme.colors["text_secondary"]
+        )
+        ext_label.pack(anchor="w", padx=15, pady=(5, 0))
+
+        # Button frame for side-by-side buttons
+        button_frame = tk.Frame(container)
+        self.theme.apply_to_widget(button_frame, "card")
+        button_frame.pack(anchor="w", padx=15, pady=(5, 5))
+
+        # View Filters button
+        view_button = tk.Button(
+            button_frame,
+            text="View Filters",
+            command=self._show_extension_table,
+            font=self.theme.fonts["small"]
+        )
+        self.theme.apply_to_widget(view_button, "button_secondary")
+        view_button.pack(side=tk.LEFT, padx=(0, 5))
+
+        # Edit Configuration button
+        config_button = tk.Button(
+            button_frame,
+            text="⚙ Edit Configuration",
+            command=self._open_config_editor,
+            font=self.theme.fonts["small"]
+        )
+        self.theme.apply_to_widget(config_button, "button_secondary")
+        config_button.pack(side=tk.LEFT)
+
     def _create_concurrency_options(self, parent_frame: tk.Frame) -> None:
         """Create backend concurrency controls."""
         concurrency_container = tk.Frame(parent_frame)
@@ -1579,7 +1629,111 @@ class ScanDialog:
             # Remove non-numeric characters, keep only digits
             cleaned = ''.join(c for c in recent_text if c.isdigit())
             self.recent_hours_var.set(cleaned)
-    
+
+    def _load_extension_filters(self) -> Dict[str, list]:
+        """Load extension filters from config.json."""
+        defaults = {
+            "included_extensions": [],
+            "excluded_extensions": []
+        }
+
+        config_path = None
+        if self._settings_manager:
+            config_path = self._settings_manager.get_setting('backend.config_path', None)
+            if not config_path and hasattr(self._settings_manager, "get_smbseek_config_path"):
+                config_path = self._settings_manager.get_smbseek_config_path()
+
+        if not config_path:
+            config_path = self.config_path
+
+        if config_path and Path(config_path).exists():
+            try:
+                config_data = json.loads(Path(config_path).read_text(encoding="utf-8"))
+                file_cfg = config_data.get("file_collection", {})
+                defaults["included_extensions"] = file_cfg.get("included_extensions", [])
+                defaults["excluded_extensions"] = file_cfg.get("excluded_extensions", [])
+            except Exception:
+                pass  # Use defaults on any error
+
+        return defaults
+
+    def _show_extension_table(self):
+        """Show modal dialog with extension filter table."""
+        filters = self._load_extension_filters()
+
+        # Create modal dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Extension Filters")
+        dialog.geometry("600x400")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        self.theme.apply_to_widget(dialog, "window")
+
+        # Main container
+        main_frame = tk.Frame(dialog)
+        self.theme.apply_to_widget(main_frame, "card")
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Two-column layout (Allowed | Denied)
+        columns_frame = tk.Frame(main_frame)
+        self.theme.apply_to_widget(columns_frame, "card")
+        columns_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Allowed column
+        allowed_frame = tk.Frame(columns_frame)
+        self.theme.apply_to_widget(allowed_frame, "card")
+        allowed_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
+
+        allowed_label = self.theme.create_styled_label(
+            allowed_frame,
+            "Allowed Extensions",
+            "medium"
+        )
+        allowed_label.pack(anchor="w", pady=5)
+
+        allowed_text = tk.Text(allowed_frame, height=15, width=25)
+        self.theme.apply_to_widget(allowed_text, "text")
+        allowed_text.pack(fill=tk.BOTH, expand=True)
+
+        allowed_list = filters["included_extensions"]
+        if allowed_list:
+            allowed_text.insert("1.0", "\n".join(allowed_list))
+        else:
+            allowed_text.insert("1.0", "None configured")
+        allowed_text.config(state="disabled")
+
+        # Denied column
+        denied_frame = tk.Frame(columns_frame)
+        self.theme.apply_to_widget(denied_frame, "card")
+        denied_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
+
+        denied_label = self.theme.create_styled_label(
+            denied_frame,
+            "Denied Extensions",
+            "medium"
+        )
+        denied_label.pack(anchor="w", pady=5)
+
+        denied_text = tk.Text(denied_frame, height=15, width=25)
+        self.theme.apply_to_widget(denied_text, "text")
+        denied_text.pack(fill=tk.BOTH, expand=True)
+
+        denied_list = filters["excluded_extensions"]
+        if denied_list:
+            denied_text.insert("1.0", "\n".join(denied_list))
+        else:
+            denied_text.insert("1.0", "No restrictions")
+        denied_text.config(state="disabled")
+
+        # Close button
+        close_button = tk.Button(
+            main_frame,
+            text="Close",
+            command=dialog.destroy
+        )
+        self.theme.apply_to_widget(close_button, "button_primary")
+        close_button.pack(pady=10)
+
     def _open_config_editor(self) -> None:
         """Open configuration editor."""
         try:
