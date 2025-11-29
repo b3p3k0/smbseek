@@ -12,6 +12,7 @@ import json
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from threading import Event
 
 try:  # pragma: no cover - runtime dependency
     from impacket.smbconnection import SMBConnection
@@ -42,6 +43,7 @@ def run_extract(
     delay_seconds: float,
     connection_timeout: int,
     progress_callback: Optional[Callable[[str, int, Optional[int]], None]] = None,
+    cancel_event: Optional[Event] = None,
 ) -> Dict[str, Any]:
     """
     Download files from accessible shares while enforcing guardrails.
@@ -70,6 +72,8 @@ def run_extract(
             "impacket is not available. Install it in the GUI environment "
             "(e.g., pip install impacket) to enable extraction."
         )
+
+    _check_cancel(cancel_event)
 
     normalized_shares = [share.strip("\\/ ") for share in shares if share.strip("\\/ ")]
     if not normalized_shares:
@@ -110,6 +114,7 @@ def run_extract(
     total_files = 0
 
     for share in normalized_shares:
+        _check_cancel(cancel_event)
         if _time_exceeded(start_time, max_seconds):
             summary["timed_out"] = True
             summary["stop_reason"] = "time_limit"
@@ -126,6 +131,7 @@ def run_extract(
 
         try:
             for file_info in _walk_files(conn, share, max_depth):
+                _check_cancel(cancel_event)
                 if _time_exceeded(start_time, max_seconds):
                     summary["timed_out"] = True
                     summary["stop_reason"] = "time_limit"
@@ -185,6 +191,7 @@ def run_extract(
                 })
 
                 if delay_seconds > 0:
+                    _check_cancel(cancel_event)
                     time.sleep(delay_seconds)
 
                 if max_total_bytes > 0 and total_bytes >= max_total_bytes:
@@ -208,6 +215,11 @@ def run_extract(
     summary["finished_at"] = _utcnow()
 
     return summary
+
+
+def _check_cancel(cancel_event: Optional[Event]) -> None:
+    if cancel_event and cancel_event.is_set():
+        raise ExtractError("Extraction cancelled")
 
 
 def write_extract_log(summary: Dict[str, Any]) -> Path:

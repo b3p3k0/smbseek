@@ -95,7 +95,16 @@ class SettingsManager:
                 'max_directories_per_share': 3,
                 'max_files_per_directory': 5,
                 'share_timeout_seconds': 10,
-                'status_by_ip': {}
+                'status_by_ip': {},
+                'batch_max_workers': 3
+            },
+            'extract': {
+                'last_directory': '',
+                'max_file_size_mb': 50,
+                'max_total_size_mb': 200,
+                'max_time_seconds': 300,
+                'max_files_per_target': 10,
+                'batch_max_workers': 2
             },
             'templates': {
                 'last_used': None

@@ -8,7 +8,8 @@ of directories/files per share so the GUI can render a quick preview.
 from __future__ import annotations
 
 import datetime as _dt
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+from threading import Event
 
 try:
     from impacket.smbconnection import SMBConnection
@@ -25,6 +26,11 @@ class ProbeError(RuntimeError):
     """Raised when a probe operation fails."""
 
 
+def _check_cancel(cancel_event: Optional[Event]) -> None:
+    if cancel_event and cancel_event.is_set():
+        raise ProbeError("Probe cancelled")
+
+
 def run_probe(
     ip_address: str,
     shares: List[str],
@@ -34,7 +40,9 @@ def run_probe(
     timeout_seconds: int,
     username: str = DEFAULT_USERNAME,
     password: str = DEFAULT_PASSWORD,
-    enable_rce_analysis: bool = False
+    enable_rce_analysis: bool = False,
+    cancel_event: Optional[Event] = None,
+    allow_empty: bool = False
 ) -> Dict[str, Any]:
     """
     Enumerate limited directory/file information for each accessible share.
@@ -58,7 +66,10 @@ def run_probe(
             "(e.g., pip install impacket) to enable probe support."
         )
 
-    if not shares:
+    _check_cancel(cancel_event)
+
+    normalized_shares = [share.strip("\\/ ") for share in shares if share.strip("\\/ ")]
+    if not normalized_shares and not allow_empty:
         raise ProbeError("No accessible shares available to probe.")
 
     snapshot = {
@@ -73,7 +84,8 @@ def run_probe(
         "errors": []
     }
 
-    for raw_share in shares:
+    for raw_share in normalized_shares:
+        _check_cancel(cancel_event)
         share_name = raw_share.strip("\\/ ")
         if not share_name:
             continue
@@ -86,7 +98,8 @@ def run_probe(
                 max_files=max_files,
                 timeout_seconds=timeout_seconds,
                 username=username,
-                password=password
+                password=password,
+                cancel_event=cancel_event
             )
             snapshot["shares"].append(share_result)
         except Exception as exc:  # pragma: no cover
@@ -97,6 +110,7 @@ def run_probe(
 
     # RCE vulnerability analysis (if enabled)
     if enable_rce_analysis:
+        _check_cancel(cancel_event)
         try:
             from shared.rce_scanner import scan_rce_indicators
 
@@ -157,7 +171,8 @@ def _probe_share(
     max_files: int,
     timeout_seconds: int,
     username: str,
-    password: str
+    password: str,
+    cancel_event: Optional[Event] = None
 ) -> Dict[str, Any]:
     """Probe a single share and return structured directory/file info."""
     conn = _connect(ip_address, timeout_seconds)
@@ -172,6 +187,7 @@ def _probe_share(
 
         directory_payload = []
         for dir_entry in selected_dirs:
+            _check_cancel(cancel_event)
             safe_dir = dir_entry["name"].strip("\\/")
             nested_pattern = f"{safe_dir}\\*"
             nested_entries = _list_entries(conn, share_name, pattern=nested_pattern)

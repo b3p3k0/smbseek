@@ -6,9 +6,14 @@ Maintains all shared state and coordinates between components.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from pathlib import Path
+from typing import Dict, List, Any, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor, Future
+import threading
+import platform
+import csv
 import os
 import sys
 
@@ -29,7 +34,9 @@ except ImportError:
 
 # Import modular components
 from . import export, details, filters, table
-from gui.utils import probe_cache, probe_patterns
+from gui.utils import probe_cache, probe_patterns, probe_runner, extract_runner
+from gui.utils.sandbox_manager import get_sandbox_manager, SandboxUnavailable
+from shared.quarantine import create_quarantine_dir
 
 
 class ServerListWindow:
@@ -89,6 +96,11 @@ class ServerListWindow:
         self.status_label = None
         self.mode_button = None
         self.show_all_button = None
+        self.context_menu = None
+        self.probe_button = None
+        self.extract_button = None
+        self.explore_button = None
+        self.stop_button = None
 
         # Date filtering state
         self.filter_recent = self.window_data.get("filter_recent", False)
@@ -98,6 +110,8 @@ class ServerListWindow:
         self.all_servers = []
         self.filtered_servers = []
         self.selected_servers = []
+        self.batch_job = None
+        self.sandbox_manager = get_sandbox_manager()
 
         # Window state
         self.is_advanced_mode = False
@@ -279,8 +293,24 @@ class ServerListWindow:
             self.window, self.theme, table_callbacks
         )
 
+        self._create_context_menu(self.tree)
+        self._bind_context_menu_events(self.tree)
+
         # Pack table frame
         self.table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+    def _create_context_menu(self, tree: ttk.Treeview) -> None:
+        self.context_menu = tk.Menu(self.window, tearoff=0)
+        self.context_menu.add_command(label="🔍 Probe Selected", command=self._on_probe_selected)
+        self.context_menu.add_command(label="📦 Extract Selected", command=self._on_extract_selected)
+        self.context_menu.add_command(label="🧭 Explore Selected", command=self._handle_explore_selected)
+        self._update_context_menu_state()
+
+    def _bind_context_menu_events(self, tree: ttk.Treeview) -> None:
+        tree.bind("<Button-3>", self._show_context_menu)
+        if platform.system() == "Darwin":
+            tree.bind("<Button-2>", self._show_context_menu)
+            tree.bind("<Control-Button-1>", self._show_context_menu)
 
     def _create_button_panel(self) -> None:
         """Create bottom button panel with actions."""
@@ -288,18 +318,66 @@ class ServerListWindow:
         self.theme.apply_to_widget(self.button_frame, "main_window")
         self.button_frame.pack(fill=tk.X, padx=10, pady=(5, 10))
 
-        # Left side - selection info
+        # Left side - selection + status info
+        info_container = tk.Frame(self.button_frame)
+        self.theme.apply_to_widget(info_container, "main_window")
+        info_container.pack(side=tk.LEFT, anchor="w")
+
         self.selection_label = self.theme.create_styled_label(
-            self.button_frame,
+            info_container,
             "No selection",
             "small"
         )
-        self.selection_label.pack(side=tk.LEFT)
+        self.selection_label.pack(anchor="w")
+
+        self.status_label = self.theme.create_styled_label(
+            info_container,
+            "Idle",
+            "small"
+        )
+        self.status_label.pack(anchor="w")
 
         # Right side - action buttons
         button_container = tk.Frame(self.button_frame)
         self.theme.apply_to_widget(button_container, "main_window")
         button_container.pack(side=tk.RIGHT)
+
+        # Batch/quick action buttons
+        self.probe_button = tk.Button(
+            button_container,
+            text="🔍 Probe Selected",
+            command=self._on_probe_selected,
+            state=tk.DISABLED
+        )
+        self.theme.apply_to_widget(self.probe_button, "button_primary")
+        self.probe_button.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.extract_button = tk.Button(
+            button_container,
+            text="📦 Extract Selected",
+            command=self._on_extract_selected,
+            state=tk.DISABLED
+        )
+        self.theme.apply_to_widget(self.extract_button, "button_secondary")
+        self.extract_button.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.explore_button = tk.Button(
+            button_container,
+            text="🧭 Explore Selected",
+            command=self._handle_explore_selected,
+            state=tk.DISABLED
+        )
+        self.theme.apply_to_widget(self.explore_button, "button_secondary")
+        self.explore_button.pack(side=tk.LEFT, padx=(0, 15))
+
+        self.stop_button = tk.Button(
+            button_container,
+            text="⏹ Stop Batch",
+            command=self._stop_active_batch,
+            state=tk.DISABLED
+        )
+        self.theme.apply_to_widget(self.stop_button, "button_secondary")
+        self.stop_button.pack(side=tk.LEFT, padx=(0, 20))
 
         # Server details button
         details_button = tk.Button(
@@ -327,6 +405,8 @@ class ServerListWindow:
         )
         self.theme.apply_to_widget(export_all_button, "button_primary")
         export_all_button.pack(side=tk.LEFT)
+
+        self._update_action_buttons_state()
 
     def _setup_event_handlers(self) -> None:
         """Setup event handlers for the window."""
@@ -374,6 +454,8 @@ class ServerListWindow:
         self.count_label.configure(
             text=f"Showing: {len(self.filtered_servers)} of {len(self.all_servers)} servers"
         )
+
+        self._update_action_buttons_state()
 
     def _load_data(self) -> None:
         """Load server data from database."""
@@ -432,6 +514,8 @@ class ServerListWindow:
             self.selection_label.configure(text="1 server selected")
         else:
             self.selection_label.configure(text=f"{selected_count} servers selected")
+
+        self._update_action_buttons_state()
 
     def _on_double_click(self, event) -> None:
         """Handle double-click on table row using table module."""
@@ -521,6 +605,647 @@ class ServerListWindow:
         export.show_export_menu(
             self.window, self.filtered_servers, "all", self.theme, get_export_engine()
         )
+
+    # Batch + context actions
+
+    def _on_probe_selected(self) -> None:
+        if self._is_batch_active():
+            messagebox.showinfo("Batch Running", "Please wait for the current batch to finish or stop it before starting a new probe batch.")
+            return
+
+        targets = self._build_selected_targets()
+        if not targets:
+            messagebox.showwarning("No Selection", "Please select at least one server to probe.")
+            return
+
+        dialog_config = self._prompt_probe_batch_settings(len(targets))
+        if not dialog_config:
+            return
+
+        self._start_batch_job("probe", targets, dialog_config)
+
+    def _on_extract_selected(self) -> None:
+        if self._is_batch_active():
+            messagebox.showinfo("Batch Running", "Please wait for the current batch to finish or stop it before starting a new extract batch.")
+            return
+
+        targets = self._build_selected_targets()
+        if not targets:
+            messagebox.showwarning("No Selection", "Please select at least one server to extract from.")
+            return
+
+        dialog_config = self._prompt_extract_batch_settings(len(targets))
+        if not dialog_config:
+            return
+
+        self._start_batch_job("extract", targets, dialog_config)
+
+    def _handle_explore_selected(self) -> None:
+        if not self.sandbox_manager or not self.sandbox_manager.is_available():
+            messagebox.showwarning("Sandbox Required", "Podman or Docker is required for sandboxed Explore. Install it and try again.")
+            return
+
+        selected_servers = table.get_selected_server_data(self.tree, self.filtered_servers)
+        if not selected_servers:
+            messagebox.showwarning("No Selection", "Select at least one server to explore.")
+            return
+
+        count = len(selected_servers)
+        if count > 5 and not self._confirm_explore_many(count):
+            return
+
+        for server in selected_servers:
+            if not self.sandbox_manager.is_available():
+                messagebox.showerror("Sandbox Unavailable", "Sandbox runtime became unavailable. Aborting remaining Explore launches.")
+                break
+            self._launch_explore_for_server(server)
+
+    def _prompt_probe_batch_settings(self, target_count: int) -> Optional[Dict[str, Any]]:
+        config = details._load_probe_config(self.settings_manager)
+        default_workers = 3
+        enable_rce_default = False
+        if self.settings_manager:
+            default_workers = int(self.settings_manager.get_setting('probe.batch_max_workers', default_workers))
+            rce_pref = self.settings_manager.get_setting('probe_dialog.rce_enabled', None)
+            enable_rce_default = bool(rce_pref) if rce_pref is not None else bool(self.settings_manager.get_setting('scan_dialog.rce_enabled', False))
+
+        default_workers = max(1, min(8, default_workers))
+
+        dialog = tk.Toplevel(self.window)
+        dialog.title("Batch Probe Settings")
+        dialog.transient(self.window)
+        dialog.grab_set()
+        self.theme.apply_to_widget(dialog, "main_window")
+
+        tk.Label(dialog, text=f"Targets selected: {target_count}").grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w")
+
+        worker_var = tk.IntVar(value=default_workers)
+        rce_var = tk.BooleanVar(value=enable_rce_default)
+        max_dirs_var = tk.IntVar(value=config["max_directories"])
+        max_files_var = tk.IntVar(value=config["max_files"])
+        timeout_var = tk.IntVar(value=config["timeout_seconds"])
+
+        def add_labeled_entry(row: int, label: str, var: tk.Variable):
+            tk.Label(dialog, text=label).grid(row=row, column=0, padx=10, pady=5, sticky="w")
+            tk.Entry(dialog, textvariable=var, width=10).grid(row=row, column=1, padx=10, pady=5, sticky="w")
+
+        tk.Label(dialog, text="Worker threads (max 8):").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        tk.Entry(dialog, textvariable=worker_var, width=10).grid(row=1, column=1, padx=10, pady=5, sticky="w")
+
+        add_labeled_entry(2, "Max directories/share:", max_dirs_var)
+        add_labeled_entry(3, "Max files/directory:", max_files_var)
+        add_labeled_entry(4, "Timeout per share (s):", timeout_var)
+
+        tk.Checkbutton(dialog, text="Enable RCE analysis", variable=rce_var).grid(row=5, column=0, columnspan=2, padx=10, pady=(5, 10), sticky="w")
+
+        result: Dict[str, Any] = {}
+
+        def on_start():
+            try:
+                workers = max(1, min(8, int(worker_var.get())))
+                max_dirs = max(1, int(max_dirs_var.get()))
+                max_files = max(1, int(max_files_var.get()))
+                timeout_val = max(1, int(timeout_var.get()))
+            except (ValueError, tk.TclError):
+                messagebox.showerror("Invalid Input", "Please enter numeric values for probe limits.", parent=dialog)
+                return
+
+            if self.settings_manager:
+                self.settings_manager.set_setting('probe.batch_max_workers', workers)
+                self.settings_manager.set_setting('probe.max_directories_per_share', max_dirs)
+                self.settings_manager.set_setting('probe.max_files_per_directory', max_files)
+                self.settings_manager.set_setting('probe.share_timeout_seconds', timeout_val)
+                self.settings_manager.set_setting('probe_dialog.rce_enabled', bool(rce_var.get()))
+
+            result.update({
+                "worker_count": workers,
+                "enable_rce": bool(rce_var.get()),
+                "limits": {
+                    "max_directories": max_dirs,
+                    "max_files": max_files,
+                    "timeout_seconds": timeout_val
+                }
+            })
+            dialog.destroy()
+
+        def on_cancel():
+            dialog.destroy()
+
+        button_frame = tk.Frame(dialog)
+        button_frame.grid(row=6, column=0, columnspan=2, pady=(0, 10))
+        tk.Button(button_frame, text="Cancel", command=on_cancel).pack(side=tk.RIGHT, padx=5)
+        tk.Button(button_frame, text="Start", command=on_start).pack(side=tk.RIGHT)
+
+        dialog.wait_window()
+        return result or None
+
+    def _prompt_extract_batch_settings(self, target_count: int) -> Optional[Dict[str, Any]]:
+        config = details._load_file_collection_config(self.settings_manager)
+        default_dir = config.get("default_path") or str(Path.home() / ".smbseek" / "quarantine")
+        if self.settings_manager:
+            default_dir = self.settings_manager.get_setting('extract.last_directory', default_dir)
+
+        default_workers = 2
+        if self.settings_manager:
+            default_workers = int(self.settings_manager.get_setting('extract.batch_max_workers', default_workers))
+
+        dialog = tk.Toplevel(self.window)
+        dialog.title("Batch Extract Settings")
+        dialog.transient(self.window)
+        dialog.grab_set()
+        self.theme.apply_to_widget(dialog, "main_window")
+
+        tk.Label(dialog, text=f"Targets selected: {target_count}").grid(row=0, column=0, columnspan=3, padx=10, pady=(10, 5), sticky="w")
+
+        worker_var = tk.IntVar(value=max(1, min(8, default_workers)))
+        path_var = tk.StringVar(value=default_dir)
+        max_file_var = tk.IntVar(value=config["max_file_size_mb"])
+        max_total_var = tk.IntVar(value=config["max_total_size_mb"])
+        max_time_var = tk.IntVar(value=config["max_time_seconds"])
+        max_count_var = tk.IntVar(value=config["max_files_per_target"])
+
+        tk.Label(dialog, text="Worker threads (max 8):").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        tk.Entry(dialog, textvariable=worker_var, width=10).grid(row=1, column=1, padx=10, pady=5, sticky="w")
+
+        tk.Label(dialog, text="Quarantine root:").grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        path_frame = tk.Frame(dialog)
+        path_frame.grid(row=2, column=1, columnspan=2, padx=10, pady=5, sticky="we")
+        tk.Entry(path_frame, textvariable=path_var, width=40).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        def browse_path():
+            selected = filedialog.askdirectory(parent=dialog, title="Select Quarantine Root")
+            if selected:
+                path_var.set(selected)
+
+        tk.Button(path_frame, text="Browse…", command=browse_path).pack(side=tk.LEFT, padx=(5, 0))
+
+        def add_limit(row: int, label: str, var: tk.Variable):
+            tk.Label(dialog, text=label).grid(row=row, column=0, padx=10, pady=5, sticky="w")
+            tk.Entry(dialog, textvariable=var, width=10).grid(row=row, column=1, padx=10, pady=5, sticky="w")
+
+        add_limit(3, "Max file size (MB):", max_file_var)
+        add_limit(4, "Max total size (MB):", max_total_var)
+        add_limit(5, "Max run time (s):", max_time_var)
+        add_limit(6, "Max files per host:", max_count_var)
+
+        info_text = (
+            f"Allowed extensions: {', '.join(config['included_extensions']) or 'All'}\n"
+            f"Blocked extensions: {', '.join(config['excluded_extensions']) or 'None'}"
+        )
+        tk.Label(dialog, text=info_text, justify="left").grid(row=7, column=0, columnspan=3, padx=10, pady=(5, 10), sticky="w")
+
+        result: Dict[str, Any] = {}
+
+        def on_start():
+            try:
+                workers = max(1, min(8, int(worker_var.get())))
+                max_file = max(1, int(max_file_var.get()))
+                max_total = max(1, int(max_total_var.get()))
+                max_time = max(30, int(max_time_var.get()))
+                max_count = max(1, int(max_count_var.get()))
+            except (ValueError, tk.TclError):
+                messagebox.showerror("Invalid Input", "Please enter numeric values for extraction limits.", parent=dialog)
+                return
+
+            base_path = path_var.get().strip() or default_dir
+            if self.settings_manager:
+                self.settings_manager.set_setting('extract.batch_max_workers', workers)
+                self.settings_manager.set_setting('extract.last_directory', base_path)
+                self.settings_manager.set_setting('extract.max_file_size_mb', max_file)
+                self.settings_manager.set_setting('extract.max_total_size_mb', max_total)
+                self.settings_manager.set_setting('extract.max_time_seconds', max_time)
+                self.settings_manager.set_setting('extract.max_files_per_target', max_count)
+
+            result.update({
+                "worker_count": workers,
+                "download_path": base_path,
+                "max_file_size_mb": max_file,
+                "max_total_size_mb": max_total,
+                "max_time_seconds": max_time,
+                "max_files_per_target": max_count,
+                "max_directory_depth": config["max_directory_depth"],
+                "download_delay_seconds": config["download_delay_seconds"],
+                "included_extensions": config["included_extensions"],
+                "excluded_extensions": config["excluded_extensions"],
+                "connection_timeout": config["connection_timeout"]
+            })
+            dialog.destroy()
+
+        def on_cancel():
+            dialog.destroy()
+
+        button_frame = tk.Frame(dialog)
+        button_frame.grid(row=8, column=0, columnspan=3, pady=(0, 10))
+        tk.Button(button_frame, text="Cancel", command=on_cancel).pack(side=tk.RIGHT, padx=5)
+        tk.Button(button_frame, text="Start", command=on_start).pack(side=tk.RIGHT)
+
+        dialog.wait_window()
+        return result or None
+
+    def _build_selected_targets(self) -> List[Dict[str, Any]]:
+        selected_servers = table.get_selected_server_data(self.tree, self.filtered_servers)
+        descriptors: List[Dict[str, Any]] = []
+        for server in selected_servers:
+            ip_address = server.get("ip_address")
+            if not ip_address:
+                continue
+            descriptors.append({
+                "ip_address": ip_address,
+                "auth_method": server.get("auth_method", ""),
+                "shares": self._parse_accessible_shares(server.get("accessible_shares_list")),
+                "data": server
+            })
+        return descriptors
+
+    @staticmethod
+    def _parse_accessible_shares(raw_value: Optional[Any]) -> List[str]:
+        if not raw_value:
+            return []
+        if isinstance(raw_value, list):
+            return [share.strip() for share in raw_value if isinstance(share, str) and share.strip()]
+        return [share.strip() for share in str(raw_value).split(',') if share.strip()]
+
+    def _start_batch_job(self, job_type: str, targets: List[Dict[str, Any]], options: Dict[str, Any]) -> None:
+        if not targets:
+            return
+
+        worker_count = max(1, min(8, int(options.get("worker_count", 1))))
+        cancel_event = threading.Event()
+        executor = ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix=f"{job_type}-batch")
+        options = {**options, "worker_count": worker_count}
+
+        self.batch_job = {
+            "type": job_type,
+            "targets": targets,
+            "options": options,
+            "executor": executor,
+            "cancel_event": cancel_event,
+            "results": [],
+            "completed": 0,
+            "total": len(targets)
+        }
+
+        self._set_status(f"Running {job_type} batch (0/{len(targets)})…")
+        self._update_action_buttons_state()
+
+        for target in targets:
+            future = executor.submit(self._run_batch_task, job_type, target, options, cancel_event)
+            future.add_done_callback(lambda fut, target=target: self.window.after(0, self._on_batch_future_done, target, fut))
+
+    def _run_batch_task(self, job_type: str, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
+        if cancel_event.is_set():
+            return {
+                "ip_address": target.get("ip_address"),
+                "action": job_type,
+                "status": "cancelled",
+                "notes": "Cancelled"
+            }
+
+        try:
+            if job_type == "probe":
+                return self._execute_probe_target(target, options, cancel_event)
+            if job_type == "extract":
+                return self._execute_extract_target(target, options, cancel_event)
+            raise RuntimeError(f"Unknown batch job type: {job_type}")
+        except Exception as exc:
+            return {
+                "ip_address": target.get("ip_address"),
+                "action": job_type,
+                "status": "failed",
+                "notes": str(exc)
+            }
+
+    def _execute_probe_target(self, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
+        ip_address = target.get("ip_address")
+        shares = target.get("shares", [])
+        limits = options.get("limits", {})
+        max_dirs = max(1, int(limits.get("max_directories", 3)))
+        max_files = max(1, int(limits.get("max_files", 5)))
+        timeout_seconds = max(1, int(limits.get("timeout_seconds", 10)))
+        enable_rce = bool(options.get("enable_rce", False))
+
+        username, password = details._derive_credentials(target.get("auth_method", ""))
+
+        try:
+            result = probe_runner.run_probe(
+                ip_address,
+                shares,
+                max_directories=max_dirs,
+                max_files=max_files,
+                timeout_seconds=timeout_seconds,
+                username=username,
+                password=password,
+                enable_rce_analysis=enable_rce,
+                cancel_event=cancel_event,
+                allow_empty=True
+            )
+        except probe_runner.ProbeError as exc:
+            status = "cancelled" if "cancel" in str(exc).lower() else "failed"
+            return {
+                "ip_address": ip_address,
+                "action": "probe",
+                "status": status,
+                "notes": str(exc)
+            }
+
+        if cancel_event.is_set():
+            raise probe_runner.ProbeError("Probe cancelled")
+
+        probe_cache.save_probe_result(ip_address, result)
+        analysis = probe_patterns.attach_indicator_analysis(result, self.indicator_patterns)
+        issue_detected = bool(analysis.get("is_suspicious"))
+        self._handle_probe_status_update(ip_address, 'issue' if issue_detected else 'clean')
+
+        share_count = len(result.get("shares", []))
+        notes: List[str] = []
+        if share_count:
+            notes.append(f"{share_count} share(s)")
+        else:
+            notes.append("No accessible shares")
+
+        if enable_rce and result.get("rce_analysis"):
+            rce_status = result["rce_analysis"].get("status", "rce")
+            notes.append(f"RCE: {rce_status}")
+
+        if issue_detected:
+            notes.append("Indicators detected")
+
+        return {
+            "ip_address": ip_address,
+            "action": "probe",
+            "status": "success",
+            "notes": ", ".join(notes)
+        }
+
+    def _execute_extract_target(self, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
+        ip_address = target.get("ip_address")
+        shares = target.get("shares", [])
+        if not shares:
+            return {
+                "ip_address": ip_address,
+                "action": "extract",
+                "status": "skipped",
+                "notes": "No accessible shares"
+            }
+
+        base_path = Path(options.get("download_path", str(Path.home() / ".smbseek" / "quarantine"))).expanduser()
+        try:
+            quarantine_dir = create_quarantine_dir(ip_address, purpose="extract", base_path=base_path)
+        except Exception as exc:
+            return {
+                "ip_address": ip_address,
+                "action": "extract",
+                "status": "failed",
+                "notes": f"Quarantine error: {exc}"
+            }
+
+        username, password = details._derive_credentials(target.get("auth_method", ""))
+
+        try:
+            summary = extract_runner.run_extract(
+                ip_address,
+                shares,
+                download_dir=quarantine_dir,
+                username=username,
+                password=password,
+                max_total_bytes=options["max_total_size_mb"] * 1024 * 1024,
+                max_file_bytes=options["max_file_size_mb"] * 1024 * 1024,
+                max_file_count=options["max_files_per_target"],
+                max_seconds=options["max_time_seconds"],
+                max_depth=options["max_directory_depth"],
+                allowed_extensions=options["included_extensions"],
+                denied_extensions=options["excluded_extensions"],
+                delay_seconds=options["download_delay_seconds"],
+                connection_timeout=options["connection_timeout"],
+                progress_callback=None,
+                cancel_event=cancel_event
+            )
+            log_path = extract_runner.write_extract_log(summary)
+        except extract_runner.ExtractError as exc:
+            status = "cancelled" if "cancel" in str(exc).lower() else "failed"
+            return {
+                "ip_address": ip_address,
+                "action": "extract",
+                "status": status,
+                "notes": str(exc)
+            }
+
+        files = summary["totals"].get("files_downloaded", 0)
+        bytes_downloaded = summary["totals"].get("bytes_downloaded", 0)
+        size_mb = bytes_downloaded / (1024 * 1024) if bytes_downloaded else 0
+        note_parts = [f"{files} file(s)", f"{size_mb:.1f} MB"]
+        if summary.get("timed_out"):
+            note_parts.append("timed out")
+        if summary.get("stop_reason"):
+            note_parts.append(summary["stop_reason"].replace("_", " "))
+        note_parts.append(f"log: {log_path}")
+
+        return {
+            "ip_address": ip_address,
+            "action": "extract",
+            "status": "success",
+            "notes": ", ".join(note_parts)
+        }
+
+    def _on_batch_future_done(self, target: Dict[str, Any], future: Future) -> None:
+        if not self.batch_job:
+            return
+
+        try:
+            result = future.result()
+        except Exception as exc:
+            result = {
+                "ip_address": target.get("ip_address"),
+                "action": self.batch_job.get("type", "batch"),
+                "status": "failed",
+                "notes": str(exc)
+            }
+
+        if not self.batch_job:
+            return
+
+        self.batch_job["results"].append(result)
+        self.batch_job["completed"] += 1
+        completed = self.batch_job["completed"]
+        total = self.batch_job["total"]
+        job_type = self.batch_job["type"].title()
+        self._set_status(f"{job_type} batch {completed}/{total} complete")
+
+        if completed >= total:
+            self._finalize_batch_job()
+
+    def _finalize_batch_job(self) -> None:
+        if not self.batch_job:
+            return
+
+        executor = self.batch_job.get("executor")
+        if executor:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+        results = list(self.batch_job.get("results", []))
+        job_type = self.batch_job.get("type", "batch")
+        self.batch_job = None
+        self._update_action_buttons_state()
+        self._set_status(f"{job_type.title()} batch finished")
+        if results:
+            self._show_batch_summary(job_type, results)
+
+    def _stop_active_batch(self) -> None:
+        if not self._is_batch_active():
+            return
+        cancel_event = self.batch_job.get("cancel_event")
+        if cancel_event:
+            cancel_event.set()
+        executor = self.batch_job.get("executor")
+        if executor:
+            executor.shutdown(wait=False, cancel_futures=True)
+        self._set_status("Stopping batch…")
+        self._update_action_buttons_state()
+
+    def _is_batch_active(self) -> bool:
+        return bool(self.batch_job and self.batch_job.get("completed", 0) < self.batch_job.get("total", 0))
+
+    def _set_status(self, message: str) -> None:
+        if self.status_label:
+            self.status_label.configure(text=message)
+
+    def _update_action_buttons_state(self) -> None:
+        has_selection = bool(self.tree and self.tree.selection())
+        batch_active = self._is_batch_active()
+        sandbox_ready = bool(self.sandbox_manager and self.sandbox_manager.is_available())
+
+        new_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
+        for button in (self.probe_button, self.extract_button):
+            if button:
+                button.configure(state=new_state)
+
+        if self.explore_button:
+            explore_state = tk.NORMAL if has_selection and sandbox_ready and not batch_active else tk.DISABLED
+            self.explore_button.configure(state=explore_state)
+
+        if self.stop_button:
+            self.stop_button.configure(state=tk.NORMAL if batch_active else tk.DISABLED)
+
+        self._update_context_menu_state()
+
+    def _update_context_menu_state(self) -> None:
+        if not self.context_menu:
+            return
+        has_selection = bool(self.tree and self.tree.selection())
+        batch_active = self._is_batch_active()
+        sandbox_ready = bool(self.sandbox_manager and self.sandbox_manager.is_available())
+        probe_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
+        extract_state = probe_state
+        explore_state = tk.NORMAL if has_selection and sandbox_ready and not batch_active else tk.DISABLED
+        self.context_menu.entryconfig(0, state=probe_state)
+        self.context_menu.entryconfig(1, state=extract_state)
+        self.context_menu.entryconfig(2, state=explore_state)
+
+    def _show_context_menu(self, event) -> str:
+        if not self.tree or not self.context_menu:
+            return "break"
+        row = self.tree.identify_row(event.y)
+        if not row:
+            return "break"
+        selected = set(self.tree.selection())
+        if row not in selected:
+            self.tree.selection_set(row)
+        self._update_action_buttons_state()
+        try:
+            self.context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.context_menu.grab_release()
+        return "break"
+
+    def _confirm_explore_many(self, count: int) -> bool:
+        return messagebox.askokcancel(
+            "Launch Explore",
+            f"Explore will open {count} sandbox windows. Continue?",
+            parent=self.window
+        )
+
+    def _launch_explore_for_server(self, server_data: Dict[str, Any]) -> None:
+        ip_address = server_data.get('ip_address') or 'host'
+        self._set_status(f"Launching Explore for {ip_address}")
+        sandbox_state = {"running": False}
+        status_var = tk.StringVar(value="Launching…")
+        try:
+            details._launch_sandbox_explorer(
+                self.window,
+                server_data,
+                self.sandbox_manager,
+                sandbox_state,
+                status_var,
+                None
+            )
+        except SandboxUnavailable as exc:
+            messagebox.showerror("Sandbox Explorer", str(exc), parent=self.window)
+
+    def _show_batch_summary(self, job_type: str, results: List[Dict[str, Any]]) -> None:
+        dialog = tk.Toplevel(self.window)
+        dialog.title(f"{job_type.title()} Batch Summary")
+        dialog.geometry("700x400")
+        dialog.transient(self.window)
+        self.theme.apply_to_widget(dialog, "main_window")
+
+        columns = ("ip", "action", "status", "notes")
+        tree = ttk.Treeview(dialog, columns=columns, show="headings")
+        headings = {
+            "ip": "IP Address",
+            "action": "Action",
+            "status": "Result",
+            "notes": "Notes"
+        }
+        for col in columns:
+            tree.heading(col, text=headings[col])
+            width = 130 if col != "notes" else 360
+            tree.column(col, width=width, anchor="w")
+
+        for entry in results:
+            tree.insert(
+                "",
+                "end",
+                values=(
+                    entry.get("ip_address", "-"),
+                    entry.get("action", job_type).title(),
+                    entry.get("status", "unknown").title(),
+                    entry.get("notes", "")
+                )
+            )
+
+        tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        button_frame = tk.Frame(dialog)
+        button_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        def export_summary():
+            self._export_batch_summary(results, job_type, dialog)
+
+        tk.Button(button_frame, text="Save CSV", command=export_summary).pack(side=tk.RIGHT, padx=(0, 5))
+        tk.Button(button_frame, text="Close", command=dialog.destroy).pack(side=tk.RIGHT)
+
+    def _export_batch_summary(self, results: List[Dict[str, Any]], job_type: str, parent: tk.Toplevel) -> None:
+        path = filedialog.asksaveasfilename(
+            parent=parent,
+            title="Save Batch Summary",
+            defaultextension=".csv",
+            filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")]
+        )
+        if not path:
+            return
+
+        with open(path, "w", newline="", encoding="utf-8") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(["ip_address", "action", "status", "notes"])
+            for entry in results:
+                writer.writerow([
+                    entry.get("ip_address", ""),
+                    entry.get("action", job_type),
+                    entry.get("status", ""),
+                    entry.get("notes", "")
+                ])
+
+        messagebox.showinfo("Summary Saved", f"Saved batch summary to {path}", parent=parent)
 
     # Probe status helpers
 
@@ -658,6 +1383,8 @@ class ServerListWindow:
 
     def _close_window(self) -> None:
         """Close the server list window."""
+        if self._is_batch_active():
+            self._stop_active_batch()
         self.window.destroy()
 
     # Public API methods for external compatibility
