@@ -21,6 +21,8 @@ import os
 import queue
 from collections import deque
 import re
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 # Add utils to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
@@ -31,6 +33,14 @@ from style import get_theme, apply_theme_to_window
 from scan_manager import get_scan_manager
 from scan_dialog import show_scan_dialog
 from scan_results_dialog import show_scan_results_dialog
+from settings_manager import SettingsManager
+from probe_runner import run_probe
+from extract_runner import run_extract
+
+# Import probe/extract utilities
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from gui.utils import probe_cache, probe_patterns, probe_runner, extract_runner
+from shared.quarantine import create_quarantine_dir
 
 
 class DashboardWidget:
@@ -75,7 +85,8 @@ class DashboardWidget:
         # Scan management
         self.scan_manager = get_scan_manager()
         self.config_path = config_path
-        
+        self.settings_manager = SettingsManager()
+
         # UI components
         self.main_frame = None
         self.progress_frame = None
@@ -1059,38 +1070,26 @@ class DashboardWidget:
                 )
                 return
 
-            # TODO: Implement actual batch operation execution
-            # For now, show a notification about what would happen
-            ops = []
+            # Run batch operations
+            all_results = []
+
             if bulk_probe_enabled:
-                ops.append("bulk probe")
+                probe_results = self._execute_batch_probe(successful_servers)
+                all_results.extend(probe_results)
+
             if bulk_extract_enabled:
-                ops.append("bulk extract")
+                extract_results = self._execute_batch_extract(successful_servers)
+                all_results.extend(extract_results)
 
-            messagebox.showinfo(
-                "Post-Scan Batch Operations",
-                f"Ready to run {' and '.join(ops)} on {len(successful_servers)} server(s).\n\n"
-                f"Full implementation coming soon.\n\n"
-                f"This will use the existing batch infrastructure from Server List Browser:\n"
-                f"- ThreadPoolExecutor with configurable workers\n"
-                f"- Progress dialog with cancel button\n"
-                f"- Probe results → probe cache\n"
-                f"- Extract results → quarantine directories"
-            )
-
-            # TODO: Actual implementation should:
-            # 1. Load settings from settings_manager (probe.batch_max_workers, extract.*, etc.)
-            # 2. Create progress dialog with cancel button
-            # 3. Use probe_runner.run_probe() for each server (if bulk_probe_enabled)
-            # 4. Use extract_runner.run_extract() for each server (if bulk_extract_enabled)
-            # 5. Show summary when complete
-            # 6. Handle errors gracefully
+            # Show summary of all operations
+            if all_results:
+                self._show_batch_summary(all_results)
 
         except Exception as e:
             messagebox.showerror(
                 "Batch Operations Error",
-                f"Error initializing post-scan batch operations: {str(e)}\n\n"
-                f"The scan completed successfully but bulk operations could not start."
+                f"Error running post-scan batch operations: {str(e)}\n\n"
+                f"The scan completed successfully but bulk operations encountered an error."
             )
 
     def _get_servers_with_successful_auth(self) -> list:
@@ -1115,6 +1114,333 @@ class DashboardWidget:
         except Exception as e:
             print(f"Error querying servers with successful auth: {e}")
             return []
+
+    def _execute_batch_probe(self, servers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Execute bulk probe operation on servers."""
+        # Load probe settings
+        worker_count = int(self.settings_manager.get_setting('probe.batch_max_workers', 3))
+        worker_count = max(1, min(8, worker_count))
+        max_dirs = int(self.settings_manager.get_setting('probe.max_directories_per_share', 3))
+        max_files = int(self.settings_manager.get_setting('probe.max_files_per_directory', 5))
+        timeout_seconds = int(self.settings_manager.get_setting('probe.share_timeout_seconds', 10))
+        enable_rce = bool(self.settings_manager.get_setting('scan_dialog.rce_enabled', False))
+
+        results = []
+        cancel_event = threading.Event()
+
+        # Create progress dialog
+        progress_dialog = tk.Toplevel(self.parent)
+        progress_dialog.title("Bulk Probe Progress")
+        progress_dialog.geometry("400x150")
+        progress_dialog.transient(self.parent)
+        progress_dialog.grab_set()
+        self.theme.apply_to_widget(progress_dialog, "main_window")
+
+        progress_label = tk.Label(progress_dialog, text=f"Probing 0/{len(servers)} servers...")
+        progress_label.pack(pady=20)
+
+        progress_bar = ttk.Progressbar(progress_dialog, length=300, mode='determinate', maximum=len(servers))
+        progress_bar.pack(pady=10)
+
+        cancel_button = tk.Button(progress_dialog, text="Cancel", command=lambda: cancel_event.set())
+        cancel_button.pack(pady=10)
+
+        completed = [0]  # Use list to allow modification in nested function
+
+        def update_progress(completed_count):
+            completed[0] = completed_count
+            progress_label.config(text=f"Probing {completed_count}/{len(servers)} servers...")
+            progress_bar['value'] = completed_count
+            progress_dialog.update()
+
+        # Run probe operations with ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="probe-batch") as executor:
+            futures = []
+            for server in servers:
+                future = executor.submit(
+                    self._probe_single_server,
+                    server,
+                    max_dirs,
+                    max_files,
+                    timeout_seconds,
+                    enable_rce,
+                    cancel_event
+                )
+                futures.append((server, future))
+
+            for server, future in futures:
+                if cancel_event.is_set():
+                    break
+                try:
+                    result = future.result(timeout=timeout_seconds + 10)
+                    results.append(result)
+                except Exception as e:
+                    results.append({
+                        "ip_address": server.get("ip_address"),
+                        "action": "probe",
+                        "status": "failed",
+                        "notes": str(e)
+                    })
+                update_progress(len(results))
+
+        progress_dialog.destroy()
+        return results
+
+    def _probe_single_server(self, server: Dict[str, Any], max_dirs: int, max_files: int,
+                              timeout_seconds: int, enable_rce: bool, cancel_event: threading.Event) -> Dict[str, Any]:
+        """Probe a single server."""
+        if cancel_event.is_set():
+            return {
+                "ip_address": server.get("ip_address"),
+                "action": "probe",
+                "status": "cancelled",
+                "notes": "Cancelled"
+            }
+
+        ip_address = server.get("ip_address")
+        shares = server.get("accessible_shares", "").split(",") if server.get("accessible_shares") else []
+        shares = [s.strip() for s in shares if s.strip()]
+
+        # Derive credentials from auth method
+        auth_method = server.get("auth_method", "")
+        username = "" if "anonymous" in auth_method.lower() else "guest"
+        password = ""
+
+        try:
+            result = probe_runner.run_probe(
+                ip_address,
+                shares,
+                max_directories=max_dirs,
+                max_files=max_files,
+                timeout_seconds=timeout_seconds,
+                username=username,
+                password=password,
+                enable_rce_analysis=enable_rce,
+                cancel_event=cancel_event,
+                allow_empty=True
+            )
+            probe_cache.save_probe_result(ip_address, result)
+
+            return {
+                "ip_address": ip_address,
+                "action": "probe",
+                "status": "success",
+                "notes": f"Probed {len(shares)} share(s)"
+            }
+        except Exception as e:
+            status = "cancelled" if "cancel" in str(e).lower() else "failed"
+            return {
+                "ip_address": ip_address,
+                "action": "probe",
+                "status": status,
+                "notes": str(e)
+            }
+
+    def _execute_batch_extract(self, servers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Execute bulk extract operation on servers."""
+        # Load extract settings
+        worker_count = int(self.settings_manager.get_setting('extract.batch_max_workers', 2))
+        worker_count = max(1, min(8, worker_count))
+        max_file_mb = int(self.settings_manager.get_setting('extract.max_file_size_mb', 50))
+        max_total_mb = int(self.settings_manager.get_setting('extract.max_total_size_mb', 200))
+        max_time = int(self.settings_manager.get_setting('extract.max_time_seconds', 300))
+        max_files = int(self.settings_manager.get_setting('extract.max_files_per_target', 10))
+
+        results = []
+        cancel_event = threading.Event()
+
+        # Create progress dialog
+        progress_dialog = tk.Toplevel(self.parent)
+        progress_dialog.title("Bulk Extract Progress")
+        progress_dialog.geometry("400x150")
+        progress_dialog.transient(self.parent)
+        progress_dialog.grab_set()
+        self.theme.apply_to_widget(progress_dialog, "main_window")
+
+        progress_label = tk.Label(progress_dialog, text=f"Extracting from 0/{len(servers)} servers...")
+        progress_label.pack(pady=20)
+
+        progress_bar = ttk.Progressbar(progress_dialog, length=300, mode='determinate', maximum=len(servers))
+        progress_bar.pack(pady=10)
+
+        cancel_button = tk.Button(progress_dialog, text="Cancel", command=lambda: cancel_event.set())
+        cancel_button.pack(pady=10)
+
+        def update_progress(completed_count):
+            progress_label.config(text=f"Extracting from {completed_count}/{len(servers)} servers...")
+            progress_bar['value'] = completed_count
+            progress_dialog.update()
+
+        # Run extract operations with ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="extract-batch") as executor:
+            futures = []
+            for server in servers:
+                future = executor.submit(
+                    self._extract_single_server,
+                    server,
+                    max_file_mb,
+                    max_total_mb,
+                    max_time,
+                    max_files,
+                    cancel_event
+                )
+                futures.append((server, future))
+
+            for server, future in futures:
+                if cancel_event.is_set():
+                    break
+                try:
+                    result = future.result(timeout=max_time + 30)
+                    results.append(result)
+                except Exception as e:
+                    results.append({
+                        "ip_address": server.get("ip_address"),
+                        "action": "extract",
+                        "status": "failed",
+                        "notes": str(e)
+                    })
+                update_progress(len(results))
+
+        progress_dialog.destroy()
+        return results
+
+    def _extract_single_server(self, server: Dict[str, Any], max_file_mb: int, max_total_mb: int,
+                                 max_time: int, max_files: int, cancel_event: threading.Event) -> Dict[str, Any]:
+        """Extract files from a single server."""
+        if cancel_event.is_set():
+            return {
+                "ip_address": server.get("ip_address"),
+                "action": "extract",
+                "status": "cancelled",
+                "notes": "Cancelled"
+            }
+
+        ip_address = server.get("ip_address")
+        shares = server.get("accessible_shares", "").split(",") if server.get("accessible_shares") else []
+        shares = [s.strip() for s in shares if s.strip()]
+
+        if not shares:
+            return {
+                "ip_address": ip_address,
+                "action": "extract",
+                "status": "skipped",
+                "notes": "No accessible shares"
+            }
+
+        # Create quarantine directory
+        try:
+            quarantine_dir = create_quarantine_dir(ip_address, purpose="post-scan-extract")
+        except Exception as e:
+            return {
+                "ip_address": ip_address,
+                "action": "extract",
+                "status": "failed",
+                "notes": f"Quarantine error: {e}"
+            }
+
+        # Derive credentials
+        auth_method = server.get("auth_method", "")
+        username = "" if "anonymous" in auth_method.lower() else "guest"
+        password = ""
+
+        try:
+            summary = extract_runner.run_extract(
+                ip_address,
+                shares,
+                download_dir=quarantine_dir,
+                username=username,
+                password=password,
+                max_total_bytes=max_total_mb * 1024 * 1024,
+                max_file_bytes=max_file_mb * 1024 * 1024,
+                max_file_count=max_files,
+                max_seconds=max_time,
+                max_depth=3,
+                allowed_extensions=[],
+                denied_extensions=[],
+                delay_seconds=0,
+                connection_timeout=30,
+                progress_callback=None,
+                cancel_event=cancel_event
+            )
+
+            files = summary["totals"].get("files_downloaded", 0)
+            bytes_downloaded = summary["totals"].get("bytes_downloaded", 0)
+            size_mb = bytes_downloaded / (1024 * 1024) if bytes_downloaded else 0
+
+            return {
+                "ip_address": ip_address,
+                "action": "extract",
+                "status": "success",
+                "notes": f"{files} file(s), {size_mb:.1f} MB"
+            }
+        except Exception as e:
+            status = "cancelled" if "cancel" in str(e).lower() else "failed"
+            return {
+                "ip_address": ip_address,
+                "action": "extract",
+                "status": status,
+                "notes": str(e)
+            }
+
+    def _show_batch_summary(self, results: List[Dict[str, Any]]) -> None:
+        """Show summary dialog for batch operations."""
+        dialog = tk.Toplevel(self.parent)
+        dialog.title("Batch Operations Summary")
+        dialog.geometry("700x400")
+        dialog.transient(self.parent)
+        self.theme.apply_to_widget(dialog, "main_window")
+
+        tk.Label(dialog, text="Batch Operations Complete", font=("TkDefaultFont", 12, "bold")).pack(pady=10)
+
+        # Create treeview for results
+        tree_frame = tk.Frame(dialog)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        tree = ttk.Treeview(tree_frame, columns=("IP", "Action", "Status", "Notes"), show="headings", height=15)
+        tree.heading("IP", text="IP Address")
+        tree.heading("Action", text="Operation")
+        tree.heading("Status", text="Status")
+        tree.heading("Notes", text="Notes")
+
+        tree.column("IP", width=120)
+        tree.column("Action", width=80)
+        tree.column("Status", width=80)
+        tree.column("Notes", width=380)
+
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Populate results
+        success_count = 0
+        failed_count = 0
+        for result in results:
+            status = result.get("status", "unknown")
+            if status == "success":
+                success_count += 1
+            elif status in ("failed", "error"):
+                failed_count += 1
+
+            tree.insert("", tk.END, values=(
+                result.get("ip_address", ""),
+                result.get("action", ""),
+                status,
+                result.get("notes", "")
+            ))
+
+        # Summary stats
+        stats_label = tk.Label(
+            dialog,
+            text=f"Total: {len(results)} | Success: {success_count} | Failed: {failed_count}",
+            font=("TkDefaultFont", 10)
+        )
+        stats_label.pack(pady=5)
+
+        # Close button
+        close_button = tk.Button(dialog, text="Close", command=dialog.destroy)
+        close_button.pack(pady=10)
 
     def _show_scan_results(self, results: Dict[str, Any]) -> None:
         """Show scan results dialog."""
