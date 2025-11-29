@@ -49,6 +49,46 @@ A virtual environment is an isolated Python environment that keeps this project'
 - **smbclient** (required for full functionality, but tool works without it)
 - **Valid Shodan API key** (paid membership required)
 
+### System Package Dependencies (non-pip)
+
+SMBSeek ships its Python libraries via `requirements.txt`, but a handful of host packages still need to come from your distro package manager:
+
+| Package | Why it matters |
+| --- | --- |
+| `python3`, `python3-venv` | Core interpreter plus the stdlib `venv` module that creates the isolated environment used in every quick-start command. |
+| `python3-pip` | Ensures `pip install -r requirements.txt` is available even on minimal images. |
+| `python3-tk` | Provides the Tk bindings that power the `xsmbseek` GUI; without it the launcher errors with `ModuleNotFoundError: tkinter`. |
+| `smbclient` | Enables native share enumeration and access testing; the CLI falls back to reduced functionality if it is missing. |
+| `podman` (or Docker) | Only required for the optional sandboxed Explore workflow and investigation shell on Linux. Drop it if you never launch those features. |
+
+#### Copy/paste install commands
+
+The commands below target current LTS releases. Feel free to remove `podman` if you do not need the sandbox runtime.
+
+##### Ubuntu 24.04 LTS / Debian-based
+
+```bash
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip python3-tk smbclient podman
+```
+
+##### RHEL 9 / Fedora / AlmaLinux / Rocky
+
+```bash
+sudo dnf install -y python3 python3-pip python3-tkinter samba-client podman
+```
+
+##### openSUSE Leap / Tumbleweed
+
+```bash
+sudo zypper install -y python3 python3-pip python3-tk samba-client podman
+```
+
+##### Arch / Manjaro
+
+```bash
+sudo pacman -Syu --needed python python-pip tk samba podman
+```
+
 ### SMB Background
 
 SMBSeek identifies SMB (Server Message Block) servers with weak authentication. For technical background on SMB protocols and security considerations, see the [official Samba documentation](https://www.samba.org/samba/docs/).

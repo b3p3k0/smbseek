@@ -329,9 +329,10 @@ def handle_treeview_click(tree, event, settings_manager, callbacks):
         if callbacks.get('on_favorites_filter_changed'):
             callbacks['on_favorites_filter_changed']()
 
-        # Maintain focus and selection for keyboard navigation
-        tree.selection_set(item)
-        tree.focus(item)
+        # Maintain focus/selection only if row still exists (filters may remove it)
+        if tree.exists(item):
+            tree.selection_set(item)
+            tree.focus(item)
 
         return "break"  # Only consume event when we actually toggled
 
@@ -346,9 +347,10 @@ def handle_treeview_click(tree, event, settings_manager, callbacks):
         if callbacks.get('on_avoid_filter_changed'):
             callbacks['on_avoid_filter_changed']()
 
-        # Maintain focus and selection for keyboard navigation
-        tree.selection_set(item)
-        tree.focus(item)
+        # Maintain focus/selection only if row still exists (filters may remove it)
+        if tree.exists(item):
+            tree.selection_set(item)
+            tree.focus(item)
 
         return "break"  # Only consume event when we actually toggled
 
