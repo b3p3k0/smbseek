@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 try:
-    from .batch_extract_dialog import BatchExtractSettingsDialog  # package import
-except (ImportError, ValueError):
-    from batch_extract_dialog import BatchExtractSettingsDialog  # standalone import
+    from batch_extract_dialog import BatchExtractSettingsDialog  # standalone/absolute
+except ImportError:
+    from .batch_extract_dialog import BatchExtractSettingsDialog  # package relative
 
 
 class ProbeConfigDialog:
