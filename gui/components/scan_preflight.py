@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any, List
 
 try:
     from .batch_extract_dialog import BatchExtractSettingsDialog  # package import
-except ImportError:
+except (ImportError, ValueError):
     from batch_extract_dialog import BatchExtractSettingsDialog  # standalone import
 
 
