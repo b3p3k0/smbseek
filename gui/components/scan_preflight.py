@@ -9,7 +9,10 @@ from tkinter import messagebox, filedialog
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from .batch_extract_dialog import BatchExtractSettingsDialog
+try:
+    from .batch_extract_dialog import BatchExtractSettingsDialog  # package import
+except ImportError:
+    from batch_extract_dialog import BatchExtractSettingsDialog  # standalone import
 
 
 class ProbeConfigDialog:
