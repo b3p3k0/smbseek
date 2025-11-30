@@ -84,7 +84,7 @@ class SandboxManager:
                 "Sandboxed explorer requires an active X11 or Wayland display session."
             )
 
-        browser_cmd = self._build_file_browser_command(ip_address, share)
+        browser_cmd = self._build_file_browser_command(ip_address, share, display_env)
         command = self._build_gui_command(username, password, display_env, browser_cmd)
 
         result = subprocess.run(
@@ -296,7 +296,7 @@ class SandboxManager:
 
         return None
 
-    def _build_file_browser_command(self, ip_address: str, share: Optional[str]) -> str:
+    def _build_file_browser_command(self, ip_address: str, share: Optional[str], display_env: Dict[str, str]) -> str:
         target = f"smb://{ip_address}/"
         if share:
             target = f"smb://{ip_address}/{share.strip('/')}"
@@ -305,11 +305,30 @@ class SandboxManager:
             "apk add --no-cache "
             "pcmanfm gvfs gvfs-smb gvfs-fuse gnome-keyring "
             "samba-client gtk+3.0 adwaita-icon-theme "
-            "cairo libgcrypt libgpg-error gcr libfm gst-plugins-bad > /dev/null"
+            "cairo libgcrypt libgpg-error gcr libfm gst-plugins-bad dbus > /dev/null"
         )
-        export_cmd = "export GVFS_DISABLE_FUSE=1"
+        export_cmds = [
+            "export GVFS_DISABLE_FUSE=1",
+            "export PCMANFM_DISABLE_DESKTOP=1"
+        ]
+        if display_env.get("type") == "wayland":
+            export_cmds.append("export GDK_BACKEND=wayland")
+        else:
+            export_cmds.append("export GDK_BACKEND=x11")
+
+        session_setup = (
+            "if [ -z \"$XDG_RUNTIME_DIR\" ]; then "
+            "  export XDG_RUNTIME_DIR=/run/user/0 && mkdir -p /run/user/0; "
+            "else "
+            "  mkdir -p \"$XDG_RUNTIME_DIR\"; "
+            "fi && dbus-daemon --session --fork"
+        )
+
         browser = DEFAULT_FILE_BROWSER
-        return f"{apk_packages} && {export_cmd} && exec {browser} '{target}'"
+        return (
+            f"{apk_packages} && {session_setup} && "
+            f"{' && '.join(export_cmds)} && exec {browser} --no-desktop '{target}'"
+        )
 
     def _build_gui_command(
         self,
