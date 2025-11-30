@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Dict, Any, List, Optional
 
 
-DEFAULT_IMAGE = os.environ.get("SMBSEEK_SANDBOX_IMAGE", "docker.io/library/alpine:latest")
+DEFAULT_IMAGE = os.environ.get("SMBSEEK_SANDBOX_IMAGE", "docker.io/library/alpine:3.19")
 DEFAULT_FILE_BROWSER = os.environ.get("SMBSEEK_SANDBOX_FILE_BROWSER", "pcmanfm")
 
 logger = logging.getLogger(__name__)
@@ -302,7 +302,10 @@ class SandboxManager:
             target = f"smb://{ip_address}/{share.strip('/')}"
 
         apk_packages = (
-            "apk add --no-cache pcmanfm gvfs gvfs-smb gvfs-fuse samba-client > /dev/null"
+            "apk add --no-cache "
+            "pcmanfm gvfs gvfs-smb gvfs-fuse gnome-keyring "
+            "samba-client gtk+3.0 adwaita-icon-theme "
+            "cairo libgcrypt libgpg-error gcr libfm gst-plugins-bad > /dev/null"
         )
         export_cmd = "export GVFS_DISABLE_FUSE=1"
         browser = DEFAULT_FILE_BROWSER
