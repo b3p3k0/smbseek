@@ -34,7 +34,10 @@ except ImportError:
 
 # Import modular components
 from . import export, details, filters, table
-from ..batch_extract_dialog import BatchExtractSettingsDialog
+try:
+    from batch_extract_dialog import BatchExtractSettingsDialog  # standalone/absolute import
+except ImportError:
+    from ..batch_extract_dialog import BatchExtractSettingsDialog  # package relative fallback
 from gui.utils import probe_cache, probe_patterns, probe_runner, extract_runner
 from gui.utils.sandbox_manager import get_sandbox_manager, SandboxUnavailable
 from shared.quarantine import create_quarantine_dir

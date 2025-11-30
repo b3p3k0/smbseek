@@ -24,9 +24,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 from style import get_theme
 from template_store import TemplateStore
 try:
-    from .scan_preflight import run_preflight  # when gui/components treated as package
+    from scan_preflight import run_preflight   # standalone/absolute
 except ImportError:
-    from scan_preflight import run_preflight   # fallback when imported as loose module
+    from .scan_preflight import run_preflight  # package relative
 
 
 class ScanDialog:
