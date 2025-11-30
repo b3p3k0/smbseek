@@ -270,10 +270,23 @@ class SandboxManager:
         return base_cmd
 
     def _detect_display_env(self) -> Optional[Dict[str, str]]:
-        """Determine whether X11 or Wayland display is available."""
+        """Determine whether X11 or Wayland display is available.
+
+        Preference: use X11/Xwayland when available (more broadly compatible
+        with pcmanfm), otherwise fall back to Wayland.
+        """
         display = os.environ.get("DISPLAY")
         wayland = os.environ.get("WAYLAND_DISPLAY")
         runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+
+        if display:
+            x11_socket_dir = "/tmp/.X11-unix"
+            if os.path.isdir(x11_socket_dir):
+                return {
+                    "type": "x11",
+                    "display": display,
+                    "socket": x11_socket_dir
+                }
 
         if wayland and runtime_dir:
             wayland_path = os.path.join(runtime_dir, wayland)
@@ -283,15 +296,6 @@ class SandboxManager:
                     "display": wayland,
                     "runtime_dir": runtime_dir,
                     "socket": wayland_path
-                }
-
-        if display:
-            x11_socket_dir = "/tmp/.X11-unix"
-            if os.path.isdir(x11_socket_dir):
-                return {
-                    "type": "x11",
-                    "display": display,
-                    "socket": x11_socket_dir
                 }
 
         return None
