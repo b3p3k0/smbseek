@@ -39,7 +39,6 @@ try:
 except ImportError:
     from ..batch_extract_dialog import BatchExtractSettingsDialog  # package relative fallback
 from gui.utils import probe_cache, probe_patterns, probe_runner, extract_runner
-from gui.utils.sandbox_manager import get_sandbox_manager, SandboxUnavailable
 from shared.quarantine import create_quarantine_dir
 
 
@@ -103,7 +102,6 @@ class ServerListWindow:
         self.context_menu = None
         self.probe_button = None
         self.extract_button = None
-        self.explore_button = None
         self.stop_button = None
         self.table_overlay = None
         self.table_overlay_label = None
@@ -120,7 +118,6 @@ class ServerListWindow:
         self.filtered_servers = []
         self.selected_servers = []
         self.batch_job = None
-        self.sandbox_manager = get_sandbox_manager()
         self._pending_table_refresh = False
         self._pending_selection = []
 
@@ -315,7 +312,6 @@ class ServerListWindow:
         self.context_menu = tk.Menu(self.window, tearoff=0)
         self.context_menu.add_command(label="🔍 Probe Selected", command=self._on_probe_selected)
         self.context_menu.add_command(label="📦 Extract Selected", command=self._on_extract_selected)
-        self.context_menu.add_command(label="🧭 Explore Selected", command=self._handle_explore_selected)
         self._update_context_menu_state()
 
     def _bind_context_menu_events(self, tree: ttk.Treeview) -> None:
@@ -391,16 +387,7 @@ class ServerListWindow:
             state=tk.DISABLED
         )
         self.theme.apply_to_widget(self.extract_button, "button_secondary")
-        self.extract_button.pack(side=tk.LEFT, padx=(0, 5))
-
-        self.explore_button = tk.Button(
-            button_container,
-            text="🧭 Explore Selected",
-            command=self._handle_explore_selected,
-            state=tk.DISABLED
-        )
-        self.theme.apply_to_widget(self.explore_button, "button_secondary")
-        self.explore_button.pack(side=tk.LEFT, padx=(0, 15))
+        self.extract_button.pack(side=tk.LEFT, padx=(0, 15))
 
         self.stop_button = tk.Button(
             button_container,
@@ -702,27 +689,6 @@ class ServerListWindow:
             return
 
         self._start_batch_job("extract", targets, dialog_config)
-
-    def _handle_explore_selected(self) -> None:
-        self._hide_context_menu()
-        if not self.sandbox_manager or not self.sandbox_manager.is_available():
-            messagebox.showwarning("Sandbox Required", "Podman or Docker is required for sandboxed Explore. Install it and try again.")
-            return
-
-        selected_servers = table.get_selected_server_data(self.tree, self.filtered_servers)
-        if not selected_servers:
-            messagebox.showwarning("No Selection", "Select at least one server to explore.")
-            return
-
-        count = len(selected_servers)
-        if count > 5 and not self._confirm_explore_many(count):
-            return
-
-        for server in selected_servers:
-            if not self.sandbox_manager.is_available():
-                messagebox.showerror("Sandbox Unavailable", "Sandbox runtime became unavailable. Aborting remaining Explore launches.")
-                break
-            self._launch_explore_for_server(server)
 
     def _prompt_probe_batch_settings(self, target_count: int) -> Optional[Dict[str, Any]]:
         config = details._load_probe_config(self.settings_manager)
@@ -1099,16 +1065,11 @@ class ServerListWindow:
     def _update_action_buttons_state(self) -> None:
         has_selection = bool(self.tree and self.tree.selection())
         batch_active = self._is_batch_active()
-        sandbox_ready = bool(self.sandbox_manager and self.sandbox_manager.is_available())
 
         new_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
         for button in (self.probe_button, self.extract_button):
             if button:
                 button.configure(state=new_state)
-
-        if self.explore_button:
-            explore_state = tk.NORMAL if has_selection and sandbox_ready and not batch_active else tk.DISABLED
-            self.explore_button.configure(state=explore_state)
 
         if self.stop_button:
             self.stop_button.configure(state=tk.NORMAL if batch_active else tk.DISABLED)
@@ -1165,13 +1126,10 @@ class ServerListWindow:
             return
         has_selection = bool(self.tree and self.tree.selection())
         batch_active = self._is_batch_active()
-        sandbox_ready = bool(self.sandbox_manager and self.sandbox_manager.is_available())
         probe_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
         extract_state = probe_state
-        explore_state = tk.NORMAL if has_selection and sandbox_ready and not batch_active else tk.DISABLED
         self.context_menu.entryconfig(0, state=probe_state)
         self.context_menu.entryconfig(1, state=extract_state)
-        self.context_menu.entryconfig(2, state=explore_state)
 
     def _show_context_menu(self, event) -> str:
         if not self.tree or not self.context_menu:
@@ -1222,30 +1180,6 @@ class ServerListWindow:
             pass
         self._context_menu_visible = False
         self._remove_context_dismiss_handlers()
-
-    def _confirm_explore_many(self, count: int) -> bool:
-        return messagebox.askokcancel(
-            "Launch Explore",
-            f"Explore will open {count} sandbox windows. Continue?",
-            parent=self.window
-        )
-
-    def _launch_explore_for_server(self, server_data: Dict[str, Any]) -> None:
-        ip_address = server_data.get('ip_address') or 'host'
-        self._set_status(f"Launching Explore for {ip_address}")
-        sandbox_state = {"running": False}
-        status_var = tk.StringVar(value="Launching…")
-        try:
-            details._launch_sandbox_explorer(
-                self.window,
-                server_data,
-                self.sandbox_manager,
-                sandbox_state,
-                status_var,
-                None
-            )
-        except SandboxUnavailable as exc:
-            messagebox.showerror("Sandbox Explorer", str(exc), parent=self.window)
 
     def _show_batch_summary(self, job_type: str, results: List[Dict[str, Any]]) -> None:
         dialog = tk.Toplevel(self.window)

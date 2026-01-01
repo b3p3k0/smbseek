@@ -59,30 +59,29 @@ SMBSeek ships its Python libraries via `requirements.txt`, but a handful of host
 | `python3-pip` | Ensures `pip install -r requirements.txt` is available even on minimal images. |
 | `python3-tk` | Provides the Tk bindings that power the `xsmbseek` GUI; without it the launcher errors with `ModuleNotFoundError: tkinter`. |
 | `smbclient` | Enables native share enumeration and access testing; the CLI falls back to reduced functionality if it is missing. |
-| `podman` (or Docker) | Only required for the optional sandboxed Explore workflow and investigation shell on Linux. Drop it if you never launch those features. |
 
 ##### Ubuntu 24.04 LTS / Debian-based
 
 ```bash
-sudo apt update && sudo apt install -y python3 python3-venv python3-pip python3-tk smbclient podman
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip python3-tk smbclient
 ```
 
 ##### RHEL 9 / Fedora / AlmaLinux / Rocky
 
 ```bash
-sudo dnf install -y python3 python3-pip python3-tkinter samba-client podman
+sudo dnf install -y python3 python3-pip python3-tkinter samba-client
 ```
 
 ##### openSUSE Leap / Tumbleweed
 
 ```bash
-sudo zypper install -y python3 python3-pip python3-tk samba-client podman
+sudo zypper install -y python3 python3-pip python3-tk samba-client
 ```
 
 ##### Arch / Manjaro
 
 ```bash
-sudo pacman -Syu --needed python python-pip tk samba podman
+sudo pacman -Syu --needed python python-pip tk samba
 ```
 
 ### SMB Background
@@ -252,22 +251,6 @@ RCE Analysis: 45/100 (medium, low confidence)
 3. Run your scan normally
 4. RCE analysis results appear in probe details alongside share enumeration
 
-### Sandbox Investigation Shell
-
-For hosts with elevated RCE scores, SMBSeek provides a read-only investigation shell:
-
-```bash
-# Launch investigation shell (requires Docker/Podman)
-# Available as CLI function after RCE analysis
-```
-
-**Features:**
-- Read-only Alpine Linux container with SMB tools
-- Command logging to `~/.smbseek/logs/sandbox_sessions/`
-- 30-day automatic log retention
-- Pre-configured with smbclient, nmap-ncat tools
-- Isolated environment for safe investigation
-
 ### Signature Management
 
 RCE signatures are stored in `signatures/rce_smb/` as YAML files. The system includes signatures for major SMB vulnerabilities:
@@ -296,7 +279,7 @@ repo root
 ├── gui/
 │   ├── xsmbseek          # GUI launcher (xSMBSeek)
 │   ├── components/       # Tkinter windows, dialogs, and widgets
-│   └── utils/            # GUI helpers (backend interface, sandbox, extract, etc.)
+│   └── utils/            # GUI helpers (backend interface, probe, extract, etc.)
 ├── commands/             # Discovery + access operation modules used by the CLI
 ├── shared/               # Configuration, database, output, and utility helpers
 ├── tools/                # Database maintenance scripts and reporting utilities
@@ -410,43 +393,6 @@ The GUI provides an intuitive interface for SMBSeek operations:
 - Analysts review and promote quarantined artifacts manually, keeping risky files out of trusted folders by default
 - See [`docs/EXTRACT_WORKFLOW_GUIDE.md`](docs/EXTRACT_WORKFLOW_GUIDE.md) for architecture details, safeguards, and troubleshooting advice.
 
-### Sandboxed Explore Workflow (Linux)
-
-- When Podman or Docker is installed, the Server Details window’s **Explore** button launches a GUI file manager inside a throwaway container. All browsing happens within the sandbox and the remote share is opened via `pcmanfm`/GVFS from that isolated session.
-- The host OS never mounts the remote share directly; the container streams stdout/stderr back to the GUI for transparency.
-- If a supported container runtime or display binding isn’t available, the button stays disabled (or errors gracefully) so operators know they must remediate the sandbox before exploring.
-- See [`docs/SANDBOXED_EXPLORER_GUIDE.md`](docs/SANDBOXED_EXPLORER_GUIDE.md) for the full architecture, proof points, and troubleshooting tips.
-
-#### macOS and Windows (experimental)
-
-We have not validated the sandbox workflow on macOS or Windows yet, but the tools listed below may work in theory. Feedback and PRs are very welcome—treat these as starting points, not official support.
-
-- **macOS (theoretical)**: install [Colima](https://github.com/abiosoft/colima) or Podman Desktop, then run `colima start --network-address`. Pull the same `docker.io/library/alpine:latest` image and verify `podman run --rm --network host alpine:latest sh -c "apk add --no-cache samba-client && smbclient --help"` succeeds. Finally, start xsmbseek from a terminal that inherits the Colima/Podman environment so the sandbox button can detect the CLI.
-- **Windows (theoretical)**: enable WSL2, install Ubuntu from the Store, and inside that distro install Podman (`sudo apt install podman`). In PowerShell, set `PODMAN_HOST` to your WSL distribution (e.g., `wsl -d Ubuntu podman info`). Pull `docker.io/library/alpine:latest` inside WSL, then launch xsmbseek from the same shell so the detection logic can find `podman.exe` on PATH.
-
-<details>
-<summary><strong>Setting up the sandbox runtime (Ubuntu, Fedora, Arch)</strong></summary>
-
-Pick the distro you love, paste the block, and you’ll have Podman plus the lightweight Alpine image we use for `smbclient` inside the sandbox. You can swap in Docker if you prefer, but Podman stays rootless by default.
-
-```bash
-# Ubuntu / Debian
-sudo apt update && sudo apt install -y podman
-podman info >/dev/null && podman pull docker.io/library/alpine:latest
-
-# Fedora / RHEL
-sudo dnf install -y podman
-podman info >/dev/null && podman pull docker.io/library/alpine:latest
-
-# Arch / Manjaro
-sudo pacman -Sy --noconfirm podman
-podman info >/dev/null && podman pull docker.io/library/alpine:latest
-```
-
-Verification tip: run `podman run --rm --network host alpine:latest sh -c "apk add --no-cache samba-client pcmanfm gvfs gvfs-smb && pcmanfm --help"`. Once that succeeds, relaunch xsmbseek and the **Explore** button should enable itself automatically.
-
-</details>
-
 See `docs/XSMBSEEK_USER_GUIDE.md` for comprehensive GUI documentation.
 
 ## Development
@@ -487,7 +433,6 @@ See `docs/AI_AGENT_FIELD_GUIDE.md` and `docs/COLLAB.md` for detailed collaborati
 - Country-based filtering to limit scan scope
 - Cautious mode (SMB signing + SMB2/SMB3 dialects) enabled by default; use `--legacy` only when you explicitly need SMB1/unsigned access
 - GUI extractions are quarantined under `~/.smbseek/quarantine/<purpose>/<timestamp>` so analysts can inspect artifacts before promoting them
-- Optional Linux sandbox for share browsing keeps risky enumeration inside Podman/Docker containers
 
 ## Legal and Ethical Use
 

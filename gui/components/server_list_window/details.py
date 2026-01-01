@@ -17,7 +17,6 @@ from typing import Dict, Any, List, Optional, Sequence, Tuple
 
 from gui.utils import probe_cache, probe_runner, probe_patterns, extract_runner
 from gui.utils.probe_runner import ProbeError
-from gui.utils.sandbox_manager import get_sandbox_manager, SandboxUnavailable, SandboxResult
 from shared.quarantine import create_quarantine_dir
 
 
@@ -78,8 +77,6 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
         "latest": cached_probe,
         "indicator_patterns": indicator_patterns or []
     }
-    sandbox_state = {"running": False}
-    sandbox_manager = get_sandbox_manager()
 
     extract_state = {
         "running": False
@@ -118,24 +115,6 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     )
     theme.apply_to_widget(extract_button, "button_secondary")
     extract_button.pack(side=tk.LEFT, padx=(0, 10))
-
-    # Explore button
-    explore_button = tk.Button(
-        button_frame,
-        text="Explore",
-        command=lambda: _launch_sandbox_explorer(
-            detail_window,
-            server_data,
-            sandbox_manager,
-            sandbox_state,
-            status_var,
-            explore_button
-        )
-    )
-    theme.apply_to_widget(explore_button, "button_secondary")
-    explore_button.pack(side=tk.LEFT, padx=(0, 10))
-    if not sandbox_manager.is_available():
-        explore_button.configure(state=tk.DISABLED)
 
     # Close button
     close_button = tk.Button(
@@ -853,67 +832,3 @@ def _derive_credentials(auth_method: Optional[str]) -> Tuple[str, str]:
     if "guest/guest" in method:
         return "guest", "guest"
     return "guest", ""
-def _launch_sandbox_explorer(
-    parent_window: tk.Toplevel,
-    server_data: Dict[str, Any],
-    sandbox_manager,
-    sandbox_state: Dict[str, Any],
-    status_var: tk.StringVar,
-    explore_button: Optional[tk.Button]
-) -> None:
-    """Launch sandboxed GUI explorer for the selected server."""
-
-    if sandbox_state.get("running"):
-        messagebox.showinfo("Sandbox Running", "A sandbox session is already in progress.")
-        return
-
-    ip_address = server_data.get('ip_address')
-    if not ip_address:
-        messagebox.showerror("Explore Unavailable", "Server IP address is missing.")
-        return
-
-    if not sandbox_manager.is_available():
-        messagebox.showerror(
-            "Sandbox Unavailable",
-            "Sandboxed exploration requires Podman or Docker on Linux."
-        )
-        return
-
-    username, password = _derive_credentials(server_data.get('auth_method', ''))
-    sandbox_state["running"] = True
-    status_var.set("Launching sandboxed explorer…")
-    if explore_button:
-        explore_button.configure(state=tk.DISABLED)
-
-    def finish(result: Optional[SandboxResult], error_message: Optional[str]):
-        sandbox_state["running"] = False
-        if explore_button and sandbox_manager.is_available():
-            explore_button.configure(state=tk.NORMAL)
-
-        if error_message:
-            status_var.set("Sandbox explorer failed")
-            messagebox.showerror("Sandbox Explorer", error_message)
-            return
-
-        if result and result.returncode == 0:
-            status_var.set("Sandbox explorer launched")
-        else:
-            stderr = (result.stderr if result else "Unknown error").strip()
-            status_var.set("Sandbox explorer failed")
-            messagebox.showerror(
-                "Sandbox Explorer",
-                f"Failed to launch sandboxed explorer.\n\n{stderr or 'No additional details provided.'}"
-            )
-
-    def worker():
-        try:
-            sandbox_result = sandbox_manager.launch_file_browser(ip_address, username, password)
-            parent_window.after(0, lambda: finish(sandbox_result, None))
-        except SandboxUnavailable as exc:
-            parent_window.after(0, lambda: finish(None, str(exc)))
-        except subprocess.TimeoutExpired:
-            parent_window.after(0, lambda: finish(None, "Sandbox explorer timed out"))
-        except Exception as exc:  # pragma: no cover
-            parent_window.after(0, lambda: finish(None, f"Unexpected error: {exc}"))
-
-    threading.Thread(target=worker, daemon=True).start()
