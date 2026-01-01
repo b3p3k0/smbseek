@@ -56,7 +56,12 @@ class SMBSeekWorkflowDatabase:
         try:
             servers = self.db_manager.execute_query("SELECT COUNT(*) as count FROM smb_servers")
             return servers[0]['count'] == 0
-        except:
+        except sqlite3.OperationalError as e:
+            # Guard against partial/invalid schemas without spamming noisy tracebacks
+            if self._verbose:
+                print(f"⚠ Database schema check failed: {e}")
+            return True
+        except Exception:
             return True
     
     def show_database_status(self):

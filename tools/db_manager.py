@@ -10,7 +10,6 @@ import os
 import logging
 from datetime import datetime
 import sys
-import os
 
 # Add shared directory to path
 shared_path = os.path.join(os.path.dirname(__file__), '..', 'shared')
@@ -20,6 +19,8 @@ from config import get_standard_timestamp
 from contextlib import contextmanager
 from typing import Dict, List, Optional, Any, Union
 import threading
+
+REQUIRED_TABLES = {"smb_servers", "scan_sessions"}
 
 
 class DatabaseManager:
@@ -48,9 +49,21 @@ class DatabaseManager:
         if not os.path.exists(db_dir):
             os.makedirs(db_dir, exist_ok=True)
         
-        # Initialize database if it doesn't exist
+        # Initialize or validate database file
         if not os.path.exists(db_path):
             self.initialize_database()
+        else:
+            schema_state = self._inspect_schema_state()
+            if schema_state == "empty":
+                self.logger.info("Database file exists but contains no tables; initializing schema.")
+                self.initialize_database()
+            elif schema_state == "incomplete":
+                missing = REQUIRED_TABLES - self._get_existing_tables()
+                missing_list = ", ".join(sorted(missing))
+                raise RuntimeError(
+                    f"Database at {self.db_path} is missing required tables: {missing_list}. "
+                    "Delete or repair the file to proceed."
+                )
     
     def get_connection(self) -> sqlite3.Connection:
         """
@@ -93,6 +106,35 @@ class DatabaseManager:
             raise
         finally:
             cursor.close()
+
+    def _get_existing_tables(self) -> set:
+        """
+        Return the set of non-system tables in the current database file.
+        """
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+            return {row[0] for row in cursor.fetchall()}
+        finally:
+            conn.close()
+
+    def _inspect_schema_state(self) -> str:
+        """
+        Determine whether the database has the required schema.
+
+        Returns:
+            "complete"   -> required tables present
+            "empty"      -> file exists but has no user tables
+            "incomplete" -> some tables exist but required ones are missing
+        """
+        tables = self._get_existing_tables()
+        if not tables:
+            return "empty"
+        if REQUIRED_TABLES.issubset(tables):
+            return "complete"
+        return "incomplete"
     
     def initialize_database(self):
         """
