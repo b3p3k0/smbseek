@@ -91,5 +91,18 @@
       ".exe", ".dll", ".sys", ".bat", ".cmd", ".scr", ".com", ".pif", ".msi", 
       ".bin", ".log", ".tmp", ".temp", ".bak", ".old", ".swp", ".lock"
     ]
+  },
+  "gui_app": {
+    "smbseek_path": ".",
+    "database_path": null,
+    "theme": "default",
+    "window_geometry": "800x250",
+    "interface_mode": "simple",
+    "last_used_config": null,
+    "operation_timeout_seconds": 3600,
+    "enable_debug_timeouts": false,
+    "version": "1.0.0",
+    "first_run": true,
+    "github_repo": "https://github.com/b3p3k0/smbseek"
   }
 }

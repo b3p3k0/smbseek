@@ -88,9 +88,8 @@ def load_timeout_configuration(interface) -> None:
 
     Configuration hierarchy (highest priority first):
     1. Environment variable: SMBSEEK_GUI_TIMEOUT
-    2. xsmbseek-config.json gui.operation_timeout_seconds
-    3. SMBSeek config.json gui.operation_timeout_seconds (if present)
-    4. Default: None (no timeout)
+    2. conf/config.json gui_app.operation_timeout_seconds
+    3. Default: None (no timeout)
 
     Design Decision: Multi-level configuration allows development, testing,
     and production flexibility while maintaining safe defaults.
@@ -105,32 +104,14 @@ def load_timeout_configuration(interface) -> None:
                 interface.default_timeout = int(env_timeout)
             return
 
-        # Try to load from GUI config first (xsmbseek-config.json)
-        gui_config_path = interface.backend_path.parent / "xsmbseek-config.json"
-        if gui_config_path.exists():
-            with open(gui_config_path, 'r') as f:
-                gui_config = json.load(f)
-
-            gui_settings = gui_config.get('gui', {})
-            if 'operation_timeout_seconds' in gui_settings:
-                interface.default_timeout = gui_settings.get('operation_timeout_seconds', None)
-                interface.enable_debug_timeouts = gui_settings.get('enable_debug_timeouts', False)
-
-                # Handle explicit zero as no timeout
-                if interface.default_timeout == 0:
-                    interface.default_timeout = None
-                return
-
-        # Fallback to SMBSeek config file
         if interface.config_path.exists():
             with open(interface.config_path, 'r') as f:
                 config = json.load(f)
 
-            gui_config = config.get('gui', {})
+            gui_config = config.get('gui_app') or config.get('gui', {})
             interface.default_timeout = gui_config.get('operation_timeout_seconds', None)
             interface.enable_debug_timeouts = gui_config.get('enable_debug_timeouts', False)
 
-            # Handle explicit zero as no timeout
             if interface.default_timeout == 0:
                 interface.default_timeout = None
 

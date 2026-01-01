@@ -88,6 +88,12 @@ class AppConfigDialog:
         
     def _load_current_settings(self) -> None:
         """Load current configuration settings."""
+        if self.main_config:
+            self.smbseek_path = str(self.main_config.get_smbseek_path())
+            self.config_path = str(self.main_config.get_config_path())
+            self.database_path = str(self.main_config.get_database_path())
+            return
+
         if self.settings_manager:
             self.smbseek_path = self.settings_manager.get_backend_path()
             
@@ -105,7 +111,7 @@ class AppConfigDialog:
         else:
             # Fallback defaults
             self.smbseek_path = "./smbseek"
-            self.config_path = "./smbseek/conf/config.json"
+            self.config_path = "./conf/config.json"
             self.database_path = "./smbseek/smbseek.db"
     
     def _create_dialog(self) -> None:

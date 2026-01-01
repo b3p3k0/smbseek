@@ -25,6 +25,7 @@ import argparse
 import sys
 import os
 import json
+import shutil
 from pathlib import Path
 import threading
 import queue
@@ -46,86 +47,66 @@ sys.path.insert(0, str(GUI_DIR / "utils"))
 
 # Configuration manager for xsmbseek settings
 class XSMBSeekConfig:
-    """Manages xsmbseek configuration separate from SMBSeek configuration."""
-    
+    """Manages GUI settings stored within conf/config.json."""
+
+    GUI_SECTION = "gui_app"
+
     def __init__(self, config_file: Optional[str] = None):
-        """
-        Initialize configuration manager.
-        
-        Args:
-            config_file: Optional path to specific config file
-        """
-        self.config_file = config_file or (SCRIPT_DIR / "xsmbseek-config.json")
+        default_path = SCRIPT_DIR / "conf" / "config.json"
+        self.config_file = Path(config_file).resolve() if config_file else default_path
         self.config = self._load_config()
     
     def _load_config(self) -> Dict[str, Any]:
-        """Load configuration with fallback to defaults."""
-        # Try specified config file first
-        if self.config_file.exists():
-            try:
-                with open(self.config_file, 'r') as f:
-                    config = json.load(f)
-                    return self._validate_and_migrate_config(config)
-            except (json.JSONDecodeError, FileNotFoundError) as e:
-                print(f"Warning: Failed to load config from {self.config_file}: {e}")
-        
-        # Try default config file
-        default_config = SCRIPT_DIR / "xsmbseek-config.json"
-        if default_config.exists() and default_config != self.config_file:
-            try:
-                with open(default_config, 'r') as f:
-                    config = json.load(f)
-                    print(f"Using default configuration from {default_config}")
-                    return self._validate_and_migrate_config(config)
-            except (json.JSONDecodeError, FileNotFoundError):
-                pass
-        
-        # Fall back to built-in defaults
-        return self._get_default_config()
-    
-    def _get_default_config(self) -> Dict[str, Any]:
-        """Get built-in default configuration."""
-        return {
-            "smbseek": {
-                "path": ".",
-                "database_path": None
-            },
-            "gui": {
-                "theme": "default",
-                "interface_mode": "simple",
-                "last_used_config": None
-            },
-            "app": {
-                "version": "1.0.0",
-                "first_run": True,
-                "github_repo": "https://github.com/b3p3k0/smbseek"
-            }
-        }
-    
-    def _validate_and_migrate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate and migrate configuration to current version."""
-        defaults = self._get_default_config()
-        
-        # Ensure all required sections exist
-        for section in defaults:
-            if section not in config:
-                config[section] = defaults[section]
+        config_path = self.config_file
+        if not config_path.exists():
+            example_path = config_path.parent / f"{config_path.name}.example"
+            if example_path.exists():
+                shutil.copy2(example_path, config_path)
             else:
-                # Ensure all keys in each section exist
-                for key in defaults[section]:
-                    if key not in config[section]:
-                        config[section][key] = defaults[section][key]
-        
+                raise FileNotFoundError(
+                    f"Configuration file not found at {config_path} and example template is missing."
+                )
+
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+
+        if self.GUI_SECTION not in config:
+            config[self.GUI_SECTION] = self._default_gui_section()
+            self._write_config(config)
+
         return config
+    
+    def _default_gui_section(self) -> Dict[str, Any]:
+        return {
+            "smbseek_path": ".",
+            "database_path": None,
+            "theme": "default",
+            "window_geometry": "800x250",
+            "interface_mode": "simple",
+            "last_used_config": None,
+            "operation_timeout_seconds": 3600,
+            "enable_debug_timeouts": False,
+            "version": "1.0.0",
+            "first_run": True,
+            "github_repo": "https://github.com/b3p3k0/smbseek"
+        }
+
+    def _ensure_gui_section(self) -> Dict[str, Any]:
+        if self.GUI_SECTION not in self.config:
+            self.config[self.GUI_SECTION] = self._default_gui_section()
+            self._write_config(self.config)
+        return self.config[self.GUI_SECTION]
+
+    def _write_config(self, data: Dict[str, Any]) -> None:
+        config_path = self.config_file
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
     
     def save_config(self) -> bool:
         """Save current configuration to file."""
         try:
-            # Ensure directory exists
-            self.config_file.parent.mkdir(parents=True, exist_ok=True)
-            
-            with open(self.config_file, 'w') as f:
-                json.dump(self.config, f, indent=2)
+            self._write_config(self.config)
             return True
         except Exception as e:
             print(f"Error saving config: {e}")
@@ -133,7 +114,7 @@ class XSMBSeekConfig:
     
     def get_smbseek_path(self) -> Path:
         """Get absolute path to SMBSeek installation."""
-        path_str = self.config["smbseek"]["path"]
+        path_str = self._ensure_gui_section().get("smbseek_path", ".")
         path = Path(path_str)
         
         if path.is_absolute():
@@ -144,11 +125,11 @@ class XSMBSeekConfig:
     
     def set_smbseek_path(self, path: str) -> None:
         """Set SMBSeek installation path."""
-        self.config["smbseek"]["path"] = path
+        self._ensure_gui_section()["smbseek_path"] = path
     
     def get_database_path(self) -> Optional[Path]:
         """Get database path, with fallback to SMBSeek default."""
-        db_path = self.config["smbseek"]["database_path"]
+        db_path = self._ensure_gui_section().get("database_path")
         if db_path:
             path = Path(db_path)
             return path if path.is_absolute() else (SCRIPT_DIR / path).resolve()
@@ -158,7 +139,11 @@ class XSMBSeekConfig:
     
     def set_database_path(self, path: Optional[str]) -> None:
         """Set database path (None for default)."""
-        self.config["smbseek"]["database_path"] = path
+        self._ensure_gui_section()["database_path"] = path
+
+    def get_config_path(self) -> Path:
+        """Return the underlying configuration file path."""
+        return self.config_file
     
     def validate_smbseek_installation(self) -> Dict[str, Any]:
         """
@@ -373,7 +358,7 @@ class XSMBSeekGUI:
         
         # Initialize configuration system
         # Configuration Architecture:
-        # - self.config (XSMBSeekConfig) manages xsmbseek-config.json 
+        # - self.config (XSMBSeekConfig) manages GUI settings inside conf/config.json
         # - self.settings_manager (SettingsManager) manages ~/.smbseek/gui_settings.json
         # These work together but maintain separate responsibilities
         self.config = XSMBSeekConfig(config_path)
@@ -450,7 +435,7 @@ class XSMBSeekGUI:
         Setup integration with SMBSeek toolkit.
         
         Initializes two separate configuration systems:
-        1. XSMBSeekConfig: Manages xsmbseek-config.json (SMBSeek paths, app settings)
+        1. XSMBSeekConfig: Manages GUI settings in conf/config.json (paths, metadata)
         2. SettingsManager: Manages ~/.smbseek/gui_settings.json (GUI preferences)
         
         The systems work together but maintain separate concerns for modularity.
@@ -494,7 +479,7 @@ class XSMBSeekGUI:
             raise RuntimeError(f"Failed to initialize database reader: {e}")
         
         # Initialize settings manager (GUI preferences in ~/.smbseek/)
-        # Note: This is separate from self.config (XSMBSeekConfig) which manages xsmbseek-config.json
+        # Note: This is separate from self.config (XSMBSeekConfig) which manages conf/config.json
         try:
             self.settings_manager = get_settings_manager()  # Use default ~/.smbseek/ directory
             
@@ -595,7 +580,7 @@ class XSMBSeekGUI:
     def _create_dashboard(self) -> None:
         """Create main dashboard widget."""
         # Get correct SMBSeek config path
-        smbseek_config_path = self.config.get_smbseek_path() / "conf" / "config.json"
+        smbseek_config_path = self.config.get_config_path()
         
         self.dashboard = DashboardWidget(
             self.root,
@@ -653,7 +638,7 @@ class XSMBSeekGUI:
         messagebox.showinfo(
             "Settings",
             "xsmbseek settings dialog will be implemented in the next phase.\\n\\n"
-            "For now, you can edit xsmbseek-config.json manually."
+            "For now, you can edit conf/config.json manually."
         )
     
     def _open_drill_down_window(self, window_type: str, data: Dict[str, Any]) -> None:
@@ -669,15 +654,14 @@ class XSMBSeekGUI:
                 open_server_list_window(self.root, self.db_reader, data, self.settings_manager)
             elif window_type == "config_editor":
                 # Open SMBSeek configuration editor
-                config_path = self.config.get_smbseek_path() / "conf" / "config.json"
-                open_config_editor_window(self.root, str(config_path))
+                open_config_editor_window(self.root, str(self.config.get_config_path()))
             elif window_type == "app_config":
                 # Open application configuration dialog
                 open_app_config_dialog(
                     self.root,
                     self.settings_manager,
                     self._open_config_editor_direct,
-                    self.config,  # Pass main config so changes get saved to xsmbseek-config.json
+                    self.config,  # Pass main config so changes get saved to conf/config.json
                     self._refresh_database_connection  # Refresh database connection after changes
                 )
             elif window_type == "data_import":
@@ -831,7 +815,7 @@ def main():
         "--config",
         type=str,
         metavar="FILE",
-        help="Path to xsmbseek configuration file (default: ./xsmbseek-config.json)"
+        help="Path to xsmbseek configuration file (default: ./conf/config.json)"
     )
     
     parser.add_argument(
