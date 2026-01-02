@@ -43,11 +43,19 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
     text_widget = tk.Text(text_frame, wrap=tk.WORD, state=tk.DISABLED)
-    scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=text_widget.yview)
+    scrollbar = tk.Scrollbar(text_frame, orient="vertical", command=text_widget.yview)
     text_widget.configure(yscrollcommand=scrollbar.set)
 
     text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    # Add mousewheel scrolling support
+    def on_mousewheel(event):
+        text_widget.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    text_widget.bind("<MouseWheel>", on_mousewheel)  # Windows/MacOS
+    text_widget.bind("<Button-4>", lambda e: text_widget.yview_scroll(-1, "units"))  # Linux scroll up
+    text_widget.bind("<Button-5>", lambda e: text_widget.yview_scroll(1, "units"))   # Linux scroll down
 
     # Initial render (includes cached probe data if available)
     ip_address = server_data.get('ip_address', 'Unknown')
