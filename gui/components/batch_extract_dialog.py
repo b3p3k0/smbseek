@@ -15,6 +15,13 @@ from tkinter import filedialog, messagebox
 import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+import sys
+import os
+
+# Add utils to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
+
+from dialog_helpers import ensure_dialog_focus
 
 
 class BatchExtractSettingsDialog:
@@ -155,6 +162,9 @@ class BatchExtractSettingsDialog:
             self.dialog.protocol("WM_DELETE_WINDOW", self._on_abort)
         else:
             self.dialog.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+        # Ensure dialog appears on top and gains focus (critical for VMs)
+        ensure_dialog_focus(self.dialog, self.parent)
 
         self.parent.wait_window(self.dialog)
         return self.result

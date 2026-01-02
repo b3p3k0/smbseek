@@ -21,6 +21,7 @@ sys.path.insert(0, str(gui_dir / "utils"))
 
 from style import get_theme
 from data_import_engine import get_import_engine
+from dialog_helpers import ensure_dialog_focus
 
 
 def open_data_import_dialog(parent: tk.Tk, db_reader) -> None:
@@ -103,14 +104,17 @@ class DataImportDialog:
         
         # Setup event handlers
         self._setup_event_handlers()
-        
+
         # Center dialog
         self._center_dialog()
-        
+
         # Initialize default values
         self.data_type_var.set('servers')
         self.import_mode_var.set('merge')
-    
+
+        # Ensure dialog appears on top and gains focus (critical for VMs)
+        ensure_dialog_focus(self.dialog, self.parent)
+
     def _create_header(self) -> None:
         """Create dialog header with title and description."""
         header_frame = tk.Frame(self.dialog)

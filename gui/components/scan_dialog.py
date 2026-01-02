@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 
 from style import get_theme
 from template_store import TemplateStore
+from dialog_helpers import ensure_dialog_focus
 try:
     from scan_preflight import run_preflight   # standalone/absolute
 except ImportError:
@@ -205,7 +206,10 @@ class ScanDialog:
 
         # Focus on default field
         self._focus_initial_field()
-    
+
+        # Ensure dialog appears on top and gains focus (critical for VMs)
+        ensure_dialog_focus(self.dialog, self.parent)
+
     def _center_dialog(self) -> None:
         """Center dialog on parent window."""
         self.dialog.update_idletasks()
@@ -247,22 +251,39 @@ class ScanDialog:
             return
 
         if new_value == "legacy":
+            # Ensure dialog has focus before showing messagebox
+            self.dialog.lift()
+            self.dialog.focus_force()
+
             proceed = messagebox.askokcancel(
                 "Enable Legacy Mode?",
                 "Legacy mode allows SMB1/unsigned SMB sessions and bypasses built-in safeguards.\n"
                 "Use only when you trust the target network.",
+                parent=self.dialog,  # Ensure messagebox is parented to dialog
                 icon='warning'
             )
+
+            # Restore focus to dialog after messagebox closes
+            ensure_dialog_focus(self.dialog, self.parent)
+
             if not proceed:
                 self._security_mode_guard = True
                 self.security_mode_var.set(self._security_mode_previous)
                 self._security_mode_guard = False
                 return
         elif new_value == "cautious":
+            # Ensure dialog has focus before showing messagebox
+            self.dialog.lift()
+            self.dialog.focus_force()
+
             messagebox.showinfo(
                 "Cautious Mode Reminder",
-                "Cautious mode enforces SMB2+/SMB3 and signing. It's extra secure but may return fewer results."
+                "Cautious mode enforces SMB2+/SMB3 and signing. It's extra secure but may return fewer results.",
+                parent=self.dialog  # Ensure messagebox is parented to dialog
             )
+
+            # Restore focus to dialog after messagebox closes
+            ensure_dialog_focus(self.dialog, self.parent)
 
         self._security_mode_previous = new_value
     

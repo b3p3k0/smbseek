@@ -23,6 +23,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 
 from style import get_theme
+from dialog_helpers import ensure_dialog_focus
 
 
 class AppConfigDialog:
@@ -135,10 +136,13 @@ class AppConfigDialog:
         self._create_header()
         self._create_paths_section()
         self._create_button_panel()
-        
+
         # Initialize validation
         self._validate_all_paths()
-    
+
+        # Ensure dialog appears on top and gains focus (critical for VMs)
+        ensure_dialog_focus(self.dialog, self.parent)
+
     def _center_window(self) -> None:
         """Center the dialog window on screen."""
         self.dialog.update_idletasks()

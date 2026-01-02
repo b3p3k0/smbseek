@@ -8,6 +8,13 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+import sys
+import os
+
+# Add utils to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
+
+from dialog_helpers import ensure_dialog_focus
 
 try:
     from batch_extract_dialog import BatchExtractSettingsDialog  # standalone/absolute
@@ -78,6 +85,9 @@ class ProbeConfigDialog:
             if self.theme:
                 self.theme.apply_to_widget(btn, "button_secondary")
             btn.pack(side=tk.LEFT, padx=5)
+
+        # Ensure dialog appears on top and gains focus (critical for VMs)
+        ensure_dialog_focus(self.dialog, self.parent)
 
         self.dialog.protocol("WM_DELETE_WINDOW", self._abort)
         self.parent.wait_window(self.dialog)
@@ -165,6 +175,9 @@ class SummaryDialog:
             self.theme.apply_to_widget(start_btn, "button_primary")
         back_btn.pack(side=tk.LEFT, padx=5)
         start_btn.pack(side=tk.LEFT, padx=5)
+
+        # Ensure dialog appears on top and gains focus (critical for VMs)
+        ensure_dialog_focus(self.dialog, self.parent)
 
         self.dialog.protocol("WM_DELETE_WINDOW", self._back)
         self.parent.wait_window(self.dialog)

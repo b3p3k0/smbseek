@@ -20,6 +20,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 
 from style import get_theme
+from dialog_helpers import ensure_dialog_focus
 
 
 class SimpleConfigEditorWindow:
@@ -82,10 +83,13 @@ class SimpleConfigEditorWindow:
         self._create_header()
         self._create_text_editor()
         self._create_button_panel()
-        
+
         # Setup event handlers
         self._setup_event_handlers()
-    
+
+        # Ensure window appears on top and gains focus (critical for VMs)
+        ensure_dialog_focus(self.window, self.parent)
+
     def _center_window(self) -> None:
         """Center window on parent."""
         self.window.update_idletasks()

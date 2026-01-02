@@ -20,6 +20,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 
 from style import get_theme
+from dialog_helpers import ensure_dialog_focus
 
 
 class ScanResultsDialog:
@@ -89,10 +90,13 @@ class ScanResultsDialog:
         # Ensure window is fully rendered before grabbing
         self.dialog.update_idletasks()
         self.dialog.grab_set()
-        
+
+        # Ensure dialog appears on top and gains focus (critical for VMs)
+        ensure_dialog_focus(self.dialog, self.parent)
+
         # Focus on close button
         self._focus_close_button()
-    
+
     def _center_dialog(self) -> None:
         """Center dialog on parent window."""
         self.dialog.update_idletasks()

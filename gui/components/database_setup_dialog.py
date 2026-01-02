@@ -26,6 +26,7 @@ from style import get_theme
 from backend_interface import BackendInterface
 from database_access import DatabaseReader
 from error_codes import get_error, format_error_message
+from dialog_helpers import ensure_dialog_focus
 
 
 class DatabaseSetupDialog:
@@ -101,10 +102,14 @@ class DatabaseSetupDialog:
         
         # Center dialog
         self._center_dialog()
-        
+
+        # Ensure dialog appears on top and gains focus (critical for VMs)
+        if self.parent:  # Only apply if this is a child dialog, not root window
+            ensure_dialog_focus(self.dialog, self.parent)
+
         # Start processing background updates
         self._process_operation_queue()
-    
+
     def _create_header(self) -> None:
         """Create dialog header with title and description."""
         header_frame = tk.Frame(self.dialog)

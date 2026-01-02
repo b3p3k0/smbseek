@@ -12,12 +12,17 @@ import platform
 import threading
 import os
 import json
+import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Sequence, Tuple
+
+# Add utils to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'utils'))
 
 from gui.utils import probe_cache, probe_runner, probe_patterns, extract_runner
 from gui.utils.probe_runner import ProbeError
 from shared.quarantine import create_quarantine_dir
+from dialog_helpers import ensure_dialog_focus
 
 
 def show_server_detail_popup(parent_window, server_data, theme, settings_manager=None,
@@ -136,6 +141,9 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     # Ensure window is fully rendered before setting grab
     detail_window.update_idletasks()
     detail_window.grab_set()
+
+    # Ensure dialog appears on top and gains focus (critical for VMs)
+    ensure_dialog_focus(detail_window, parent_window)
 
 
 
@@ -478,6 +486,9 @@ def _open_probe_dialog(
     if theme:
         theme.apply_to_widget(dialog, "main_window")
 
+    # Ensure dialog appears on top and gains focus (critical for VMs)
+    ensure_dialog_focus(dialog, parent_window)
+
     tk.Label(dialog, text="Max directories per share:").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
     dirs_var = tk.IntVar(value=config["max_directories"])
     tk.Entry(dialog, textvariable=dirs_var, width=10).grid(row=0, column=1, padx=10, pady=(10, 5))
@@ -584,6 +595,9 @@ def _open_extract_dialog(
     dialog.grab_set()
     if theme:
         theme.apply_to_widget(dialog, "main_window")
+
+    # Ensure dialog appears on top and gains focus (critical for VMs)
+    ensure_dialog_focus(dialog, parent_window)
 
     download_var = tk.StringVar(value=default_dir)
     max_file_var = tk.IntVar(value=config["max_file_size_mb"])

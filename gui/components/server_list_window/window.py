@@ -25,12 +25,14 @@ try:
     from gui.utils.style import get_theme
     from gui.utils.data_export_engine import get_export_engine
     from gui.utils.scan_manager import get_scan_manager
+    from gui.utils.dialog_helpers import ensure_dialog_focus
 except ImportError:
     # Handle relative imports when running from gui directory
     from utils.database_access import DatabaseReader
     from utils.style import get_theme
     from utils.data_export_engine import get_export_engine
     from utils.scan_manager import get_scan_manager
+    from utils.dialog_helpers import ensure_dialog_focus
 
 # Import modular components
 from . import export, details, filters, table
@@ -175,6 +177,9 @@ class ServerListWindow:
 
         # Bind events
         self._setup_event_handlers()
+
+        # Ensure window appears on top and gains focus (critical for VMs)
+        ensure_dialog_focus(self.window, self.parent)
 
     def _load_indicator_patterns(self) -> None:
         """Load ransomware indicator patterns from SMBSeek config."""
