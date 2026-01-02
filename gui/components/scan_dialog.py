@@ -1887,6 +1887,7 @@ class ScanDialog:
                 self._settings_manager.set_setting('scan_dialog.rescan_failed', rescan_failed)
                 self._settings_manager.set_setting('scan_dialog.api_key_override', api_key or '')
                 self._settings_manager.set_setting('scan_dialog.search_strings', strings_input)
+                self._settings_manager.set_setting('scan_dialog.country_code', country_param or '')
                 self._settings_manager.set_setting('scan_dialog.discovery_max_concurrency', discovery_concurrency)
                 self._settings_manager.set_setting('scan_dialog.access_max_concurrency', access_concurrency)
                 self._settings_manager.set_setting('scan_dialog.rate_limit_delay', rate_limit_delay)
@@ -1938,6 +1939,7 @@ class ScanDialog:
                 rescan_failed = bool(self._settings_manager.get_setting('scan_dialog.rescan_failed', False))
                 api_key = str(self._settings_manager.get_setting('scan_dialog.api_key_override', ''))
                 search_strings = str(self._settings_manager.get_setting('scan_dialog.search_strings', ''))
+                country_code = str(self._settings_manager.get_setting('scan_dialog.country_code', ''))
 
                 discovery_concurrency = self._settings_manager.get_setting('scan_dialog.discovery_max_concurrency', None)
                 access_concurrency = self._settings_manager.get_setting('scan_dialog.access_max_concurrency', None)
@@ -1952,6 +1954,7 @@ class ScanDialog:
                 self.rescan_failed_var.set(rescan_failed)
                 self.api_key_var.set(api_key)
                 self.search_strings_var.set(search_strings)
+                self.country_var.set(country_code)
 
                 if discovery_concurrency is not None:
                     self.discovery_concurrency_var.set(str(discovery_concurrency))

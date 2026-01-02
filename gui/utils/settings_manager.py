@@ -81,6 +81,7 @@ class SettingsManager:
             'scan_dialog': {
                 'max_shodan_results': 1000,
                 'recent_hours': None,  # None means use config default
+                'country_code': '',
                 'rescan_all': False,
                 'rescan_failed': False,
                 'api_key_override': '',
