@@ -16,7 +16,6 @@ import platform
 import csv
 import os
 import sys
-import webbrowser
 
 # Add utils to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'utils'))
@@ -463,15 +462,6 @@ class ServerListWindow:
         )
         self.theme.apply_to_widget(self.export_all_button, "button_primary")
         self.export_all_button.pack(side=tk.LEFT)
-
-        # About button
-        self.about_button = tk.Button(
-            button_container,
-            text="ℹ️ About",
-            command=self._open_about_dialog
-        )
-        self.theme.apply_to_widget(self.about_button, "button_secondary")
-        self.about_button.pack(side=tk.LEFT, padx=(10, 0))
 
         self._update_action_buttons_state()
 
@@ -1333,9 +1323,6 @@ class ServerListWindow:
         if self.export_all_button:
             self.export_all_button.configure(state=export_all_state)
 
-        if hasattr(self, "about_button") and self.about_button:
-            self.about_button.configure(state=tk.NORMAL)
-
         self._update_context_menu_state()
 
     def _update_stop_button_style(self, batch_active: bool) -> None:
@@ -1652,37 +1639,6 @@ class ServerListWindow:
         if self._is_batch_active():
             self._stop_active_batch()
         self.window.destroy()
-
-    def _open_about_dialog(self) -> None:
-        dialog = tk.Toplevel(self.window)
-        dialog.title("About SMBSeek")
-        dialog.transient(self.window)
-        dialog.grab_set()
-        if self.theme:
-            self.theme.apply_to_widget(dialog, "main_window")
-
-        body = tk.Frame(dialog)
-        body.pack(padx=18, pady=16, fill=tk.BOTH, expand=True)
-
-        title = tk.Label(body, text="SMBSeek", font=(None, 14, "bold"))
-        title.pack(anchor="w")
-
-        blurb = (
-            "SMBSeek helps defensive analysts find SMB servers with weak \n"
-            "authentication and demonstrate impact via safe, guided workflows.\n"
-            "No warranty expressed or implied; use at your own risk."
-        )
-        tk.Label(body, text=blurb, justify="left", anchor="w").pack(anchor="w", pady=(6, 10))
-
-        link = tk.Label(body, text="GitHub: https://github.com/b3p3k0/smbseek", fg="#0066cc", cursor="hand2")
-        link.pack(anchor="w")
-        link.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/b3p3k0/smbseek"))
-
-        btn_frame = tk.Frame(body)
-        btn_frame.pack(fill=tk.X, pady=(12, 0))
-        tk.Button(btn_frame, text="Close", command=dialog.destroy).pack(side=tk.RIGHT)
-
-        ensure_dialog_focus(dialog, self.window)
 
     # Public API methods for external compatibility
     def apply_recent_discoveries_filter(self) -> None:

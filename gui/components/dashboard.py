@@ -11,6 +11,7 @@ while drill-down buttons allow detailed exploration without losing overview cont
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+import webbrowser
 import tkinter.font as tkfont
 import threading
 import time
@@ -245,6 +246,24 @@ class DashboardWidget:
         )
         self.theme.apply_to_widget(config_button, "button_secondary")
         config_button.pack(side=tk.LEFT)
+
+        # About button
+        about_button = tk.Button(
+            actions_frame,
+            text="ℹ️ About",
+            command=self._open_about_dialog
+        )
+        self.theme.apply_to_widget(about_button, "button_secondary")
+        about_button.pack(side=tk.LEFT, padx=(8, 0))
+
+        # About button
+        about_button = tk.Button(
+            actions_frame,
+            text="ℹ️ About",
+            command=self._open_about_dialog
+        )
+        self.theme.apply_to_widget(about_button, "button_secondary")
+        about_button.pack(side=tk.LEFT, padx=(8, 0))
         
     
     def _build_progress_section(self) -> None:
@@ -1483,6 +1502,39 @@ class DashboardWidget:
         """Open application configuration dialog."""
         if self.drill_down_callback:
             self.drill_down_callback("app_config", {})
+
+    def _open_about_dialog(self) -> None:
+        dialog = tk.Toplevel(self.parent)
+        dialog.title("About SMBSeek")
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        if self.theme:
+            apply_theme_to_window(dialog, self.theme)
+
+        body = tk.Frame(dialog)
+        body.pack(padx=18, pady=16, fill=tk.BOTH, expand=True)
+
+        title = tk.Label(body, text="SMBSeek", font=(None, 14, "bold"))
+        title.pack(anchor="w")
+
+        blurb = (
+            "SMBSeek helps defensive analysts find SMB servers with weak \n"
+            "authentication and demonstrate impact via safe, guided workflows.\n"
+            "No warranty expressed or implied; use at your own risk."
+        )
+        tk.Label(body, text=blurb, justify="left", anchor="w").pack(anchor="w", pady=(6, 10))
+
+        link = tk.Label(body, text="GitHub: https://github.com/b3p3k0/smbseek", fg="#0066cc", cursor="hand2")
+        link.pack(anchor="w")
+        link.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/b3p3k0/smbseek"))
+
+        btn_frame = tk.Frame(body)
+        btn_frame.pack(fill=tk.X, pady=(12, 0))
+        tk.Button(btn_frame, text="Close", command=dialog.destroy).pack(side=tk.RIGHT)
+
+        dialog.update_idletasks()
+        dialog.lift()
+        dialog.focus_set()
     
     
     def _open_drill_down(self, window_type: str) -> None:
