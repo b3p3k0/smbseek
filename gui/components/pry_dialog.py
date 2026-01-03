@@ -8,7 +8,7 @@ import webbrowser
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 from gui.utils.dialog_helpers import ensure_dialog_focus
 
@@ -16,12 +16,13 @@ from gui.utils.dialog_helpers import ensure_dialog_focus
 class PryDialog:
     """Modal dialog to collect username, wordlist, and Pry options."""
 
-    def __init__(self, parent: tk.Toplevel, theme, settings_manager, config_path: Optional[str], target_label: str = ""):
+    def __init__(self, parent: tk.Toplevel, theme, settings_manager, config_path: Optional[str], target_label: str = "", shares: Optional[Sequence[Dict[str, Any]]] = None):
         self.parent = parent
         self.theme = theme
         self.settings = settings_manager
         self.config_path = Path(config_path) if config_path else None
         self.target_label = target_label
+        self.shares = list(shares or [])
         self.dialog: Optional[tk.Toplevel] = None
         self.result: Optional[Dict[str, Any]] = None
 
@@ -29,6 +30,7 @@ class PryDialog:
 
         self.username_var = tk.StringVar()
         self.wordlist_var = tk.StringVar(value=self.defaults["wordlist_path"])
+        self.share_var = tk.StringVar()
         self.user_as_pass_var = tk.BooleanVar(value=self.defaults["user_as_pass"])
         self.stop_on_lockout_var = tk.BooleanVar(value=self.defaults["stop_on_lockout"])
         self.verbose_var = tk.BooleanVar(value=self.defaults["verbose"])
@@ -51,6 +53,12 @@ class PryDialog:
         if self.target_label:
             tk.Label(main, text=f"Target Host: {self.target_label}").grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 10))
             row += 1
+
+        tk.Label(main, text="Share to test:").grid(row=row, column=0, sticky="w", pady=5)
+        share_choices = self._build_share_choices()
+        share_menu = ttk.Combobox(main, textvariable=self.share_var, values=share_choices, state="readonly" if share_choices else "disabled", width=32)
+        share_menu.grid(row=row, column=1, columnspan=2, sticky="we", pady=5)
+        row += 1
 
         tk.Label(main, text="Username to test:").grid(row=row, column=0, sticky="w", pady=5)
         tk.Entry(main, textvariable=self.username_var, width=32).grid(row=row, column=1, columnspan=2, sticky="we", pady=5)
@@ -128,6 +136,10 @@ class PryDialog:
     def _on_start(self) -> None:
         username = self.username_var.get().strip()
         wordlist = self.wordlist_var.get().strip()
+        share_name = self.share_var.get().strip()
+        if not share_name:
+            messagebox.showerror("Missing share", "Select a share to test.", parent=self.dialog)
+            return
         if not username:
             messagebox.showerror("Missing username", "Please enter a username to test.", parent=self.dialog)
             return
@@ -175,6 +187,7 @@ class PryDialog:
 
         self.result = {
             "username": username,
+            "share_name": share_name,
             "wordlist_path": str(path_obj),
             "options": {
                 "user_as_pass": bool(self.user_as_pass_var.get()),
@@ -223,6 +236,33 @@ class PryDialog:
                 pass
 
         return defaults
+
+    def _build_share_choices(self) -> Sequence[str]:
+        if not self.shares:
+            self.share_var.set("")
+            return []
+
+        # Sort denied first (accessible False), then accessible
+        denied = [s for s in self.shares if not s.get("accessible")]
+        allowed = [s for s in self.shares if s.get("accessible")]
+        ordered = denied + allowed
+
+        names = []
+        seen = set()
+        for entry in ordered:
+            name = entry.get("share_name") or ""
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            badge = "(denied)" if not entry.get("accessible") else "(accessible)"
+            names.append(f"{name} {badge}")
+
+        if names:
+            # Preselect first denied, else first item
+            self.share_var.set(names[0])
+        else:
+            self.share_var.set("")
+        return names
 
 
 def os_access_readable(path: Path) -> bool:

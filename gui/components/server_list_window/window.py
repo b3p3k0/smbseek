@@ -761,12 +761,25 @@ class ServerListWindow:
             if not config_path and hasattr(self.settings_manager, "get_smbseek_config_path"):
                 config_path = self.settings_manager.get_smbseek_config_path()
 
+        # Build share choices from share_access data
+        shares = []
+        try:
+            shares = self.db_reader.get_denied_shares(ip_addr, limit=100)
+            # Also include accessible shares for completeness
+            shares += self.db_reader.get_accessible_shares(ip_addr)
+            # Mark accessible flag for combobox badge
+            for s in shares:
+                s.setdefault("accessible", bool(s.get("permissions") or False))
+        except Exception:
+            shares = []
+
         dialog = PryDialog(
             parent=self.window,
             theme=self.theme,
             settings_manager=self.settings_manager,
             config_path=config_path,
-            target_label=ip_addr
+            target_label=ip_addr,
+            shares=shares
         )
         dialog_result = dialog.show()
         if not dialog_result:
@@ -775,6 +788,7 @@ class ServerListWindow:
         options = dialog_result.get("options", {})
         options.update({
             "username": dialog_result.get("username", ""),
+            "share_name": dialog_result.get("share_name", ""),
             "wordlist_path": dialog_result.get("wordlist_path", ""),
             "worker_count": 1
         })
