@@ -461,18 +461,20 @@ See `docs/dev/AI_AGENT_FIELD_GUIDE.md` and `docs/dev/COLLAB.md` for detailed col
 - Follow responsible disclosure practices
 - Maintain ethical scanning practices with appropriate rate limits
 
-## Bundled Wordlist (Pry)
+## Wordlists for Pry
 
-- The repo includes a common wordlist at `conf/wordlists/rockyou.txt` (sourced from gmelodie/awesome-wordlists).
-- To prefill the Pry dialog with this file, set `pry.wordlist_path` in `conf/config.json` or via GUI settings.
+- Download a wordlist such as `rockyou.txt` from the awesome-wordlists collection: https://github.com/gmelodie/awesome-wordlists
+- Set `pry.wordlist_path` in `conf/config.json` (default points to `conf/wordlists/rockyou.txt` if you place it there) or override in GUI settings.
 
 ## Credits
 
-- Pry password audit is inspired by the mmcbrute project (BSD-3-Clause) by Corey Gilks; SMB authentication brute logic references that work.
+- Pry password audit is inspired by the mmcbrute project (BSD-3-Clause) by Corey Gilks; SMB authentication brute logic references that work. Repository: https://github.com/gcarq/mmcbrute (license copy in `licenses/mmcbrute-BSD-3-Clause.txt`).
+- Recommended wordlists come from the awesome-wordlists collection (Apache-2.0). Source: https://github.com/gmelodie/awesome-wordlists (license copy in `licenses/awesome-wordlists-APACHE-2.0.txt`).
 
 ## License
 
 This project is licensed under the terms specified in the LICENSE file.
+Third-party components referenced by Pry include licenses stored in `licenses/`.
 
 ## Disclaimer
 

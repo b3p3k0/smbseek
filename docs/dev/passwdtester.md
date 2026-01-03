@@ -9,7 +9,7 @@ MVP decisions (2026-01-03):
 - Progress via status text (“Pry <ip>: tried X/Y passwords…”), no progress bar.
 - Do not store found credentials; show only in batch summary.
 - Missing/unreadable wordlist or missing username blocks start with a friendly dialog.
-- A bundled default wordlist is available at `conf/wordlists/rockyou.txt` (sourced from gmelodie/awesome-wordlists); set `pry.wordlist_path` to this file if you want the Pry dialog pre-populated.
+- Recommended wordlist: download from https://github.com/gmelodie/awesome-wordlists (e.g., `rockyou.txt`) and set `pry.wordlist_path` accordingly (default points to `conf/wordlists/rockyou.txt` if you place it there).
 
 We plan to integrate a new “Pry” function into SMBSeek to audit weak passwords on a selected SMB host. This feature will leverage the capabilities of the open-source mmcbrute tool (BSD-3 licensed) to perform SMB brute-force credential testing
 github.com

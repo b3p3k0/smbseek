@@ -4,6 +4,7 @@ Pry dialog for collecting weak-password audit inputs.
 
 import json
 import os
+import webbrowser
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from pathlib import Path
@@ -63,6 +64,16 @@ class PryDialog:
         if self.theme:
             self.theme.apply_to_widget(browse_btn, "button_secondary")
         browse_btn.pack(side=tk.LEFT, padx=(6, 0))
+        row += 1
+
+        link = tk.Label(
+            main,
+            text="Need a list? awesome-wordlists",
+            fg="#0066cc",
+            cursor="hand2"
+        )
+        link.grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 8))
+        link.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/gmelodie/awesome-wordlists"))
         row += 1
 
         tk.Checkbutton(main, text="Try username as password", variable=self.user_as_pass_var).grid(row=row, column=0, columnspan=3, sticky="w", pady=2)

@@ -8,7 +8,7 @@ All notable changes to the SMBSeek GUI project will be documented in this file.
 - **Pry Weak Password Audit:** New GUI flow to test a single username against a streamed wordlist on one selected host. Includes Pry dialog, status-text progress, lockout-aware stopping, and summary-only credential display (no storage).
 - **Config Defaults:** `pry` section in `conf/config.json` and GUI settings to prefill wordlist path, username-as-password toggle, lockout handling, verbose flag, 1.0s attempt delay, and optional max attempts cap.
 - **mmcbrute Attribution:** README credit and inline runner note acknowledging mmcbrute (BSD-3-Clause) as the inspiration for the SMB auth brute logic.
-- **Bundled Wordlist:** Added `conf/wordlists/rockyou.txt` (from gmelodie/awesome-wordlists) for convenient Pry defaults; point `pry.wordlist_path` to it if desired.
+- **Wordlist Source:** Default path points to `conf/wordlists/rockyou.txt`; download a wordlist such as `rockyou.txt` from gmelodie/awesome-wordlists if you want it prefilled.
 
 ## [1.3.0] - 2026-01-03
 
