@@ -250,7 +250,7 @@ class DashboardWidget:
         # About button
         about_button = tk.Button(
             actions_frame,
-            text="ℹ️ About",
+            text="❔ About",
             command=self._open_about_dialog
         )
         self.theme.apply_to_widget(about_button, "button_secondary")
