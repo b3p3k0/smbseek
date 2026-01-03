@@ -936,3 +936,45 @@ class DatabaseReader:
                 }
                 for row in rows
             ]
+
+    def get_denied_shares(self, ip_address: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Fetch denied/non-accessible shares for the given server IP.
+
+        Returns list of dicts: {share_name, auth_status, error_message, last_tested}
+        """
+        query = """
+        SELECT sa.share_name, sa.auth_status, sa.error_message, sa.test_timestamp
+        FROM share_access sa
+        JOIN smb_servers s ON sa.server_id = s.id
+        WHERE s.ip_address = ? AND sa.accessible = 0
+        ORDER BY sa.share_name
+        """
+        with self._get_connection() as conn:
+            if limit:
+                rows = conn.execute(query + " LIMIT ?", (ip_address, limit)).fetchall()
+            else:
+                rows = conn.execute(query, (ip_address,)).fetchall()
+            return [
+                {
+                    "share_name": row["share_name"],
+                    "auth_status": row["auth_status"],
+                    "error_message": row["error_message"],
+                    "last_tested": row["test_timestamp"],
+                }
+                for row in rows
+            ]
+
+    def get_denied_share_counts(self) -> Dict[str, int]:
+        """
+        Return a mapping of ip_address -> denied share count.
+        """
+        query = """
+        SELECT s.ip_address, COUNT(sa.id) as denied_count
+        FROM smb_servers s
+        LEFT JOIN share_access sa ON s.id = sa.server_id AND sa.accessible = 0
+        GROUP BY s.ip_address
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(query).fetchall()
+            return {row["ip_address"]: row["denied_count"] or 0 for row in rows}

@@ -202,6 +202,10 @@ def _format_server_details(server: Dict[str, Any], probe_section: Optional[str] 
     accessible_count = server.get('accessible_shares', 0)
     total_shares = server.get('total_shares', accessible_count)
 
+    denied_list = server.get('denied_shares_list', []) or []
+    denied_count = server.get('denied_shares_count', 0)
+    denied_display_limit = 20
+
     # Format accessible shares list
     if accessible_list and accessible_list.strip():
         shares = [share.strip() for share in accessible_list.split(',') if share.strip()]
@@ -211,6 +215,34 @@ def _format_server_details(server: Dict[str, Any], probe_section: Optional[str] 
             share_list_text = '   • None accessible'
     else:
         share_list_text = '   • None accessible'
+
+    # Format denied shares list
+    friendly_status = {
+        None: "Access denied",
+        "NT_STATUS_ACCESS_DENIED": "Access denied",
+        "NT_STATUS_LOGON_FAILURE": "Logon failed",
+        "NT_STATUS_BAD_NETWORK_NAME": "Not found",
+        "NT_STATUS_ACCOUNT_LOCKED_OUT": "Account locked",
+        "NT_STATUS_CONNECTION_RESET": "Connection reset",
+        "TIMEOUT": "Timeout",
+        "ERROR": "Error"
+    }
+
+    denied_lines = []
+    for idx, item in enumerate(denied_list):
+        if idx >= denied_display_limit:
+            break
+        status = friendly_status.get(item.get('auth_status')) or "Error"
+        share_name = item.get('share_name', 'Unknown')
+        denied_lines.append(f"   • {share_name} — {status}")
+
+    if not denied_lines:
+        denied_text = '   • None'
+    else:
+        more = denied_count - len(denied_lines)
+        denied_text = '\n'.join(denied_lines)
+        if more > 0:
+            denied_text += f"\n   … +{more} more not shown"
 
     details = f"""📋 SMB Server Details
 
@@ -231,6 +263,9 @@ def _format_server_details(server: Dict[str, Any], probe_section: Optional[str] 
 
    Accessible Share List:
 {share_list_text}
+
+🚫 Denied Shares:
+{denied_text}
 
 {probe_section or '🔍 Probe:\n   No probe has been run for this host yet.\n'}
 

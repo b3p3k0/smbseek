@@ -534,8 +534,27 @@ class ServerListWindow:
                 offset=0
             )
 
+            # Attach denied share counts
+            try:
+                denied_map = self.db_reader.get_denied_share_counts()
+            except Exception:
+                denied_map = {}
+
+            for server in servers:
+                ip = server.get("ip_address")
+                server["denied_shares_count"] = denied_map.get(ip, 0) if ip else 0
+
             self.all_servers = servers
             self._attach_probe_status(self.all_servers)
+
+            # Load denied share lists for details rendering
+            try:
+                for server in self.all_servers:
+                    ip = server.get("ip_address")
+                    server["denied_shares_list"] = self.db_reader.get_denied_shares(ip) if ip else []
+            except Exception:
+                for server in self.all_servers:
+                    server["denied_shares_list"] = []
 
             # Set initial date filter if requested
             if self.filter_recent and self.last_scan_time:

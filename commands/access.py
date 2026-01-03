@@ -558,39 +558,33 @@ class AccessOperation:
             return (f"smbclient error: {trimmed_output}", combined_output)
 
 
-def _extract_nt_status(message: str) -> Optional[str]:
-    """Return first NT_STATUS_* token in the provided message, if present."""
-    if not message:
+    @staticmethod
+    def _extract_nt_status(message: str) -> Optional[str]:
+        """Return first NT_STATUS_* token in the provided message, if present."""
+        if not message:
+            return None
+        marker = "NT_STATUS_"
+        upper = message.upper()
+        if marker not in upper:
+            return None
+        match = re.search(r"(NT_STATUS_[A-Z0-9_]+)", upper)
+        if match:
+            return match.group(1)
         return None
-    marker = "NT_STATUS_"
-    upper = message.upper()
-    if marker not in upper:
-        return None
-    match = re.search(r"(NT_STATUS_[A-Z0-9_]+)", upper)
-    if match:
-        return match.group(1)
-    return None
 
     def process_target(self, host_record, host_position):
-        """Process a single host target for share access testing.
-
-        Args:
-            host_record: Database record for the target host
-            host_position: 1-based index of the host within the current batch
-        """
+        """Process a single host target for share access testing."""
         ip = host_record['ip_address']
         country = host_record.get('country', 'Unknown')
         auth_method = host_record['auth_method']
 
         host_label = f"Host {host_position}/{self.total_targets}"
         self.output.info(f"[{host_position}/{self.total_targets}] Testing {ip} ({country})...")
-        
-        # Parse authentication method
+
         username, password = self.parse_auth_method(auth_method)
-        if True:  # verbose check handled by output methods
+        if True:
             self.output.info(f"Using auth: {username}/{password if password else '[blank]'}")
-        
-        # Create result structure
+
         target_result = {
             'ip_address': ip,
             'country': country,
@@ -600,109 +594,77 @@ def _extract_nt_status(message: str) -> Optional[str]:
             'accessible_shares': [],
             'share_details': []
         }
-        
+
         try:
-            # First check if port 445 is still open
             port_timeout = self.config.get_connection_timeout()
             if not self.check_port(ip, 445, port_timeout):
                 self.output.error(f"Port 445 not accessible on {ip}")
                 target_result['error'] = 'Port 445 not accessible'
                 return target_result
-            
-            # Enumerate shares fresh
+
             shares = self.enumerate_shares(ip, username, password)
             target_result['shares_found'] = shares
-            
+
             if not shares:
                 self.output.warning(f"No non-administrative shares found on {ip}")
-
-                # RCE vulnerability analysis (if enabled) - even with no shares
                 if self.check_rce:
                     self._analyze_rce_vulnerabilities(target_result)
-
                 return target_result
-            
+
             self.output.success(f"Found {len(shares)} shares to test on {ip}")
-            
-            # Test access to each share
+
             for i, share_name in enumerate(shares, 1):
                 access_result = self.test_share_access(ip, share_name, username, password)
                 target_result['share_details'].append(access_result)
 
                 if access_result['accessible']:
                     target_result['accessible_shares'].append(share_name)
-                    self.output.success(
-                        f"{host_label}: Share {i}/{len(shares)}: {share_name} - accessible"
-                    )
+                    self.output.success(f"{host_label}: Share {i}/{len(shares)}: {share_name} - accessible")
                 else:
-                    message = access_result.get('error', 'not accessible')
-                    if message and 'NT_STATUS_ACCESS_DENIED' in message:
-                        # All access denied errors = clean yellow warning
-                        self.output.warning(
-                            f"{host_label}: Share {i}/{len(shares)}: {share_name} - Access Failed"
-                        )
-                    elif message and (
-                        'NT_STATUS_BAD_NETWORK_NAME' in message
-                        or 'share not found' in message.lower()
-                    ):
-                        # Shares that no longer exist should show a human-friendly warning
-                        self.output.warning(
-                            f"{host_label}: Share {i}/{len(shares)}: {share_name} - {message}"
-                        )
-                    elif 'timeout' in message.lower() or 'connection' in message.lower():
-                        # Technical failures = red error with details
-                        self.output.error(
-                            f"{host_label}: Share {i}/{len(shares)}: {share_name} - {message}"
-                        )
+                    message = access_result.get('error', 'not accessible') or ''
+                    status = access_result.get('auth_status') or ''
+                    if 'ACCESS_DENIED' in status:
+                        self.output.warning(f"{host_label}: Share {i}/{len(shares)}: {share_name} - Access denied")
+                    elif 'BAD_NETWORK_NAME' in status or 'share not found' in message.lower():
+                        self.output.warning(f"{host_label}: Share {i}/{len(shares)}: {share_name} - {message}")
+                    elif 'TIMEOUT' in status or 'timeout' in message.lower() or 'connection' in message.lower():
+                        self.output.error(f"{host_label}: Share {i}/{len(shares)}: {share_name} - {message}")
                     else:
-                        # Other failures = clean yellow warning
-                        self.output.warning(
-                            f"{host_label}: Share {i}/{len(shares)}: {share_name} - Access Failed"
-                        )
-                
-                # Rate limiting between share tests
-                if share_name != shares[-1]:  # Don't delay after the last share
+                        self.output.warning(f"{host_label}: Share {i}/{len(shares)}: {share_name} - Access failed")
+
+                if share_name != shares[-1]:
                     delay = self.config.get_share_access_delay()
                     time.sleep(delay)
-            
-            # Validate results before summary output
+
             accessible_count = len(target_result['accessible_shares'])
             total_count = len(shares)
-            
-            # Critical validation: accessible shares should never exceed total shares
+
             if accessible_count > total_count:
                 self.output.error(f"VALIDATION ERROR: {accessible_count} accessible > {total_count} total shares on {ip}")
-                self.output.error(f"Found shares: {shares}")
-                self.output.error(f"Accessible shares: {target_result['accessible_shares']}")
-                # Flag this result as having an error to prevent database storage
                 target_result['validation_error'] = f"Accessible count ({accessible_count}) exceeds total count ({total_count})"
-            
-            # Check for duplicate shares in accessible list
+
             if len(set(target_result['accessible_shares'])) != len(target_result['accessible_shares']):
                 duplicates = [x for x in target_result['accessible_shares'] if target_result['accessible_shares'].count(x) > 1]
                 self.output.warning(f"VALIDATION WARNING: Duplicate shares in accessible list: {set(duplicates)}")
                 target_result['validation_warning'] = f"Duplicate accessible shares: {set(duplicates)}"
-            
-            # Verify all accessible shares are in the original shares list
+
             invalid_shares = [share for share in target_result['accessible_shares'] if share not in shares]
             if invalid_shares:
                 self.output.error(f"VALIDATION ERROR: Accessible shares not in original list: {invalid_shares}")
                 target_result['validation_error'] = f"Invalid accessible shares: {invalid_shares}"
-            
-            # Summary output
+
             if accessible_count > 0:
                 self.output.success(f"{accessible_count}/{total_count} shares accessible on {ip}: {', '.join(target_result['accessible_shares'])}")
             else:
                 self.output.warning(f"0/{total_count} shares accessible on {ip}")
 
-            # RCE vulnerability analysis (if enabled)
             if self.check_rce:
                 self._analyze_rce_vulnerabilities(target_result)
 
         except Exception as e:
             self.output.error(f"Error testing target {ip}: {str(e)[:50]}")
             target_result['error'] = str(e)
-        
+
         return target_result
 
     def _analyze_rce_vulnerabilities(self, target_result: Dict[str, Any]) -> None:

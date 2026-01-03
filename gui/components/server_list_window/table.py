@@ -36,6 +36,7 @@ def create_server_table(parent, theme, callbacks):
         "IP Address",
         "Shares",
         "Accessible",
+        "Denied",
         "Last Seen",
         "Country"
     )
@@ -55,7 +56,8 @@ def create_server_table(parent, theme, callbacks):
     tree.column("probe", width=50, anchor="center")
     tree.column("IP Address", width=160, anchor="w")
     tree.column("Shares", width=100, anchor="center")
-    tree.column("Accessible", width=780, anchor="w")  # Wide for extensive share lists
+    tree.column("Accessible", width=520, anchor="w")  # reclaim space for denied column
+    tree.column("Denied", width=110, anchor="center")
     tree.column("Last Seen", width=150, anchor="w")
     tree.column("Country", width=100, anchor="w", stretch=True)  # Flexible width
 
@@ -120,6 +122,7 @@ def update_table_display(tree, filtered_servers: List[Dict[str, Any]], settings_
         # Format display values - updated for enhanced share tracking
         ip_addr = server.get("ip_address", "")
         shares_count = str(server.get("accessible_shares", 0))
+        denied_count = str(server.get("denied_shares_count", 0))
         accessible_shares = server.get("accessible_shares_list", "")
         last_seen = server.get("last_seen", "Never")
         country = server.get("country", "Unknown")
@@ -155,7 +158,7 @@ def update_table_display(tree, filtered_servers: List[Dict[str, Any]], settings_
         item_id = tree.insert(
             "",
             "end",
-            values=(star, skull, probe_emoji, ip_addr, shares_count, accessible_shares, last_seen, country)
+            values=(star, skull, probe_emoji, ip_addr, shares_count, accessible_shares, denied_count, last_seen, country)
         )
 
         # Add visual indicators for shares count
@@ -164,6 +167,8 @@ def update_table_display(tree, filtered_servers: List[Dict[str, Any]], settings_
             tree.set(item_id, "Shares", f"📁 {shares_count}")
         else:
             tree.set(item_id, "Shares", shares_count)
+
+        tree.set(item_id, "Denied", denied_count)
 
 
 def get_selected_server_data(tree, filtered_servers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -265,6 +270,11 @@ def sort_table_by_column(tree, column: str, current_sort_column: Optional[str],
         elif column == "Accessible":
             # Sort by length of accessible shares list (number of shares)
             sort_key = len(str(sort_key).split(",")) if str(sort_key).strip() else 0
+        elif column == "Denied":
+            try:
+                sort_key = int(sort_key)
+            except (TypeError, ValueError):
+                sort_key = 0
 
         data_with_keys.append((sort_key, item, values))
 
