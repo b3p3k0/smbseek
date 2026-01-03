@@ -903,3 +903,36 @@ class DatabaseReader:
             return True
         except (sqlite3.Error, FileNotFoundError):
             return False
+
+    # --- SMB file browser helpers -------------------------------------
+
+    def get_server_auth_method(self, ip_address: str) -> Optional[str]:
+        """Return auth_method string for a server by IP."""
+        query = "SELECT auth_method FROM smb_servers WHERE ip_address = ? LIMIT 1"
+        with self._get_connection() as conn:
+            row = conn.execute(query, (ip_address,)).fetchone()
+            return row["auth_method"] if row else None
+
+    def get_accessible_shares(self, ip_address: str) -> List[Dict[str, Any]]:
+        """
+        Fetch accessible shares for the given server IP.
+
+        Returns list of dicts: {share_name, permissions, last_tested}
+        """
+        query = """
+        SELECT sa.share_name, sa.permissions, sa.test_timestamp
+        FROM share_access sa
+        JOIN smb_servers s ON sa.server_id = s.id
+        WHERE s.ip_address = ? AND sa.accessible = 1
+        ORDER BY sa.share_name
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(query, (ip_address,)).fetchall()
+            return [
+                {
+                    "share_name": row["share_name"],
+                    "permissions": row["permissions"],
+                    "last_tested": row["test_timestamp"],
+                }
+                for row in rows
+            ]

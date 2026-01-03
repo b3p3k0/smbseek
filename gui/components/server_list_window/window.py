@@ -26,6 +26,7 @@ try:
     from gui.utils.data_export_engine import get_export_engine
     from gui.utils.scan_manager import get_scan_manager
     from gui.utils.dialog_helpers import ensure_dialog_focus
+    from gui.components.file_browser_window import FileBrowserWindow
 except ImportError:
     # Handle relative imports when running from gui directory
     from utils.database_access import DatabaseReader
@@ -33,6 +34,7 @@ except ImportError:
     from utils.data_export_engine import get_export_engine
     from utils.scan_manager import get_scan_manager
     from utils.dialog_helpers import ensure_dialog_focus
+    from components.file_browser_window import FileBrowserWindow
 
 # Import modular components
 from . import export, details, filters, table
@@ -104,6 +106,7 @@ class ServerListWindow:
         self.context_menu = None
         self.probe_button = None
         self.extract_button = None
+        self.browser_button = None
         self.stop_button = None
         self.table_overlay = None
         self.table_overlay_label = None
@@ -317,6 +320,7 @@ class ServerListWindow:
         self.context_menu = tk.Menu(self.window, tearoff=0)
         self.context_menu.add_command(label="🔍 Probe Selected", command=self._on_probe_selected)
         self.context_menu.add_command(label="📦 Extract Selected", command=self._on_extract_selected)
+        self.context_menu.add_command(label="🗂️ File Browser (read-only)", command=self._on_file_browser_selected)
         self._update_context_menu_state()
 
     def _bind_context_menu_events(self, tree: ttk.Treeview) -> None:
@@ -394,6 +398,15 @@ class ServerListWindow:
         self.theme.apply_to_widget(self.extract_button, "button_secondary")
         self.extract_button.pack(side=tk.LEFT, padx=(0, 15))
 
+        self.browser_button = tk.Button(
+            button_container,
+            text="🗂️ Browse (read-only)",
+            command=self._on_file_browser_selected,
+            state=tk.DISABLED
+        )
+        self.theme.apply_to_widget(self.browser_button, "button_secondary")
+        self.browser_button.pack(side=tk.LEFT, padx=(0, 15))
+
         self.stop_button = tk.Button(
             button_container,
             text="⏹ Stop Batch",
@@ -447,6 +460,7 @@ class ServerListWindow:
         # Keyboard shortcuts
         self.window.bind("<Control-a>", self._select_all)
         self.window.bind("<Control-e>", lambda e: self._export_selected_servers())
+        self.window.bind("<Control-b>", lambda e: self._on_file_browser_selected())
         self.window.bind("<Escape>", lambda e: self._close_window())
         self.window.bind("<F5>", lambda e: self._refresh_data())
 
@@ -694,6 +708,56 @@ class ServerListWindow:
             return
 
         self._start_batch_job("extract", targets, dialog_config)
+
+    def _on_file_browser_selected(self) -> None:
+        self._hide_context_menu()
+        if self._is_batch_active():
+            messagebox.showinfo("Batch Running", "Please wait for the current batch to finish or stop it before browsing.")
+            return
+
+        targets = self._build_selected_targets()
+        if len(targets) != 1:
+            messagebox.showwarning("Select one server", "Choose exactly one server to browse.")
+            return
+
+        target = targets[0]
+        ip_addr = target.get("ip_address")
+        if not ip_addr:
+            messagebox.showerror("Missing IP", "Unable to determine IP for selected server.")
+            return
+
+        shares = self.db_reader.get_accessible_shares(ip_addr) if self.db_reader else []
+        def _clean_share_name(name: str) -> str:
+            return name.strip().strip("\\/").strip()
+
+        seen = set()
+        share_names = []
+        for s in shares:
+            raw = s.get("share_name")
+            cleaned = _clean_share_name(raw) if raw else ""
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            share_names.append(cleaned)
+        if not share_names:
+            messagebox.showinfo("No shares", "No accessible shares found for this host.")
+            return
+
+        config_path = None
+        if self.settings_manager:
+            config_path = self.settings_manager.get_setting('backend.config_path', None)
+            if not config_path and hasattr(self.settings_manager, "get_smbseek_config_path"):
+                config_path = self.settings_manager.get_smbseek_config_path()
+
+        FileBrowserWindow(
+            parent=self.window,
+            ip_address=ip_addr,
+            shares=share_names,
+            auth_method=target.get("auth_method", ""),
+            config_path=config_path,
+            db_reader=self.db_reader,
+            theme=self.theme,
+        )
 
     def _prompt_probe_batch_settings(self, target_count: int) -> Optional[Dict[str, Any]]:
         config = details._load_probe_config(self.settings_manager)
@@ -1072,7 +1136,7 @@ class ServerListWindow:
         batch_active = self._is_batch_active()
 
         new_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
-        for button in (self.probe_button, self.extract_button):
+        for button in (self.probe_button, self.extract_button, self.browser_button):
             if button:
                 button.configure(state=new_state)
 
@@ -1133,8 +1197,10 @@ class ServerListWindow:
         batch_active = self._is_batch_active()
         probe_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
         extract_state = probe_state
+        browser_state = probe_state
         self.context_menu.entryconfig(0, state=probe_state)
         self.context_menu.entryconfig(1, state=extract_state)
+        self.context_menu.entryconfig(2, state=browser_state)
 
     def _show_context_menu(self, event) -> str:
         if not self.tree or not self.context_menu:

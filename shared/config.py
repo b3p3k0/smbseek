@@ -86,6 +86,32 @@ class SMBSeekConfig:
             "access": {
                 "max_concurrent_hosts": 1
             },
+            "file_collection": {
+                "max_files_per_target": 3,
+                "max_total_size_mb": 500,
+                "download_delay_seconds": 2,
+                "max_directory_depth": 3,
+                "enumeration_timeout_seconds": 120,
+                "included_extensions": [
+                    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".csv",
+                    ".eml", ".msg", ".mbox", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff",
+                    ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".mp3", ".wav", ".zip", ".rar"
+                ],
+                "excluded_extensions": [
+                    ".exe", ".dll", ".sys", ".bat", ".cmd", ".scr", ".com", ".pif", ".msi", 
+                    ".bin", ".log", ".tmp", ".temp", ".bak", ".old", ".swp", ".lock"
+                ]
+            },
+            "file_browser": {
+                "allow_smb1": True,
+                "connect_timeout_seconds": 8,
+                "request_timeout_seconds": 10,
+                "max_entries_per_dir": 5000,
+                "max_depth": 12,
+                "max_path_length": 240,
+                "download_chunk_mb": 4,
+                "quarantine_root": "~/.smbseek/quarantine"
+            },
             "security": {
                 "ransomware_indicators": [
                     "!want_to_cry.txt",

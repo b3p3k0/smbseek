@@ -129,6 +129,53 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     theme.apply_to_widget(extract_button, "button_secondary")
     extract_button.pack(side=tk.LEFT, padx=(0, 10))
 
+    def _open_browse_window() -> None:
+        def _clean_share_name(name: str) -> str:
+            return name.strip().strip("\\/").strip()
+
+        raw_shares = _parse_accessible_shares(server_data.get('accessible_shares_list', ''))
+        cleaned_shares = []
+        seen = set()
+        for name in raw_shares:
+            cleaned = _clean_share_name(name)
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            cleaned_shares.append(cleaned)
+        accessible_shares = cleaned_shares
+        if not accessible_shares:
+            messagebox.showinfo("Browse", "No accessible shares available for this host.")
+            return
+
+        config_path = None
+        if settings_manager:
+            config_path = settings_manager.get_setting('backend.config_path', None)
+            if not config_path and hasattr(settings_manager, "get_smbseek_config_path"):
+                config_path = settings_manager.get_smbseek_config_path()
+
+        try:
+            from gui.components.file_browser_window import FileBrowserWindow
+        except ImportError:
+            from components.file_browser_window import FileBrowserWindow
+
+        FileBrowserWindow(
+            parent=detail_window,
+            ip_address=server_data.get("ip_address", ""),
+            shares=accessible_shares,
+            auth_method=server_data.get("auth_method", ""),
+            config_path=config_path,
+            db_reader=None,
+            theme=theme
+        )
+
+    browse_button = tk.Button(
+        button_frame,
+        text="Browse (read-only)",
+        command=_open_browse_window
+    )
+    theme.apply_to_widget(browse_button, "button_secondary")
+    browse_button.pack(side=tk.LEFT, padx=(0, 10))
+
     # Close button
     close_button = tk.Button(
         button_frame,

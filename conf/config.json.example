@@ -92,6 +92,16 @@
       ".bin", ".log", ".tmp", ".temp", ".bak", ".old", ".swp", ".lock"
     ]
   },
+  "file_browser": {
+    "allow_smb1": true,
+    "connect_timeout_seconds": 8,
+    "request_timeout_seconds": 10,
+    "max_entries_per_dir": 5000,
+    "max_depth": 12,
+    "max_path_length": 240,
+    "download_chunk_mb": 4,
+    "quarantine_root": "~/.smbseek/quarantine"
+  },
   "gui_app": {
     "smbseek_path": ".",
     "database_path": null,
