@@ -76,12 +76,12 @@ class PryDialog:
 
         link = tk.Label(
             main,
-            text="Need a list? awesome-wordlists",
+            text="Need a list? SecLists",
             fg="#0066cc",
             cursor="hand2"
         )
         link.grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 8))
-        link.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/gmelodie/awesome-wordlists"))
+        link.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/danielmiessler/SecLists"))
         row += 1
 
         tk.Checkbutton(main, text="Try username as password", variable=self.user_as_pass_var).grid(row=row, column=0, columnspan=3, sticky="w", pady=2)

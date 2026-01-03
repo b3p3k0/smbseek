@@ -5,7 +5,7 @@ Purpose: verify the Pry weak-password audit MVP in the xSMBSeek GUI.
 ## Prerequisites
 - `impacket` installed (`pip install -r requirements.txt`).
 - xSMBSeek running with access to at least one SMB target you are authorized to test.
-- A plaintext wordlist (no `.gz`), readable on disk. Download one (e.g., `rockyou.txt`) from https://github.com/gmelodie/awesome-wordlists and place it where you like (default path `conf/wordlists/rockyou.txt` if you want the dialog prefilled).
+- A plaintext wordlist (no `.gz`), readable on disk. Download one (e.g., `rockyou.txt`) from https://github.com/danielmiessler/SecLists and place it where you like (default path `conf/wordlists/rockyou.txt` if you want the dialog prefilled).
 
 ## Steps
 1. Launch `./xsmbseek` and open the Server List.
