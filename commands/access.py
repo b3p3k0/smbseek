@@ -487,15 +487,17 @@ class AccessOperation:
                             self.output.error(f"Share '{share_name}' - {friendly_msg}")
 
         except subprocess.TimeoutExpired:
-            access_result['error'] = "Connection timeout"
+            access_result['error'] = "Connection timeout (smbclient)"
             access_result['auth_status'] = "TIMEOUT"
             if True:  # verbose check handled by output methods
-                self.output.error(f"Share '{share_name}' - timeout")
+                self.output.warning(
+                    f"Share '{share_name}' - timeout (consider increasing share access timeout if this is frequent)"
+                )
         except Exception as e:
             access_result['error'] = f"Test error: {str(e)}"
             access_result['auth_status'] = "ERROR"
             if True:  # verbose check handled by output methods
-                self.output.error(f"Share '{share_name}' - test error")
+                self.output.warning(f"Share '{share_name}' - test error: {str(e)}")
 
         return access_result
 
