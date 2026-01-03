@@ -53,6 +53,7 @@ CREATE TABLE share_access (
     session_id INTEGER NOT NULL,
     share_name TEXT NOT NULL,
     accessible BOOLEAN NOT NULL DEFAULT FALSE,
+    auth_status TEXT,
     permissions TEXT,
     share_type TEXT,
     share_comment TEXT,

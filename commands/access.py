@@ -423,7 +423,8 @@ class AccessOperation:
         access_result = {
             'share_name': share_name,
             'accessible': False,
-            'error': None
+            'error': None,
+            'auth_status': None
         }
 
         try:
@@ -445,10 +446,12 @@ class AccessOperation:
                 # Additional check: ensure we got actual file listing output
                 if "NT_STATUS" not in result.stderr and len(result.stdout.strip()) > 0:
                     access_result['accessible'] = True
+                    access_result['auth_status'] = "OK"
                     if True:  # verbose check handled by output methods
                         self.output.print_if_verbose(f"Share '{share_name}' is accessible")
                 else:
                     access_result['error'] = f"Access denied or empty share"
+                    access_result['auth_status'] = _extract_nt_status(result.stderr) or "ACCESS_DENIED"
                     if True:  # verbose check handled by output methods
                         self.output.print_if_verbose(f"Share '{share_name}' - no readable content")
             else:
@@ -458,8 +461,10 @@ class AccessOperation:
 
                 if share_missing:
                     access_result['error'] = "Share not found on server (server reported NT_STATUS_BAD_NETWORK_NAME)"
+                    access_result['auth_status'] = "NT_STATUS_BAD_NETWORK_NAME"
                 else:
                     access_result['error'] = friendly_msg
+                    access_result['auth_status'] = _extract_nt_status(friendly_msg) or "ERROR"
 
                 # In cautious mode, provide informational message for security-related failures
                 if self.cautious_mode and "NT_STATUS" in friendly_msg:
@@ -483,10 +488,12 @@ class AccessOperation:
 
         except subprocess.TimeoutExpired:
             access_result['error'] = "Connection timeout"
+            access_result['auth_status'] = "TIMEOUT"
             if True:  # verbose check handled by output methods
                 self.output.error(f"Share '{share_name}' - timeout")
         except Exception as e:
             access_result['error'] = f"Test error: {str(e)}"
+            access_result['auth_status'] = "ERROR"
             if True:  # verbose check handled by output methods
                 self.output.error(f"Share '{share_name}' - test error")
 
@@ -549,6 +556,20 @@ class AccessOperation:
             # No NT_STATUS found, provide generic error with trimmed output
             trimmed_output = combined_output[:160] + "..." if len(combined_output) > 160 else combined_output
             return (f"smbclient error: {trimmed_output}", combined_output)
+
+
+def _extract_nt_status(message: str) -> Optional[str]:
+    """Return first NT_STATUS_* token in the provided message, if present."""
+    if not message:
+        return None
+    marker = "NT_STATUS_"
+    upper = message.upper()
+    if marker not in upper:
+        return None
+    match = re.search(r"(NT_STATUS_[A-Z0-9_]+)", upper)
+    if match:
+        return match.group(1)
+    return None
 
     def process_target(self, host_record, host_position):
         """Process a single host target for share access testing.

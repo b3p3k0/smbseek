@@ -578,6 +578,7 @@ class SMBSeekWorkflowDatabase:
                 share_name = share_detail.get('share_name')
                 accessible = share_detail.get('accessible', False)
                 error_message = share_detail.get('error')
+                auth_status = share_detail.get('auth_status')
                 
                 if share_name:
                     try:
@@ -586,7 +587,8 @@ class SMBSeekWorkflowDatabase:
                             session_id=session_id,
                             share_name=share_name,
                             accessible=accessible,
-                            error_message=error_message
+                            error_message=error_message,
+                            auth_status=auth_status
                         )
                         stored_shares += 1
                     except Exception as e:

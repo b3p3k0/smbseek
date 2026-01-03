@@ -64,6 +64,8 @@ class DatabaseManager:
                     f"Database at {self.db_path} is missing required tables: {missing_list}. "
                     "Delete or repair the file to proceed."
                 )
+        # Apply lightweight migrations (non-destructive)
+        self._run_migrations()
     
     def get_connection(self) -> sqlite3.Connection:
         """
@@ -135,6 +137,23 @@ class DatabaseManager:
         if REQUIRED_TABLES.issubset(tables):
             return "complete"
         return "incomplete"
+
+    def _run_migrations(self) -> None:
+        """
+        Apply in-place, additive migrations to keep existing databases compatible.
+        Currently: add auth_status column to share_access if missing.
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.execute("PRAGMA table_info(share_access)")
+            columns = {row[1] for row in cursor.fetchall()}
+            if "auth_status" not in columns:
+                with self.transaction() as cur:
+                    cur.execute("ALTER TABLE share_access ADD COLUMN auth_status TEXT")
+                self.logger.info("Database migration: added share_access.auth_status")
+        except Exception as e:
+            self.logger.error(f"Database migration failed: {e}")
+            raise
     
     def initialize_database(self):
         """
