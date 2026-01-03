@@ -1908,7 +1908,9 @@ class ScanDialog:
                 self._settings_manager.set_setting('scan_dialog.rescan_failed', rescan_failed)
                 self._settings_manager.set_setting('scan_dialog.api_key_override', api_key or '')
                 self._settings_manager.set_setting('scan_dialog.search_strings', strings_input)
-                self._settings_manager.set_setting('scan_dialog.country_code', country_param or '')
+                # Save only manually entered country codes, not region-selected ones
+                manual_country_input = self.country_var.get().strip()
+                self._settings_manager.set_setting('scan_dialog.country_code', manual_country_input)
                 self._settings_manager.set_setting('scan_dialog.discovery_max_concurrency', discovery_concurrency)
                 self._settings_manager.set_setting('scan_dialog.access_max_concurrency', access_concurrency)
                 self._settings_manager.set_setting('scan_dialog.rate_limit_delay', rate_limit_delay)
