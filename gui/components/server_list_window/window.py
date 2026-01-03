@@ -16,6 +16,7 @@ import platform
 import csv
 import os
 import sys
+import webbrowser
 
 # Add utils to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'utils'))
