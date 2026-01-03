@@ -99,6 +99,14 @@ class SettingsManager:
                 'status_by_ip': {},
                 'batch_max_workers': 3
             },
+            'pry': {
+                'wordlist_path': 'conf/wordlists/rockyou.txt',
+                'user_as_pass': True,
+                'stop_on_lockout': True,
+                'verbose': False,
+                'attempt_delay': 1.0,
+                'max_attempts': 0
+            },
             'extract': {
                 'last_directory': '',
                 'max_file_size_mb': 50,

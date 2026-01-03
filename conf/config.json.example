@@ -75,6 +75,14 @@
     "verbose_by_default": false,
     "executive_summary": true
   },
+  "pry": {
+    "wordlist_path": "conf/wordlists/rockyou.txt",
+    "user_as_pass": true,
+    "stop_on_lockout": true,
+    "verbose": false,
+    "attempt_delay": 1.0,
+    "max_attempts": 0
+  },
   "_note": "Global scans (no country filter) are performed when --country is not specified. To limit scans to specific countries, use: ./smbseek.py --country US,GB,CA",
   "file_collection": {
     "max_files_per_target": 3,

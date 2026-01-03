@@ -461,6 +461,15 @@ See `docs/dev/AI_AGENT_FIELD_GUIDE.md` and `docs/dev/COLLAB.md` for detailed col
 - Follow responsible disclosure practices
 - Maintain ethical scanning practices with appropriate rate limits
 
+## Bundled Wordlist (Pry)
+
+- The repo includes a common wordlist at `conf/wordlists/rockyou.txt` (sourced from gmelodie/awesome-wordlists).
+- To prefill the Pry dialog with this file, set `pry.wordlist_path` in `conf/config.json` or via GUI settings.
+
+## Credits
+
+- Pry password audit is inspired by the mmcbrute project (BSD-3-Clause) by Corey Gilks; SMB authentication brute logic references that work.
+
 ## License
 
 This project is licensed under the terms specified in the LICENSE file.

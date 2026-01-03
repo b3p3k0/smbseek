@@ -27,6 +27,7 @@ try:
     from gui.utils.scan_manager import get_scan_manager
     from gui.utils.dialog_helpers import ensure_dialog_focus
     from gui.components.file_browser_window import FileBrowserWindow
+    from gui.components.pry_dialog import PryDialog
 except ImportError:
     # Handle relative imports when running from gui directory
     from utils.database_access import DatabaseReader
@@ -35,6 +36,7 @@ except ImportError:
     from utils.scan_manager import get_scan_manager
     from utils.dialog_helpers import ensure_dialog_focus
     from components.file_browser_window import FileBrowserWindow
+    from components.pry_dialog import PryDialog
 
 # Import modular components
 from . import export, details, filters, table
@@ -42,7 +44,7 @@ try:
     from batch_extract_dialog import BatchExtractSettingsDialog  # standalone/absolute import
 except ImportError:
     from ..batch_extract_dialog import BatchExtractSettingsDialog  # package relative fallback
-from gui.utils import probe_cache, probe_patterns, probe_runner, extract_runner
+from gui.utils import probe_cache, probe_patterns, probe_runner, extract_runner, pry_runner
 from shared.quarantine import create_quarantine_dir
 
 
@@ -106,6 +108,7 @@ class ServerListWindow:
         self.context_menu = None
         self.probe_button = None
         self.extract_button = None
+        self.pry_button = None
         self.browser_button = None
         self.stop_button = None
         self.table_overlay = None
@@ -320,6 +323,7 @@ class ServerListWindow:
         self.context_menu = tk.Menu(self.window, tearoff=0)
         self.context_menu.add_command(label="🔍 Probe Selected", command=self._on_probe_selected)
         self.context_menu.add_command(label="📦 Extract Selected", command=self._on_extract_selected)
+        self.context_menu.add_command(label="🔓 Pry Selected", command=self._on_pry_selected)
         self.context_menu.add_command(label="🗂️ File Browser (read-only)", command=self._on_file_browser_selected)
         self._update_context_menu_state()
 
@@ -406,6 +410,15 @@ class ServerListWindow:
         )
         self.theme.apply_to_widget(self.browser_button, "button_secondary")
         self.browser_button.pack(side=tk.LEFT, padx=(0, 15))
+
+        self.pry_button = tk.Button(
+            button_container,
+            text="🔓 Pry Selected",
+            command=self._on_pry_selected,
+            state=tk.DISABLED
+        )
+        self.theme.apply_to_widget(self.pry_button, "button_secondary")
+        self.pry_button.pack(side=tk.LEFT, padx=(0, 15))
 
         self.stop_button = tk.Button(
             button_container,
@@ -709,6 +722,45 @@ class ServerListWindow:
 
         self._start_batch_job("extract", targets, dialog_config)
 
+    def _on_pry_selected(self) -> None:
+        self._hide_context_menu()
+        if self._is_batch_active():
+            messagebox.showinfo("Batch Running", "Please wait for the current batch to finish or stop it before starting Pry.")
+            return
+
+        targets = self._build_selected_targets()
+        if len(targets) != 1:
+            messagebox.showwarning("Select one server", "Choose exactly one server to run Pry.")
+            return
+
+        target = targets[0]
+        ip_addr = target.get("ip_address") or ""
+
+        config_path = None
+        if self.settings_manager:
+            config_path = self.settings_manager.get_setting('backend.config_path', None)
+            if not config_path and hasattr(self.settings_manager, "get_smbseek_config_path"):
+                config_path = self.settings_manager.get_smbseek_config_path()
+
+        dialog = PryDialog(
+            parent=self.window,
+            theme=self.theme,
+            settings_manager=self.settings_manager,
+            config_path=config_path,
+            target_label=ip_addr
+        )
+        dialog_result = dialog.show()
+        if not dialog_result:
+            return
+
+        options = dialog_result.get("options", {})
+        options.update({
+            "username": dialog_result.get("username", ""),
+            "wordlist_path": dialog_result.get("wordlist_path", ""),
+            "worker_count": 1
+        })
+        self._start_batch_job("pry", [target], options)
+
     def _on_file_browser_selected(self) -> None:
         self._hide_context_menu()
         if self._is_batch_active():
@@ -908,6 +960,8 @@ class ServerListWindow:
                 return self._execute_probe_target(target, options, cancel_event)
             if job_type == "extract":
                 return self._execute_extract_target(target, options, cancel_event)
+            if job_type == "pry":
+                return self._execute_pry_target(target, options, cancel_event)
             raise RuntimeError(f"Unknown batch job type: {job_type}")
         except Exception as exc:
             return {
@@ -1049,6 +1103,86 @@ class ServerListWindow:
             "notes": ", ".join(note_parts)
         }
 
+    def _execute_pry_target(self, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
+        ip_address = target.get("ip_address")
+        username = (options.get("username") or "").strip()
+        wordlist_path = (options.get("wordlist_path") or "").strip()
+
+        if not ip_address:
+            return {
+                "ip_address": ip_address,
+                "action": "pry",
+                "status": "failed",
+                "notes": "Missing IP address"
+            }
+        if not username:
+            return {
+                "ip_address": ip_address,
+                "action": "pry",
+                "status": "failed",
+                "notes": "Username is required"
+            }
+        if not wordlist_path:
+            return {
+                "ip_address": ip_address,
+                "action": "pry",
+                "status": "failed",
+                "notes": "Password wordlist is required"
+            }
+
+        attempt_delay = float(options.get("attempt_delay", 1.0))
+        max_attempts = int(options.get("max_attempts", 0))
+        user_as_pass = bool(options.get("user_as_pass", True))
+        stop_on_lockout = bool(options.get("stop_on_lockout", True))
+        verbose = bool(options.get("verbose", False))
+
+        def progress_cb(done: int, total: Optional[int]) -> None:
+            total_display = total if total is not None and total > 0 else "?"
+            try:
+                self.window.after(0, self._set_status, f"Pry {ip_address}: tried {done}/{total_display} passwords…")
+            except Exception:
+                pass
+
+        try:
+            result = pry_runner.run_pry(
+                ip_address=ip_address,
+                username=username,
+                wordlist_path=wordlist_path,
+                user_as_pass=user_as_pass,
+                stop_on_lockout=stop_on_lockout,
+                verbose=verbose,
+                attempt_delay=attempt_delay,
+                max_attempts=max_attempts,
+                cancel_event=cancel_event,
+                progress_callback=progress_cb,
+            )
+        except pry_runner.PryError as exc:
+            status = "cancelled" if "cancel" in str(exc).lower() else "failed"
+            return {
+                "ip_address": ip_address,
+                "action": "pry",
+                "status": status,
+                "notes": str(exc)
+            }
+        except Exception as exc:
+            return {
+                "ip_address": ip_address,
+                "action": "pry",
+                "status": "failed",
+                "notes": str(exc)
+            }
+
+        notes_text = result.notes
+        if result.status == "cancelled" and result.notes.lower() == "cancelled":
+            notes_text = f"Cancelled after {result.attempts} attempts"
+
+        return {
+            "ip_address": ip_address,
+            "action": "pry",
+            "status": result.status,
+            "notes": notes_text
+        }
+
     def _on_batch_future_done(self, target: Dict[str, Any], future: Future) -> None:
         if not self.batch_job:
             return
@@ -1136,7 +1270,7 @@ class ServerListWindow:
         batch_active = self._is_batch_active()
 
         new_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
-        for button in (self.probe_button, self.extract_button, self.browser_button):
+        for button in (self.probe_button, self.extract_button, self.pry_button, self.browser_button):
             if button:
                 button.configure(state=new_state)
 
@@ -1200,7 +1334,8 @@ class ServerListWindow:
         browser_state = probe_state
         self.context_menu.entryconfig(0, state=probe_state)
         self.context_menu.entryconfig(1, state=extract_state)
-        self.context_menu.entryconfig(2, state=browser_state)
+        self.context_menu.entryconfig(2, state=probe_state)
+        self.context_menu.entryconfig(3, state=browser_state)
 
     def _show_context_menu(self, event) -> str:
         if not self.tree or not self.context_menu:

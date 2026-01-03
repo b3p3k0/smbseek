@@ -114,3 +114,6 @@ tests/
 
 # Enhanced share tracking test files
 test_enhanced_share_tracking.py
+
+# mmc fork - local copy
+mmcbrute-smbseek/
