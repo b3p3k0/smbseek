@@ -6,7 +6,7 @@ import json
 import os
 import webbrowser
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
