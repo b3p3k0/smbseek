@@ -268,7 +268,7 @@ RCE signatures are stored in `signatures/rce_smb/` as YAML files. The system inc
 - **PrintNightmare** (CVE-2021-34527) - Print Spooler RCE
 - **PetitPotam** (CVE-2021-36942) - NTLM relay vulnerability
 
-See [`docs/RCE_SIGNATURE_GUIDE.md`](docs/RCE_SIGNATURE_GUIDE.md) for detailed signature management instructions.
+See [`docs/guides/RCE_SIGNATURE_GUIDE.md`](docs/guides/RCE_SIGNATURE_GUIDE.md) for detailed signature management instructions.
 
 - Every `--string` argument becomes a quoted phrase in the Shodan query (multi-word values do not require manual quoting beyond shell requirements).
 - All CLI-provided strings are combined using logical OR by default. You can change this behavior via `conf/config.json` (`string_combination`: `"AND"` or `"OR"`).
@@ -291,7 +291,12 @@ repo root
 ├── shared/               # Configuration, database, output, and utility helpers
 ├── tools/                # Database maintenance scripts and reporting utilities
 ├── conf/                 # Configuration files and examples
-├── docs/                 # Project documentation (guides, changelog, etc.)
+├── docs/                 # Project documentation
+│   ├── guides/           # User-facing guides (CLI, GUI, extract, file browser, RCE)
+│   ├── operations/       # Migration and ops runbooks
+│   ├── dev/              # Dev notes, collaboration, integration guides, roadmap
+│   ├── release/          # Changelog and release notes
+│   └── archive/          # Deprecated references
 └── tests/                # Unit/integration tests for CLI and GUI features
 ```
 
@@ -404,9 +409,9 @@ The GUI provides an intuitive interface for SMBSeek operations:
 - Launch per-host file collection runs with configurable limits for file size, total bytes, runtime, and count
 - Results are automatically quarantined under `~/.smbseek/quarantine/<purpose>/<timestamp>` alongside JSON audit logs
 - Analysts review and promote quarantined artifacts manually, keeping risky files out of trusted folders by default
-- See [`docs/EXTRACT_WORKFLOW_GUIDE.md`](docs/EXTRACT_WORKFLOW_GUIDE.md) for architecture details, safeguards, and troubleshooting advice.
+- See [`docs/guides/EXTRACT_WORKFLOW_GUIDE.md`](docs/guides/EXTRACT_WORKFLOW_GUIDE.md) for architecture details, safeguards, and troubleshooting advice.
 
-See `docs/XSMBSEEK_USER_GUIDE.md` for comprehensive GUI documentation.
+See `docs/guides/XSMBSEEK_USER_GUIDE.md` for comprehensive GUI documentation.
 
 ## Development
 
@@ -421,7 +426,7 @@ This project demonstrates effective AI-human partnership in software development
 - **Iterative validation**: Rapid prototyping followed by real-world testing and refinement
 - **Configuration-driven design**: Sensible defaults with comprehensive customization options
 
-See `docs/AI_AGENT_FIELD_GUIDE.md` and `docs/COLLAB.md` for detailed collaboration patterns and best practices.
+See `docs/dev/AI_AGENT_FIELD_GUIDE.md` and `docs/dev/COLLAB.md` for detailed collaboration patterns and best practices.
 
 ### Contributing
 

@@ -784,7 +784,7 @@ Signatures stored in `signatures/rce_smb/` as YAML files:
 - CVE-based organization with metadata
 - Community contributions welcome (with review)
 
-See [`docs/RCE_SIGNATURE_GUIDE.md`](RCE_SIGNATURE_GUIDE.md) for detailed signature management.
+See [`RCE_SIGNATURE_GUIDE.md`](RCE_SIGNATURE_GUIDE.md) for detailed signature management.
 
 ---
 

@@ -245,7 +245,7 @@ python3 tools/add_share_summary_view.py --database smbseek.db --verbose
 ```
 
 ### Support Resources
-- See `docs/GUI_INTEGRATION_GUIDE.md` for developer integration details
+- See `../dev/GUI_INTEGRATION_GUIDE.md` for developer integration details
 - Check database status: `./smbseek.py database query --summary`
 - View logs in verbose mode for troubleshooting
 
