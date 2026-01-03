@@ -2,6 +2,16 @@
 
 All notable changes to the SMBSeek GUI project will be documented in this file.
 
+## [1.3.0] - 2026-01-03
+
+### Added
+- **Read-only File Browser:** New Tkinter window to navigate accessible shares (SMB1/2/3) and download a single file to quarantine. Enforces timeouts, entry/depth/path caps, and removes exec bits on arrival.
+- **Multi-entry Points:** Browse button in the server list action bar, row context menu, Ctrl+B shortcut, and a Browse button inside Server Details.
+- **Configurable Limits:** `file_browser` section in `conf/config.json` controls SMB1 allowance, timeouts, max entries, path length/depth, chunk size, and quarantine root.
+
+### Fixed
+- **Impacket Compatibility:** Switched to `setTimeout`/constructor timeouts and removed unsupported `buffer_size` argument to keep listing/downloads working across impacket versions.
+
 ## [1.2.1] - 2025-11-08
 
 ### Added

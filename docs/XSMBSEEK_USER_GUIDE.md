@@ -717,25 +717,22 @@ Common vulnerabilities detected include:
 - **PrintNightmare (CVE-2021-34527)**: Print Spooler RCE
 - **PetitPotam (CVE-2021-36942)**: NTLM relay vulnerability
 
-### Sandboxed Explore (GUI)
+### Read-only File Browser (GUI)
 
-The Server Details window’s **Explore** button launches a sandboxed file manager so the host desktop never mounts untrusted SMB shares directly.
+The Server List and Server Details views include a **Browse (read-only)** action that opens an integrated SMB navigator.
 
-**Requirements:**
-- Linux workstation with Podman or Docker on `PATH`
-- Active X11 (`$DISPLAY`) or Wayland (`$WAYLAND_DISPLAY` + `$XDG_RUNTIME_DIR`) session that permits container clients
-- Network access from the container to the target host (the sandbox shares the host network namespace)
+**Capabilities:**
+- Lists directories over SMB1/2/3 with enforced limits (entries, depth, path length, and timeouts).
+- No previews or execution. The only action is **Download to quarantine**; files land under `~/.smbseek/quarantine/<timestamp>/<host>/<share>/` with exec bits cleared.
+- Entry points: action bar button, row context menu, `Ctrl+B`, and the Browse button inside Server Details.
 
-**Workflow:**
-1. SMBSeek spawns an Alpine-based container via Podman/Docker using the existing sandbox manager.
-2. The container installs `pcmanfm`, `gvfs`, and `gvfs-smb`, exports the derived SMB credentials, and bind-mounts the host display socket (X11 or Wayland) plus `/tmp/.X11-unix` when needed.
-3. `pcmanfm smb://<ip>/<share>` runs inside the container, so all browsing stays isolated. stdout/stderr stream back to the GUI for transparency.
+**Configuration:**
+- Tune limits in `conf/config.json` under `file_browser` (`allow_smb1`, `connect_timeout_seconds`, `request_timeout_seconds`, `max_entries_per_dir`, `max_depth`, `max_path_length`, `download_chunk_mb`, `quarantine_root`).
+- Defaults favor safety and performance; raise limits cautiously for very large shares.
 
-**Failure Modes & Recovery:**
-- **No sandbox runtime/display:** the Explore button stays disabled or shows “Sandboxed exploration requires Podman or Docker” when clicked.
-- **Display permission denied:** the dialog surfaces the error (e.g., “Cannot open display :0”). On X11 grant access via `xhost +si:localuser:$USER` and retry.
-- **Package/network errors:** stderr from `apk`/`pcmanfm` is shown so analysts can determine whether to pull the image again or adjust firewall rules.
-- **Timeouts (120s default):** GUI reports “Sandbox explorer timed out,” indicating the container could not bootstrap in time.
+**Failure modes:**
+- Connection/auth failures surface inline in the browser window with the underlying SMB error.
+- If a directory exceeds `max_entries_per_dir`, listing truncates and shows a warning; deepen navigation instead of raising the cap unless necessary.
 
 ### Sandbox Investigation Shell
 

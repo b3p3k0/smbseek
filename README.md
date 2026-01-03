@@ -167,6 +167,13 @@ SMBSeek uses `conf/config.json` for all settings. Key configuration sections:
 - `ransomware_indicators`: Filename patterns that indicate malware infection
 - `exclusion_file`: Path to organization exclusion list
 
+**File Browser Settings (GUI):**
+
+- `file_browser.allow_smb1`: Allow SMB1 targets (default: true)
+- `file_browser.connect_timeout_seconds` / `request_timeout_seconds`: Network timeouts
+- `file_browser.max_entries_per_dir`, `max_depth`, `max_path_length`: Safety limits for listing
+- `file_browser.quarantine_root`: Where downloads are staged (default: `~/.smbseek/quarantine`)
+
 **Database Settings:**
 
 - `path`: Database file location (default: smbseek.db)
@@ -385,6 +392,12 @@ The GUI provides an intuitive interface for SMBSeek operations:
 - Visual configuration editor
 - Settings persistence across sessions
 - Real-time validation of inputs
+
+**Read-only File Browser:**
+
+- Browse accessible shares directly in the GUI (no previews/execution)
+- SMB1/2/3 compatible with configurable timeouts and listing caps
+- Single action: download selected file to quarantine (`~/.smbseek/quarantine/<timestamp>/<host>/<share>/`)
 
 **Controlled Extraction:**
 
