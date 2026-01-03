@@ -255,15 +255,6 @@ class DashboardWidget:
         )
         self.theme.apply_to_widget(about_button, "button_secondary")
         about_button.pack(side=tk.LEFT, padx=(8, 0))
-
-        # About button
-        about_button = tk.Button(
-            actions_frame,
-            text="ℹ️ About",
-            command=self._open_about_dialog
-        )
-        self.theme.apply_to_widget(about_button, "button_secondary")
-        about_button.pack(side=tk.LEFT, padx=(8, 0))
         
     
     def _build_progress_section(self) -> None:
@@ -1509,7 +1500,7 @@ class DashboardWidget:
         dialog.transient(self.parent)
         dialog.grab_set()
         if self.theme:
-            apply_theme_to_window(dialog, self.theme)
+            apply_theme_to_window(dialog)
 
         body = tk.Frame(dialog)
         body.pack(padx=18, pady=16, fill=tk.BOTH, expand=True)
