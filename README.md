@@ -5,7 +5,7 @@
 [![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/b3p3k0/smbseek)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-## TL;DR (GUI)
+## TL;DR
 ```bash
 python3 -m venv venv
 source venv/bin/activate         # venv\Scripts\activate on Windows
