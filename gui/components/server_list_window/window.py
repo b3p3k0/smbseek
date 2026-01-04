@@ -28,6 +28,7 @@ try:
     from gui.utils.dialog_helpers import ensure_dialog_focus
     from gui.components.file_browser_window import FileBrowserWindow
     from gui.components.pry_dialog import PryDialog
+    from gui.components.pry_status_dialog import PryStatusDialog
 except ImportError:
     # Handle relative imports when running from gui directory
     from utils.database_access import DatabaseReader
@@ -37,6 +38,7 @@ except ImportError:
     from utils.dialog_helpers import ensure_dialog_focus
     from components.file_browser_window import FileBrowserWindow
     from components.pry_dialog import PryDialog
+    from components.pry_status_dialog import PryStatusDialog
 
 # Import modular components
 from . import export, details, filters, table
@@ -113,6 +115,7 @@ class ServerListWindow:
         self.stop_button = None
         self.table_overlay = None
         self.table_overlay_label = None
+        self.pry_status_button = None
         self._stop_button_original_style = None
         self._context_menu_visible = False
         self._context_menu_bindings = []
@@ -131,6 +134,7 @@ class ServerListWindow:
 
         # Window state
         self.is_advanced_mode = False
+        self.pry_status_dialog = None
 
         # Sort state tracking for bidirectional column sorting
         self.current_sort_column = None
@@ -377,6 +381,16 @@ class ServerListWindow:
             "small"
         )
         self.status_label.pack(anchor="w")
+
+        # Hidden by default; becomes visible to reopen Pry status dialog
+        self.pry_status_button = tk.Button(
+            info_container,
+            text="Show Pry Status",
+            command=self._show_pry_status_dialog
+        )
+        self.theme.apply_to_widget(self.pry_status_button, "button_secondary")
+        self.pry_status_button.pack(anchor="w", pady=(4, 0))
+        self.pry_status_button.pack_forget()
 
         # Right side - action buttons
         button_container = tk.Frame(self.button_frame)
@@ -948,6 +962,11 @@ class ServerListWindow:
             return [share.strip() for share in raw_value if isinstance(share, str) and share.strip()]
         return [share.strip() for share in str(raw_value).split(',') if share.strip()]
 
+    @staticmethod
+    def _is_table_lock_required(job_type: str) -> bool:
+        """Return True if the server table should be locked for this batch type."""
+        return job_type != "pry"
+
     def _start_batch_job(self, job_type: str, targets: List[Dict[str, Any]], options: Dict[str, Any]) -> None:
         if not targets:
             return
@@ -972,12 +991,16 @@ class ServerListWindow:
         self._set_status(f"Running {job_type} batch (0/{len(targets)})…")
         self._update_action_buttons_state()
 
+        if job_type == "pry":
+            self._init_pry_status_dialog(targets[0], options, cancel_event)
+
         for target in targets:
             future = executor.submit(self._run_batch_task, job_type, target, options, cancel_event)
             self.batch_job["futures"].append((target, future))
             future.add_done_callback(lambda fut, target=target: self.window.after(0, self._on_batch_future_done, target, fut))
 
-        self._set_table_interaction_enabled(False)
+        if self._is_table_lock_required(job_type):
+            self._set_table_interaction_enabled(False)
 
     def _run_batch_task(self, job_type: str, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
         if cancel_event.is_set():
@@ -1173,6 +1196,7 @@ class ServerListWindow:
             total_display = total if total is not None and total > 0 else "?"
             try:
                 self.window.after(0, self._set_status, f"Pry {ip_address}: tried {done}/{total_display} passwords…")
+                self.window.after(0, self._update_pry_status_dialog, done, total, f"Tried {done}/{total_display}")
             except Exception:
                 pass
 
@@ -1258,6 +1282,9 @@ class ServerListWindow:
         self._set_status(f"{job_type.title()} batch finished")
         self._flush_pending_refresh()
         self._set_table_interaction_enabled(True)
+        if job_type == "pry":
+            primary_result = results[0] if results else {"status": "unknown", "notes": ""}
+            self._finish_pry_status_dialog(primary_result.get("status", "unknown"), primary_result.get("notes", ""))
         if results:
             self._show_batch_summary(job_type, results)
         self._update_stop_button_style(False)
@@ -1294,13 +1321,86 @@ class ServerListWindow:
     def _is_batch_active(self) -> bool:
         return bool(self.batch_job and self.batch_job.get("completed", 0) < self.batch_job.get("total", 0))
 
+    def _current_batch_type(self) -> Optional[str]:
+        if not self.batch_job:
+            return None
+        return self.batch_job.get("type")
+
+    def _is_pry_batch_active(self) -> bool:
+        return self._is_batch_active() and self._current_batch_type() == "pry"
+
     def _set_status(self, message: str) -> None:
         if self.status_label:
             self.status_label.configure(text=message)
 
+    def _set_pry_status_button_visible(self, visible: bool) -> None:
+        if not self.pry_status_button:
+            return
+        if visible:
+            try:
+                self.pry_status_button.pack(anchor="w", pady=(4, 0))
+            except Exception:
+                pass
+        else:
+            try:
+                self.pry_status_button.pack_forget()
+            except Exception:
+                pass
+
+    def _show_pry_status_dialog(self) -> None:
+        if self.pry_status_dialog:
+            self.pry_status_dialog.show()
+
+    def _init_pry_status_dialog(self, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> None:
+        """Create a fresh Pry status dialog for the active run."""
+        self._destroy_pry_status_dialog()
+        ip_addr = target.get("ip_address") or "-"
+        username = (options.get("username") or "").strip()
+        share_name = (options.get("share_name") or "").strip()
+        wordlist_path = options.get("wordlist_path", "")
+
+        self.pry_status_dialog = PryStatusDialog(
+            parent=self.window,
+            theme=self.theme,
+            host=ip_addr,
+            username=username,
+            share=share_name,
+            wordlist_path=wordlist_path,
+            on_cancel=lambda: cancel_event.set()
+        )
+        self._set_pry_status_button_visible(True)
+
+    def _destroy_pry_status_dialog(self) -> None:
+        if self.pry_status_dialog:
+            try:
+                self.pry_status_dialog.destroy()
+            except Exception:
+                pass
+        self.pry_status_dialog = None
+        self._set_pry_status_button_visible(False)
+
+    def _update_pry_status_dialog(self, attempts: int, total: Optional[int], message: Optional[str]) -> None:
+        if not self.pry_status_dialog:
+            return
+        try:
+            self.pry_status_dialog.update_progress(attempts, total, message)
+        except Exception:
+            pass
+
+    def _finish_pry_status_dialog(self, status: str, notes: str) -> None:
+        if not self.pry_status_dialog:
+            return
+        try:
+            self.pry_status_dialog.mark_finished(status, notes)
+            self.pry_status_dialog.show()
+        except Exception:
+            pass
+        self._set_pry_status_button_visible(True)
+
     def _update_action_buttons_state(self) -> None:
         has_selection = bool(self.tree and self.tree.selection())
         batch_active = self._is_batch_active()
+        pry_batch_active = self._is_pry_batch_active()
 
         new_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
         for button in (self.probe_button, self.extract_button, self.pry_button, self.browser_button):
@@ -1311,17 +1411,19 @@ class ServerListWindow:
             self.stop_button.configure(state=tk.NORMAL if batch_active else tk.DISABLED)
             self._update_stop_button_style(batch_active)
 
-        detail_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
+        detail_state = tk.NORMAL if has_selection and (not batch_active or pry_batch_active) else tk.DISABLED
         if self.details_button:
             self.details_button.configure(state=detail_state)
 
-        export_selected_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
+        export_selected_state = tk.NORMAL if has_selection and (not batch_active or pry_batch_active) else tk.DISABLED
         if self.export_selected_button:
             self.export_selected_button.configure(state=export_selected_state)
 
-        export_all_state = tk.NORMAL if not batch_active else tk.DISABLED
+        export_all_state = tk.NORMAL if (not batch_active or pry_batch_active) else tk.DISABLED
         if self.export_all_button:
             self.export_all_button.configure(state=export_all_state)
+
+        self._set_pry_status_button_visible(bool(pry_batch_active or self.pry_status_dialog))
 
         self._update_context_menu_state()
 
@@ -1638,6 +1740,7 @@ class ServerListWindow:
         """Close the server list window."""
         if self._is_batch_active():
             self._stop_active_batch()
+        self._destroy_pry_status_dialog()
         self.window.destroy()
 
     # Public API methods for external compatibility

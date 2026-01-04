@@ -17,8 +17,9 @@ Purpose: verify the Pry weak-password audit MVP in the xSMBSeek GUI.
    - Leave “Try username as password” and “Stop on account lockout” checked (defaults).
    - Optionally adjust delay (default 1.0s) and max attempts (0 = unlimited).
 5. Click **Start**.
-6. Observe status text updates like `Pry 10.0.0.45: tried 25/500 passwords…`.
-7. Wait for completion or click **⏹ Stop Batch** to cancel.
+6. A Pry Status dialog opens; it shows host/user/share, wordlist name, attempts, and last event. You can **Hide** it and bring it back via the “Show Pry Status” link near the status label.
+7. Observe status text updates like `Pry 10.0.0.45: tried 25/500 passwords…`.
+8. Wait for completion or click **⏹ Stop Batch** (or the dialog’s **Cancel**) to stop the run.
 
 ## Expected outcomes
 - **Valid password found:** Batch summary line shows `user X authenticated with '<password>'`. No credential is stored elsewhere.
@@ -26,6 +27,7 @@ Purpose: verify the Pry weak-password audit MVP in the xSMBSeek GUI.
 - **Lockout detected:** Summary shows `Stopped due to account lockout after N attempts`; status marked failed.
 - **Cancelled:** Summary shows `Cancelled after N attempts`.
 - **Connection error:** Summary notes the failure (e.g., `Connection failed: <reason>`).
+- **UI availability:** During Pry the server list remains interactive for read-only tasks (view details, export); batch actions stay disabled.
 
 ## Negative/edge checks
 - Empty username or missing wordlist: Pry dialog blocks start with a friendly error.
