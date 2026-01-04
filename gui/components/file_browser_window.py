@@ -60,6 +60,7 @@ class FileBrowserWindow:
         config_path: Optional[str],
         db_reader: Optional[DatabaseReader] = None,
         theme=None,
+        share_credentials: Optional[Dict[str, Dict[str, str]]] = None,
     ) -> None:
         self.parent = parent
         self.ip_address = ip_address
@@ -68,6 +69,7 @@ class FileBrowserWindow:
         self.db_reader = db_reader
         self.theme = theme
         self.config = _load_file_browser_config(config_path)
+        self.share_credentials = share_credentials or {}
 
         creds = detail_helpers._derive_credentials(self.auth_method)
         self.username, self.password = creds
@@ -154,6 +156,12 @@ class FileBrowserWindow:
         share = self.share_var.get()
         if not share:
             return
+        # Apply stored credentials if available for this share
+        if self.share_credentials:
+            creds = self.share_credentials.get(share)
+            if creds:
+                self.username = creds.get("username") or self.username
+                self.password = creds.get("password") or self.password
         self._disconnect()
         self.current_share = share
         self.current_path = "\\"

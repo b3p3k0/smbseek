@@ -978,3 +978,20 @@ class DatabaseReader:
         with self._get_connection() as conn:
             rows = conn.execute(query).fetchall()
             return {row["ip_address"]: row["denied_count"] or 0 for row in rows}
+
+    # --- Share credentials ---------------------------------------------
+
+    def get_share_credentials(self, ip_address: str) -> List[Dict[str, Any]]:
+        """
+        Fetch stored credentials for shares on the given host.
+
+        Returns:
+            List of dicts with share_name, username, password, source, last_verified_at.
+        """
+        query = """
+            SELECT sc.share_name, sc.username, sc.password, sc.source, sc.last_verified_at
+            FROM share_credentials sc
+            JOIN smb_servers s ON sc.server_id = s.id
+            WHERE s.ip_address = ?
+        """
+        return self._execute_query(query, (ip_address,))

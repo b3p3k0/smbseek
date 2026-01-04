@@ -28,6 +28,7 @@ Purpose: verify the Pry weak-password audit MVP in the xSMBSeek GUI.
 - **Cancelled:** Summary shows `Cancelled after N attempts`.
 - **Connection error:** Summary notes the failure (e.g., `Connection failed: <reason>`).
 - **UI availability:** During Pry the server list remains interactive for read-only tasks (view details, export); batch actions stay disabled.
+- **Credential persistence:** When Pry finds a password, the share is marked accessible in the DB and the found username/password are stored (source=`pry`). The File Browser will auto-use these creds for that share on future sessions.
 
 ## Negative/edge checks
 - Empty username or missing wordlist: Pry dialog blocks start with a friendly error.

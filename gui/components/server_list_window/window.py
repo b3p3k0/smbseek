@@ -8,6 +8,7 @@ Maintains all shared state and coordinates between components.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
+import sqlite3
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -29,6 +30,7 @@ try:
     from gui.components.file_browser_window import FileBrowserWindow
     from gui.components.pry_dialog import PryDialog
     from gui.components.pry_status_dialog import PryStatusDialog
+    from shared.db_migrations import run_migrations
 except ImportError:
     # Handle relative imports when running from gui directory
     from utils.database_access import DatabaseReader
@@ -39,6 +41,7 @@ except ImportError:
     from components.file_browser_window import FileBrowserWindow
     from components.pry_dialog import PryDialog
     from components.pry_status_dialog import PryStatusDialog
+    from shared.db_migrations import run_migrations
 
 # Import modular components
 from . import export, details, filters, table
@@ -842,6 +845,23 @@ class ServerListWindow:
             messagebox.showinfo("No shares", "No accessible shares found for this host.")
             return
 
+        share_creds = {}
+        try:
+            if self.db_reader:
+                creds_rows = self.db_reader.get_share_credentials(ip_addr)
+                for row in creds_rows:
+                    raw_name = row.get("share_name")
+                    cleaned_name = _clean_share_name(raw_name) if raw_name else ""
+                    if cleaned_name:
+                        share_creds[cleaned_name] = {
+                            "username": row.get("username") or "",
+                            "password": row.get("password") or "",
+                            "source": row.get("source") or "",
+                            "last_verified_at": row.get("last_verified_at")
+                        }
+        except Exception:
+            share_creds = {}
+
         config_path = None
         if self.settings_manager:
             config_path = self.settings_manager.get_setting('backend.config_path', None)
@@ -856,6 +876,7 @@ class ServerListWindow:
             config_path=config_path,
             db_reader=self.db_reader,
             theme=self.theme,
+            share_credentials=share_creds,
         )
 
     def _prompt_probe_batch_settings(self, target_count: int) -> Optional[Dict[str, Any]]:
@@ -966,6 +987,16 @@ class ServerListWindow:
     def _is_table_lock_required(job_type: str) -> bool:
         """Return True if the server table should be locked for this batch type."""
         return job_type != "pry"
+
+    @staticmethod
+    def _normalize_share_name(name: str) -> str:
+        """
+        Strip badges or slashes from share labels (e.g., 'share (denied)' -> 'share').
+        """
+        if not name:
+            return ""
+        cleaned = name.split(" (")[0]
+        return cleaned.strip().strip("\\/").strip()
 
     def _start_batch_job(self, job_type: str, targets: List[Dict[str, Any]], options: Dict[str, Any]) -> None:
         if not targets:
@@ -1229,6 +1260,12 @@ class ServerListWindow:
                 "notes": str(exc)
             }
 
+        if result.status == "success" and result.found_password:
+            try:
+                self._persist_pry_success(target, options.get("share_name", ""), username, result.found_password)
+            except Exception:
+                pass
+
         notes_text = result.notes
         if result.status == "cancelled" and result.notes.lower() == "cancelled":
             notes_text = f"Cancelled after {result.attempts} attempts"
@@ -1396,6 +1433,120 @@ class ServerListWindow:
         except Exception:
             pass
         self._set_pry_status_button_visible(True)
+
+    def _persist_pry_success(self, target: Dict[str, Any], share_label: str, username: str, password: str) -> None:
+        """
+        Persist Pry success to DB: mark share accessible and store credentials.
+        """
+        if not self.settings_manager:
+            return
+        db_path = None
+        try:
+            db_path = self.settings_manager.get_database_path()
+        except Exception:
+            return
+        if not db_path:
+            return
+
+        ip_address = target.get("ip_address")
+        auth_method = target.get("auth_method", "")
+        share_name = self._normalize_share_name(share_label)
+        if not ip_address or not share_name:
+            return
+
+        try:
+            run_migrations(db_path)
+        except Exception:
+            # Continue even if migration logging fails
+            pass
+
+        now_ts = datetime.now().isoformat(timespec="seconds")
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        try:
+            # Ensure server row
+            cur.execute("SELECT id, auth_method FROM smb_servers WHERE ip_address = ?", (ip_address,))
+            row = cur.fetchone()
+            if row:
+                server_id = row["id"]
+                cur.execute("UPDATE smb_servers SET last_seen = ? WHERE id = ?", (now_ts, server_id))
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO smb_servers (ip_address, auth_method, first_seen, last_seen, scan_count)
+                    VALUES (?, ?, ?, ?, 1)
+                    """,
+                    (ip_address, auth_method, now_ts, now_ts),
+                )
+                server_id = cur.lastrowid
+
+            # Create a minimal pry session
+            cur.execute(
+                """
+                INSERT INTO scan_sessions (tool_name, scan_type, status, started_at, completed_at, total_targets, successful_targets, failed_targets, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("xsmbseek", "pry", "completed", now_ts, now_ts, 1, 1, 0, f"Pry credential stored for {ip_address}"),
+            )
+            session_id = cur.lastrowid
+
+            # Upsert share_access
+            cur.execute(
+                "SELECT id FROM share_access WHERE server_id = ? AND share_name = ?",
+                (server_id, share_name),
+            )
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    """
+                    UPDATE share_access
+                    SET accessible = 1,
+                        auth_status = ?,
+                        error_message = NULL,
+                        test_timestamp = ?,
+                        session_id = ?
+                    WHERE id = ?
+                    """,
+                    ("pry", now_ts, session_id, row["id"]),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO share_access (server_id, session_id, share_name, accessible, auth_status, test_timestamp)
+                    VALUES (?, ?, ?, 1, ?, ?)
+                    """,
+                    (server_id, session_id, share_name, "pry", now_ts),
+                )
+
+            # Upsert share_credentials
+            cur.execute(
+                """
+                UPDATE share_credentials
+                SET username = ?, password = ?, last_verified_at = ?, updated_at = ?
+                WHERE server_id = ? AND share_name = ? AND source = 'pry'
+                """,
+                (username, password, now_ts, now_ts, server_id, share_name),
+            )
+            if cur.rowcount == 0:
+                cur.execute(
+                    """
+                    INSERT INTO share_credentials (server_id, share_name, username, password, source, session_id, last_verified_at, updated_at)
+                    VALUES (?, ?, ?, ?, 'pry', ?, ?, ?)
+                    """,
+                    (server_id, share_name, username, password, session_id, now_ts, now_ts),
+                )
+
+            conn.commit()
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            # Log to console; avoid breaking UI
+            print(f"Warning: failed to persist Pry credential for {ip_address}/{share_name}: {exc}")
+        finally:
+            conn.close()
 
     def _update_action_buttons_state(self) -> None:
         has_selection = bool(self.tree and self.tree.selection())

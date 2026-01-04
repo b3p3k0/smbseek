@@ -33,6 +33,7 @@ from config_editor_window import open_config_editor_window
 from app_config_dialog import open_app_config_dialog
 from data_import_dialog import open_data_import_dialog
 from database_setup_dialog import show_database_setup_dialog
+from shared.db_migrations import run_migrations
 from database_access import DatabaseReader
 from backend_interface import BackendInterface
 from style import get_theme, apply_theme_to_window
@@ -154,6 +155,13 @@ class SMBSeekGUI:
             if not validated_db_path:
                 # User chose to exit during database setup
                 sys.exit(0)
+
+            # Run lightweight migrations (idempotent) before opening readers
+            try:
+                run_migrations(validated_db_path)
+            except Exception as mig_err:
+                # Warn but continue; DatabaseReader may still work
+                print(f"Warning: failed to apply migrations: {mig_err}")
             
             # Initialize database reader with validated path
             self.db_reader = DatabaseReader(validated_db_path)

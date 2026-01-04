@@ -65,6 +65,24 @@ CREATE TABLE share_access (
     FOREIGN KEY (session_id) REFERENCES scan_sessions(id) ON DELETE CASCADE
 );
 
+-- Per-share credentials discovered (e.g., via Pry)
+CREATE TABLE share_credentials (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    server_id INTEGER NOT NULL,
+    share_name TEXT NOT NULL,
+    username TEXT,
+    password TEXT,
+    source TEXT DEFAULT 'pry',
+    session_id INTEGER,
+    last_verified_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (server_id) REFERENCES smb_servers(id) ON DELETE CASCADE,
+    FOREIGN KEY (session_id) REFERENCES scan_sessions(id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX idx_share_credentials_server_share_source
+    ON share_credentials(server_id, share_name, source);
+
 -- File discovery and manifest records
 CREATE TABLE file_manifests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
