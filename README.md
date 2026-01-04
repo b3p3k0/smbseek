@@ -55,12 +55,6 @@ The original CLI scan tools still exist for automation:
 ```
 See `docs/operations/` for CLI options. The GUI auto-runs DB migrations on startup.
 
-## Troubleshooting (GUI-focused)
-- `ModuleNotFoundError: tkinter`: install `python3-tk` / `python3-tkinter`.
-- `smbclient: command not found`: install `smbclient`/`samba-client`.
-- Pry timeouts: increase `pry.attempt_delay` or `connection.share_access_delay` in config.
-- Missing wordlist: download from SecLists and update `pry.wordlist_path`.
-
 ## Credits
 - Pry logic inspired by mmcbrute (BSD-3-Clause). See `licenses/mmcbrute-BSD-3-Clause.txt`.
 - Wordlists: SecLists (MIT). See `licenses/seclists-MIT.txt`.
