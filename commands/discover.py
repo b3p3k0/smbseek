@@ -199,7 +199,7 @@ class DiscoverOperation:
             'total_processed': 0
         }
 
-    def execute(self, country=None, rescan_all=False, rescan_failed=False, force_hosts=None, custom_strings: Optional[List[str]] = None) -> DiscoverResult:
+    def execute(self, country=None, rescan_all=False, rescan_failed=False, force_hosts=None, custom_filters: Optional[str] = None) -> DiscoverResult:
         """
         Execute the discover operation.
 
@@ -208,7 +208,7 @@ class DiscoverOperation:
             rescan_all: Force rescan of all discovered hosts
             rescan_failed: Include previously failed hosts for rescanning
             force_hosts: Set of IP addresses to force scan regardless of filters
-            custom_strings: Optional list of formatted string filters for Shodan queries
+            custom_filters: Optional raw Shodan filter string to append to query
 
         Returns:
             DiscoverResult with discovery statistics
@@ -235,11 +235,11 @@ class DiscoverOperation:
         if force_hosts:
             self.output.print_if_verbose(f"Forced hosts specified: {', '.join(sorted(force_hosts))}")
 
-        if custom_strings is None:
-            custom_strings = []
+        if custom_filters is None:
+            custom_filters = ""
 
         # Query Shodan
-        shodan_results, query_used = self._query_shodan(country, custom_strings)
+        shodan_results, query_used = self._query_shodan(country, custom_filters)
 
         # Add forced hosts to results and create placeholder metadata
         if force_hosts:
@@ -337,13 +337,13 @@ class DiscoverOperation:
             host_ips=authenticated_ips
         )
     
-    def _query_shodan(self, country=None, custom_strings: Optional[List[str]] = None) -> Tuple[Set[str], str]:
+    def _query_shodan(self, country=None, custom_filters: Optional[str] = None) -> Tuple[Set[str], str]:
         """
         Query Shodan for SMB servers in specified country.
 
         Args:
             country: Target country code for search
-            custom_strings: Optional list of formatted string filters
+            custom_filters: Optional raw Shodan filter string
 
         Returns:
             Tuple of (Set of IP addresses, query string used)
@@ -363,8 +363,8 @@ class DiscoverOperation:
             self.output.print_if_verbose("Global scan mode: maximum discovery coverage")
         
         try:
-            # Build targeted Shodan query 
-            query = self._build_targeted_query(target_countries, custom_strings)
+            # Build targeted Shodan query
+            query = self._build_targeted_query(target_countries, custom_filters)
             
             # Execute query with configured limit
             shodan_config = self.config.get_shodan_config()
@@ -420,14 +420,14 @@ class DiscoverOperation:
             self.output.error(f"Shodan query failed: {e}")
             return set(), query
     
-    def _build_targeted_query(self, countries: list, custom_strings: Optional[List[str]] = None) -> str:
+    def _build_targeted_query(self, countries: list, custom_filters: Optional[str] = None) -> str:
         """
         Build a targeted Shodan query for vulnerable SMB servers.
-        
+
         Args:
             countries: List of country codes for search (empty list for global)
-            custom_strings: Optional list of formatted string filters to include
-            
+            custom_filters: Optional raw Shodan filter string to append to query
+
         Returns:
             Formatted Shodan query string
         """
@@ -441,26 +441,12 @@ class DiscoverOperation:
         # Start with base components
         query_parts = [base_query, product_filter]
 
-        # String filters (CLI overrides config defaults)
-        string_filters = self._resolve_string_filters(query_config, custom_strings)
-        if string_filters:
-            combination = str(query_config.get("string_combination", "OR")).upper()
-            if combination not in {"AND", "OR"}:
-                combination = "OR"
-
-            if len(string_filters) == 1:
-                string_clause = string_filters[0]
-            else:
-                joined_filters = f" {combination} ".join(string_filters)
-                string_clause = f"({joined_filters})"
-
-            # Insert string clause at beginning to emphasize content search
-            query_parts.insert(0, string_clause)
-            self.output.print_if_verbose(
-                f"String filter logic: {combination} across {len(string_filters)} value(s): {', '.join(string_filters)}"
-            )
+        # Custom filters (appended verbatim if provided)
+        if custom_filters:
+            query_parts.append(custom_filters)
+            self.output.print_if_verbose(f"Custom Shodan filters applied: {custom_filters}")
         else:
-            self.output.print_if_verbose("No string filters applied to Shodan query")
+            self.output.print_if_verbose("No custom Shodan filters applied")
         
         # Add country filter only if countries specified
         if countries:
@@ -493,50 +479,6 @@ class DiscoverOperation:
 
         return final_query
 
-    def _resolve_string_filters(self, query_config: Dict, custom_strings: Optional[List[str]]) -> List[str]:
-        """
-        Determine which string filters should be applied to the Shodan query.
-
-        Args:
-            query_config: Query component configuration
-            custom_strings: CLI-supplied string filters (already formatted)
-
-        Returns:
-            Deduplicated list of formatted string filters
-        """
-        combined_filters: List[str] = []
-
-        config_strings = query_config.get("string_filters", [])
-        if isinstance(config_strings, str):
-            config_strings = [config_strings]
-        elif not isinstance(config_strings, list):
-            config_strings = []
-
-        for raw_value in config_strings:
-            if raw_value is None:
-                continue
-            try:
-                formatted = format_string_for_shodan(str(raw_value))
-                combined_filters.append(formatted)
-            except ValueError as exc:
-                self.output.warning(f"Skipping invalid config string filter '{raw_value}': {exc}")
-
-        if custom_strings:
-            # CLI values have already been validated/quoted
-            combined_filters.extend(custom_strings)
-            self.output.print_if_verbose(
-                f"Custom CLI string filters provided ({len(custom_strings)}): {', '.join(custom_strings)}"
-            )
-
-        deduped_filters: List[str] = []
-        seen = set()
-        for value in combined_filters:
-            if value not in seen:
-                deduped_filters.append(value)
-                seen.add(value)
-
-        return deduped_filters
-    
     def _apply_exclusions(self, ip_addresses: Set[str]) -> Set[str]:
         """
         Apply exclusion filters to IP addresses.

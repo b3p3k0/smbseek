@@ -170,7 +170,7 @@ class UnifiedWorkflow:
                 rescan_all=getattr(args, 'rescan_all', False),
                 rescan_failed=getattr(args, 'rescan_failed', False),
                 force_hosts=getattr(args, 'force_hosts', set()),
-                custom_strings=getattr(args, 'strings', [])
+                custom_filters=getattr(args, 'filters', '')
             )
 
             self.output.success(f"Discovery completed: {discover_result.total_hosts} hosts processed, {len(discover_result.host_ips)} authenticated")

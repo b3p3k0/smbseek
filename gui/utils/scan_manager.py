@@ -388,15 +388,15 @@ class ScanManager:
         self._update_progress(10, "Starting scan execution...", "discovery")
 
         # Use the backend interface run_scan method but with enhanced parameters
-        # Extract search strings from scan options
-        search_strings = scan_options.get('search_strings', [])
+        # Extract custom filters from scan options
+        custom_filters = scan_options.get('custom_filters', '')
 
         return self.backend_interface.run_scan(
             countries,
             progress_callback=self._handle_backend_progress,
             log_callback=self._handle_backend_log_line,
             additional_args=cli_args,
-            strings=search_strings
+            filters=custom_filters
         )
 
     def _handle_backend_log_line(self, line: str) -> None:

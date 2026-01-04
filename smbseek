@@ -123,40 +123,34 @@ def validate_country_codes(value: str) -> str:
     return ','.join(codes)
 
 
-def validate_and_format_strings(strings: Optional[List[str]]) -> List[str]:
+def validate_custom_filters(filters: Optional[str]) -> str:
     """
-    Validate and normalize custom string filters from CLI arguments.
+    Validate custom Shodan filters from CLI argument.
 
     Args:
-        strings: List of raw string filter inputs
+        filters: Raw filter string
 
     Returns:
-        List of formatted string filters suitable for Shodan queries
+        Validated filter string (stripped)
 
     Raises:
-        ValueError: If any supplied string is invalid
+        ValueError: If filters are invalid
     """
-    if not strings:
-        return []
+    if not filters:
+        return ""
 
-    formatted_strings: List[str] = []
-    seen = set()
+    normalized = filters.strip()
 
-    for raw_value in strings:
-        normalized = (raw_value or "").strip()
-        if not normalized:
-            raise ValueError("String filters cannot be empty or whitespace-only")
+    # Basic sanity checks
+    if len(normalized) > 500:
+        raise ValueError("Custom filters cannot exceed 500 characters")
 
-        try:
-            formatted = format_string_for_shodan(normalized)
-        except ValueError as exc:
-            raise ValueError(f"Invalid --string value '{raw_value}': {exc}") from exc
+    # Allow most characters - Shodan syntax is flexible
+    # Just prevent obvious injection attempts
+    if '\x00' in normalized or '\r' in normalized:
+        raise ValueError("Custom filters contain invalid control characters")
 
-        if formatted not in seen:
-            formatted_strings.append(formatted)
-            seen.add(formatted)
-
-    return formatted_strings
+    return normalized
 
 
 def detect_deprecated_usage(argv):
@@ -273,11 +267,11 @@ Documentation: docs/USER_GUIDE.md
         help='Disable cautious mode and allow unsigned/SMB1 connections (not recommended).'
     )
     parser.add_argument(
-        '--string',
-        dest='strings',
-        action='append',
-        metavar='VALUE',
-        help='Add a string filter for banner searches (can be used multiple times; values are automatically quoted)'
+        '--filter',
+        dest='filters',
+        type=str,
+        metavar='FILTERS',
+        help='Custom Shodan filters to append to base query (e.g., "port:445 os:Windows")'
     )
     parser.add_argument(
         '--check-rce',
@@ -336,9 +330,9 @@ def main():
         # Import workflow components
         from shared.workflow import create_unified_workflow
 
-        # Validate and normalize custom strings before workflow creation
+        # Validate custom filters before workflow creation
         try:
-            args.strings = validate_and_format_strings(getattr(args, 'strings', []))
+            args.filters = validate_custom_filters(getattr(args, 'filters', None))
         except ValueError as exc:
             print(f"Error: {exc}")
             return 1

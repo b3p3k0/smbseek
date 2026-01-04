@@ -15,6 +15,7 @@ import sys
 import json
 import csv
 import io
+import webbrowser
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any
 
@@ -95,8 +96,9 @@ class ScanDialog:
         self.content_frame = None
         self.country_var = tk.StringVar()
         self.country_entry = None
-        self.search_strings_var = tk.StringVar()
-        self.search_strings_entry = None
+        self.custom_filters_var = tk.StringVar()
+        self.custom_filters_entry = None
+        self.query_preview_label = None
         self.template_var = tk.StringVar()
         self.template_dropdown = None
         self._template_label_to_slug: Dict[str, str] = {}
@@ -198,6 +200,7 @@ class ScanDialog:
         # Build UI inside scrollable area
         self._create_header()
         self._create_scan_options()
+        self._create_query_preview_section()
         self._create_config_section()
         self._create_button_panel()
         
@@ -340,7 +343,7 @@ class ScanDialog:
         right_column.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Left column: target scope + filters
-        self._create_search_strings_option(left_column)
+        self._create_custom_filters_option(left_column)
         
         country_container = tk.Frame(left_column)
         self.theme.apply_to_widget(country_container, "card")
@@ -544,7 +547,7 @@ class ScanDialog:
     def _capture_form_state(self) -> Dict[str, Any]:
         """Capture current ScanDialog form state for template storage."""
         return {
-            "search_strings": self.search_strings_var.get(),
+            "custom_filters": self.custom_filters_var.get(),
             "country_code": self.country_var.get(),
             "regions": {
                 "africa": self.africa_var.get(),
@@ -570,7 +573,7 @@ class ScanDialog:
 
     def _apply_form_state(self, state: Dict[str, Any]) -> None:
         """Populate form fields from saved template state."""
-        self.search_strings_var.set(state.get("search_strings", ""))
+        self.custom_filters_var.set(state.get("custom_filters", ""))
         self.country_var.set(state.get("country_code", ""))
 
         regions = state.get("regions", {})
@@ -764,56 +767,63 @@ class ScanDialog:
         self.south_america_var.set(False)
         self._update_region_status()
 
-    def _create_search_strings_option(self, parent_frame: tk.Frame) -> None:
-        """Create search strings input option."""
-        strings_container = tk.Frame(parent_frame)
-        self.theme.apply_to_widget(strings_container, "card")
-        strings_container.pack(fill=tk.X, padx=15, pady=(0, 10))
+    def _create_custom_filters_option(self, parent_frame: tk.Frame) -> None:
+        """Create custom Shodan filters input option with helper link."""
+        filters_container = tk.Frame(parent_frame)
+        self.theme.apply_to_widget(filters_container, "card")
+        filters_container.pack(fill=tk.X, padx=15, pady=(0, 10))
 
-        # Label
-        strings_heading = self._create_accent_heading(
-            strings_container,
-            "🔍 Search Strings (optional)"
+        # Heading with helper link
+        heading_frame = tk.Frame(filters_container)
+        self.theme.apply_to_widget(heading_frame, "card")
+        heading_frame.pack(fill=tk.X)
+
+        heading_label = self._create_accent_heading(
+            heading_frame,
+            "🔍 Custom Shodan Filters (optional)"
         )
-        strings_heading.pack(fill=tk.X)
+        heading_label.pack(side=tk.LEFT)
+
+        # Helper link (clickable, blue, hand cursor)
+        help_link = tk.Label(
+            heading_frame,
+            text="Filter Reference",
+            fg="#0066cc",
+            cursor="hand2",
+            font=self.theme.fonts["small"]
+        )
+        help_link.pack(side=tk.LEFT, padx=(10, 0))
+        help_link.bind(
+            "<Button-1>",
+            lambda e: webbrowser.open("https://www.shodan.io/search/filters")
+        )
 
         # Input frame
-        input_frame = tk.Frame(strings_container)
+        input_frame = tk.Frame(filters_container)
         self.theme.apply_to_widget(input_frame, "card")
         input_frame.pack(fill=tk.X, pady=(5, 0))
 
         # Entry field
-        self.search_strings_entry = tk.Entry(
+        self.custom_filters_entry = tk.Entry(
             input_frame,
-            textvariable=self.search_strings_var,
-            width=40,
+            textvariable=self.custom_filters_var,
+            width=50,
             font=self.theme.fonts["body"]
         )
-        self.search_strings_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.custom_filters_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        # Description and status
-        desc_frame = tk.Frame(strings_container)
+        # Description
+        desc_frame = tk.Frame(filters_container)
         self.theme.apply_to_widget(desc_frame, "card")
         desc_frame.pack(fill=tk.X, pady=(5, 0))
 
-        # Description label
         desc_label = self.theme.create_styled_label(
             desc_frame,
-            '(e.g., Documents, "My Files", Videos — use quotes for multi-word terms)',
+            '(e.g., "port:445 os:Windows" or "city:\\"Los Angeles\\"" — appended to base query)',
             "small",
             fg=self.theme.colors["text_secondary"]
         )
-        desc_label.configure(font=(self.theme.fonts["small"][0], self.theme.fonts["small"][1], "italic"))
-        desc_label.pack(side=tk.LEFT)
-
-        # Status label (for showing string count and validation)
-        self.strings_status_label = self.theme.create_styled_label(
-            desc_frame,
-            "",
-            "small",
-            fg=self.theme.colors["text_secondary"]
-        )
-        self.strings_status_label.pack(side=tk.RIGHT)
+        desc_label.pack(anchor="w")
 
     def _create_max_results_option(self, parent_frame: tk.Frame) -> None:
         """Create max Shodan results option."""
@@ -1375,7 +1385,84 @@ class ScanDialog:
         )
         self.theme.apply_to_widget(edit_config_button, "button_secondary")
         edit_config_button.pack(side=tk.LEFT)
-    
+
+    def _create_query_preview_section(self) -> None:
+        """Create query preview section showing final assembled Shodan query."""
+        preview_frame = tk.Frame(self.content_frame)
+        self.theme.apply_to_widget(preview_frame, "card")
+        preview_frame.pack(fill=tk.X, padx=20, pady=(0, 5))
+
+        preview_title = self.theme.create_styled_label(
+            preview_frame,
+            "Query Preview",
+            "heading"
+        )
+        preview_title.pack(anchor="w", padx=15, pady=(10, 5))
+
+        preview_content = tk.Frame(preview_frame, relief=tk.SUNKEN, borderwidth=1)
+        self.theme.apply_to_widget(preview_content, "card")
+        preview_content.pack(fill=tk.X, padx=15, pady=(0, 10))
+
+        self.query_preview_label = tk.Label(
+            preview_content,
+            text="(Final Shodan query will appear here)",
+            font=self.theme.fonts["small"],
+            fg=self.theme.colors["text_secondary"],
+            justify="left",
+            anchor="w",
+            wraplength=1200,
+            padx=8,
+            pady=8
+        )
+        self.query_preview_label.pack(fill=tk.X)
+
+    def _update_query_preview(self, *args) -> None:
+        """Update query preview when any query-affecting field changes."""
+        if not self.query_preview_label:
+            return
+
+        try:
+            preview_query = self._build_preview_query()
+            self.query_preview_label.configure(
+                text=preview_query,
+                fg=self.theme.colors["text_primary"]
+            )
+        except Exception:
+            self.query_preview_label.configure(
+                text="(Unable to generate preview)",
+                fg=self.theme.colors["text_secondary"]
+            )
+
+    def _build_preview_query(self) -> str:
+        """Build preview of final Shodan query (simulates backend logic)."""
+        # Base query components (hardcoded - matches discover.py defaults)
+        base_query = 'smb authentication: disabled'
+        product_filter = 'product:"Samba"'
+        query_parts = [base_query, product_filter]
+
+        # Custom filters (appended verbatim)
+        custom_filters = self.custom_filters_var.get().strip()
+        if custom_filters:
+            query_parts.append(custom_filters)
+
+        # Country filter
+        country_input = self.country_var.get().strip()
+        countries, _ = self._get_all_selected_countries(country_input)
+
+        if countries:
+            if len(countries) == 1:
+                query_parts.append(f'country:{countries[0]}')
+            else:
+                country_codes = ','.join(sorted(countries))
+                query_parts.append(f'country:{country_codes}')
+
+        # Sample exclusions (simplified for preview)
+        query_parts.append('-org:"Google"')
+        query_parts.append('-org:"Amazon"')
+        query_parts.append('-"DSL"')
+
+        return ' '.join(query_parts)
+
     def _create_button_panel(self) -> None:
         """Create dialog button panel."""
         button_frame = tk.Frame(self.dialog)
@@ -1415,16 +1502,23 @@ class ScanDialog:
         # Country input validation
         self.country_var.trace_add("write", self._validate_country_input)
 
-        # Search strings validation
-        self.search_strings_var.trace_add("write", self._validate_search_strings_input)
+        # Query preview updates
+        self.custom_filters_var.trace_add("write", self._update_query_preview)
+        self.country_var.trace_add("write", self._update_query_preview)
+        self.africa_var.trace_add("write", self._update_query_preview)
+        self.asia_var.trace_add("write", self._update_query_preview)
+        self.europe_var.trace_add("write", self._update_query_preview)
+        self.north_america_var.trace_add("write", self._update_query_preview)
+        self.oceania_var.trace_add("write", self._update_query_preview)
+        self.south_america_var.trace_add("write", self._update_query_preview)
 
         # Advanced options validation
         self.max_results_var.trace_add("write", self._validate_max_results)
         self.recent_hours_var.trace_add("write", self._validate_recent_hours)
     
     def _focus_initial_field(self) -> None:
-        """Set initial focus to search strings (fallback to country)."""
-        target_entry = self.search_strings_entry or self.country_entry
+        """Set initial focus to custom filters (fallback to country)."""
+        target_entry = self.custom_filters_entry or self.country_entry
         if target_entry:
             target_entry.focus_set()
 
@@ -1523,106 +1617,6 @@ class ScanDialog:
         upper_input = country_input.upper()
         if upper_input != country_input:
             self.country_var.set(upper_input)
-
-    def _parse_search_strings(self, strings_input: str) -> tuple[list[str], str]:
-        """
-        Parse comma-separated search strings, respecting quoted multi-word strings.
-
-        Args:
-            strings_input: Raw string input from user
-
-        Returns:
-            Tuple of (parsed_strings_list, error_message)
-            If error_message is empty, validation succeeded
-
-        Examples:
-            'Documents, Videos' → ['Documents', 'Videos']
-            'Documents, "My Files", Videos' → ['Documents', 'My Files', 'Videos']
-            '"Company Data", test-files' → ['Company Data', 'test-files']
-        """
-        if not strings_input.strip():
-            return [], ""  # Empty input is valid (no search strings)
-
-        try:
-            # Use CSV reader to properly handle quoted strings
-            csv_reader = csv.reader(io.StringIO(strings_input), quotechar='"', skipinitialspace=True)
-            parsed_strings = []
-
-            for row in csv_reader:
-                for string_item in row:
-                    clean_string = string_item.strip()
-                    if clean_string:  # Skip empty entries
-                        parsed_strings.append(clean_string)
-
-            if not parsed_strings:
-                return [], ""  # Empty result is valid
-
-            # Validate each string individually
-            for search_string in parsed_strings:
-                validation_error = self._validate_single_search_string(search_string)
-                if validation_error:
-                    return [], validation_error
-
-            # Check total count limit
-            if len(parsed_strings) > 20:
-                return [], f"Too many search strings ({len(parsed_strings)}). Maximum allowed: 20."
-
-            return parsed_strings, ""
-
-        except Exception as e:
-            return [], f"Invalid format: {str(e)}. Use comma-separated values with quotes for multi-word strings."
-
-    def _validate_single_search_string(self, search_string: str) -> str:
-        """
-        Validate a single search string.
-
-        Args:
-            search_string: Individual string to validate
-
-        Returns:
-            Error message if invalid, empty string if valid
-        """
-        # Check length limit
-        if len(search_string) > 100:
-            return f"String too long (max 100 chars): '{search_string[:30]}...'"
-
-        # Check for suspicious characters that might break Shodan queries
-        suspicious_chars = ['&', '|', ';', '(', ')', '[', ']', '{', '}']
-        for char in suspicious_chars:
-            if char in search_string:
-                return f"String contains unsupported character '{char}': '{search_string}'"
-
-        return ""  # Valid
-
-    def _validate_search_strings_input(self, *args) -> None:
-        """Validate search strings input in real-time."""
-        strings_input = self.search_strings_var.get()
-
-        # Parse and validate
-        parsed_strings, error_msg = self._parse_search_strings(strings_input)
-
-        # Update status display
-        self._update_strings_status(parsed_strings, error_msg)
-
-    def _update_strings_status(self, parsed_strings: list[str], error_msg: str) -> None:
-        """Update the strings status label with count and validation info."""
-        if error_msg:
-            # Show error in red
-            self.strings_status_label.configure(
-                text=f"❌ {error_msg}",
-                fg=self.theme.colors.get("error", "red")
-            )
-        elif parsed_strings:
-            # Show count and character total
-            total_chars = sum(len(s) for s in parsed_strings)
-            status_text = f"📊 {len(parsed_strings)} strings • {total_chars} characters"
-            self.strings_status_label.configure(
-                text=status_text,
-                fg=self.theme.colors.get("success", "green")
-            )
-        else:
-            # Clear status for empty input
-            self.strings_status_label.configure(text="")
 
     def _validate_max_results(self, *args) -> None:
         """Validate max results input."""
@@ -1865,11 +1859,8 @@ class ScanDialog:
         api_key = self.api_key_var.get().strip()
         api_key = api_key if api_key else None
 
-        # Handle search strings (parse and validate)
-        strings_input = self.search_strings_var.get().strip()
-        parsed_strings, strings_error = self._parse_search_strings(strings_input)
-        if strings_error:
-            raise ValueError(f"Invalid search strings: {strings_error}")
+        # Handle custom filters
+        custom_filters = self.custom_filters_var.get().strip()
 
         discovery_concurrency = self._parse_positive_int(
             self.discovery_concurrency_var.get().strip(),
@@ -1907,7 +1898,7 @@ class ScanDialog:
                 self._settings_manager.set_setting('scan_dialog.rescan_all', rescan_all)
                 self._settings_manager.set_setting('scan_dialog.rescan_failed', rescan_failed)
                 self._settings_manager.set_setting('scan_dialog.api_key_override', api_key or '')
-                self._settings_manager.set_setting('scan_dialog.search_strings', strings_input)
+                self._settings_manager.set_setting('scan_dialog.custom_filters', custom_filters)
                 # Save only manually entered country codes, not region-selected ones
                 manual_country_input = self.country_var.get().strip()
                 self._settings_manager.set_setting('scan_dialog.country_code', manual_country_input)
@@ -1938,7 +1929,7 @@ class ScanDialog:
             'rescan_all': rescan_all,
             'rescan_failed': rescan_failed,
             'api_key_override': api_key,
-            'search_strings': parsed_strings,
+            'custom_filters': custom_filters,
             'discovery_max_concurrent_hosts': discovery_concurrency,
             'access_max_concurrent_hosts': access_concurrency,
             'rate_limit_delay': rate_limit_delay,
@@ -1961,7 +1952,7 @@ class ScanDialog:
                 rescan_all = bool(self._settings_manager.get_setting('scan_dialog.rescan_all', False))
                 rescan_failed = bool(self._settings_manager.get_setting('scan_dialog.rescan_failed', False))
                 api_key = str(self._settings_manager.get_setting('scan_dialog.api_key_override', ''))
-                search_strings = str(self._settings_manager.get_setting('scan_dialog.search_strings', ''))
+                custom_filters = str(self._settings_manager.get_setting('scan_dialog.custom_filters', ''))
                 country_code = str(self._settings_manager.get_setting('scan_dialog.country_code', ''))
 
                 discovery_concurrency = self._settings_manager.get_setting('scan_dialog.discovery_max_concurrency', None)
@@ -1976,7 +1967,7 @@ class ScanDialog:
                 self.rescan_all_var.set(rescan_all)
                 self.rescan_failed_var.set(rescan_failed)
                 self.api_key_var.set(api_key)
-                self.search_strings_var.set(search_strings)
+                self.custom_filters_var.set(custom_filters)
                 self.country_var.set(country_code)
 
                 if discovery_concurrency is not None:
@@ -2018,6 +2009,9 @@ class ScanDialog:
             except Exception:
                 # Fall back to defaults if settings loading fails
                 pass
+
+        # Initial preview render
+        self._update_query_preview()
 
     def _start_scan(self) -> None:
         """Validate inputs and start the scan with configured parameters."""
