@@ -1284,13 +1284,18 @@ class ServerListWindow:
         user_as_pass = bool(options.get("user_as_pass", True))
         stop_on_lockout = bool(options.get("stop_on_lockout", True))
         verbose = bool(options.get("verbose", False))
+        self._last_password_tried = getattr(self, "_last_password_tried", {})
+        self._last_password_tried[job_id] = None
 
         def progress_cb(done: int, total: Optional[int]) -> None:
             total_display = total if total is not None and total > 0 else "?"
             try:
                 self.window.after(0, self._set_status, f"Pry {ip_address}: tried {done}/{total_display} passwords…")
                 dialog = self.active_jobs.get(job_id, {}).get("dialog")
-                self.window.after(0, self._update_batch_status_dialog, dialog, done, total, f"Tried {done}/{total_display}")
+                # Show the actual password tried in last event instead of repeating counts
+                last_pwd = self._last_password_tried.get(job_id)
+                last_event_msg = f"Tried {last_pwd}" if last_pwd else f"Tried {done}/{total_display}"
+                self.window.after(0, self._update_batch_status_dialog, dialog, done, total, last_event_msg)
             except Exception:
                 pass
 
