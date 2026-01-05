@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 
 from shared.smb_browser import SMBNavigator, ListResult, Entry
-from shared.quarantine import build_quarantine_path
+from shared.quarantine import build_quarantine_path, log_quarantine_event
 try:
     from gui.utils.database_access import DatabaseReader
 except ImportError:
@@ -250,10 +250,14 @@ class FileBrowserWindow:
                     self.ip_address,
                     self.current_share,
                     base_path=self.config.get("quarantine_root"),
-                    purpose="file_browser",
                 )
                 result = self.navigator.download_file(remote_path, dest_dir)
                 msg = f"Downloaded to {result.saved_path}"
+                try:
+                    host_dir = Path(dest_dir).parent.parent  # host/date/share
+                    log_quarantine_event(host_dir, f"downloaded {self.current_share}{remote_path} -> {result.saved_path}")
+                except Exception:
+                    pass
                 self.window.after(0, lambda: self._set_status(msg))
                 self.window.after(0, lambda: messagebox.showinfo("Download complete", msg))
             except Exception as e:

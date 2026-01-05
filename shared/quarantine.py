@@ -27,26 +27,35 @@ def _ensure_root(root: Path) -> Path:
     return root
 
 
+def _host_root(base_path: Optional[Union[str, Path]], ip_address: Optional[str]) -> Path:
+    root = Path(base_path).expanduser() if base_path else _DEFAULT_ROOT
+    root = _ensure_root(root)
+    safe_ip = _sanitize_label(ip_address or "host")
+    host_dir = root / safe_ip
+    host_dir.mkdir(parents=True, exist_ok=True)
+    return host_dir
+
+
+def _date_bucket(now: Optional[datetime] = None) -> str:
+    now = now or datetime.utcnow()
+    return now.strftime("%Y%m%d")
+
+
 def create_quarantine_dir(
     ip_address: Optional[str],
     *,
     purpose: str = "extract",
     base_path: Optional[Union[str, Path]] = None
 ) -> Path:
-    """Create and return a quarantine subdirectory for the given host/purpose."""
+    """
+    Create and return a quarantine subdirectory for the given host.
 
-    root = Path(base_path).expanduser() if base_path else _DEFAULT_ROOT
-    root = _ensure_root(root)
-
-    purpose_root = root / _sanitize_label(purpose or "extract")
-    purpose_root.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    safe_ip = _sanitize_label(ip_address or "host")
-    session_dir = purpose_root / f"{timestamp}_{safe_ip}"
-    session_dir.mkdir(parents=True, exist_ok=True)
-
-    return session_dir
+    Layout: <root>/<host>/<YYYYMMDD>
+    """
+    host_dir = _host_root(base_path, ip_address)
+    date_dir = host_dir / _date_bucket()
+    date_dir.mkdir(parents=True, exist_ok=True)
+    return date_dir
 
 
 def build_quarantine_path(
@@ -60,22 +69,30 @@ def build_quarantine_path(
     Build a quarantine directory path for a specific host/share without writing files.
 
     Creates a structure:
-      <root>/<purpose>/<timestamp>_<ip>/<share>/
+      <root>/<host>/<YYYYMMDD>/<share>/
 
     The directory is created on disk to guarantee the path exists for downloads.
     """
-    root = Path(base_path).expanduser() if base_path else _DEFAULT_ROOT
-    root = _ensure_root(root)
+    host_dir = _host_root(base_path, ip_address)
+    date_dir = host_dir / _date_bucket()
+    date_dir.mkdir(parents=True, exist_ok=True)
 
-    purpose_root = root / _sanitize_label(purpose or "file_browser")
-    purpose_root.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    safe_ip = _sanitize_label(ip_address or "host")
     safe_share = _sanitize_label(share_name or "share")
-    session_dir = purpose_root / f"{timestamp}_{safe_ip}" / safe_share
+    session_dir = date_dir / safe_share
     session_dir.mkdir(parents=True, exist_ok=True)
     return session_dir
 
 
-__all__ = ["create_quarantine_dir", "build_quarantine_path"]
+def log_quarantine_event(host_dir: Path, message: str) -> None:
+    """Append a simple activity line to the host's activity.log."""
+    try:
+        log_file = host_dir / "activity.log"
+        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with log_file.open("a", encoding="utf-8") as fh:
+            fh.write(f"{timestamp} {message}\n")
+    except Exception:
+        pass
+
+
+__all__ = ["create_quarantine_dir", "build_quarantine_path", "log_quarantine_event"]

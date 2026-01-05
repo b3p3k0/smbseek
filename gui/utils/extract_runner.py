@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 from threading import Event
 
+from shared.quarantine import log_quarantine_event
+
 try:  # pragma: no cover - runtime dependency
     from impacket.smbconnection import SMBConnection
 except ImportError:  # pragma: no cover - handled upstream
@@ -189,6 +191,11 @@ def run_extract(
                     "size": file_size,
                     "saved_to": str(dest_path)
                 })
+                try:
+                    host_dir = download_dir.parent
+                    log_quarantine_event(host_dir, f"extracted {share}/{rel_display} -> {dest_path}")
+                except Exception:
+                    pass
 
                 if delay_seconds > 0:
                     _check_cancel(cancel_event)
