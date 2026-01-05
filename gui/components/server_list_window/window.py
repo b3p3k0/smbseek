@@ -1418,6 +1418,21 @@ class ServerListWindow:
         self._set_status("Batch stopped")
         self._finalize_batch_job(job_id)
 
+    def _stop_all_jobs(self) -> None:
+        """Stop all active jobs (used on window close)."""
+        for job_id in list(self.active_jobs.keys()):
+            job = self.active_jobs.get(job_id)
+            if not job:
+                continue
+            cancel_event = job.get("cancel_event")
+            if cancel_event:
+                cancel_event.set()
+            executor = job.get("executor")
+            if executor:
+                executor.shutdown(wait=False, cancel_futures=True)
+            job["completed"] = job["total"]
+            self._finalize_batch_job(job_id)
+
     def _is_batch_active(self) -> bool:
         return any(job.get("completed", 0) < job.get("total", 0) for job in self.active_jobs.values())
 
@@ -1497,6 +1512,15 @@ class ServerListWindow:
         except Exception:
             pass
         self._set_pry_status_button_visible(True)
+
+    def _destroy_batch_status_dialog(self) -> None:
+        if self.batch_status_dialog:
+            try:
+                self.batch_status_dialog.destroy()
+            except Exception:
+                pass
+        self.batch_status_dialog = None
+        self._set_pry_status_button_visible(False)
 
     def _persist_pry_success(self, target: Dict[str, Any], share_label: str, username: str, password: str) -> None:
         """
@@ -1960,7 +1984,7 @@ class ServerListWindow:
     def _close_window(self) -> None:
         """Close the server list window."""
         if self._is_batch_active():
-            self._stop_active_batch()
+            self._stop_all_jobs()
         self._destroy_batch_status_dialog()
         self.window.destroy()
 
