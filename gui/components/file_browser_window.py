@@ -283,8 +283,6 @@ class FileBrowserWindow:
                 errors = []
 
                 for remote_path in remote_paths:
-                    if self.navigator.cancel_requested:
-                        break
                     self.window.after(0, lambda rp=remote_path, c=completed, t=total: self._set_status(f"Downloading {rp} ({c+1}/{t})"))
                     try:
                         result = self.navigator.download_file(remote_path, dest_dir)
