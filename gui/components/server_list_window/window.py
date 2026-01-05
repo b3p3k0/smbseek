@@ -1371,7 +1371,7 @@ class ServerListWindow:
         dialog = job.get("dialog")
         if dialog:
             primary_result = results[0] if results else {"status": "unknown", "notes": ""}
-            self._finish_batch_status_dialog(primary_result.get("status", "unknown"), primary_result.get("notes", ""))
+            self._finish_batch_status_dialog(dialog, primary_result.get("status", "unknown"), primary_result.get("notes", ""))
 
         self._update_action_buttons_state()
         self._set_status(f"{job_type.title()} batch finished")
