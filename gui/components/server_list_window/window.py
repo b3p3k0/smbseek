@@ -712,10 +712,6 @@ class ServerListWindow:
 
     def _on_probe_selected(self) -> None:
         self._hide_context_menu()
-        if self._is_batch_active():
-            messagebox.showinfo("Batch Running", "Please wait for the current batch to finish or stop it before starting a new probe batch.")
-            return
-
         targets = self._build_selected_targets()
         if not targets:
             messagebox.showwarning("No Selection", "Please select at least one server to probe.", parent=self.window)
@@ -729,10 +725,6 @@ class ServerListWindow:
 
     def _on_extract_selected(self) -> None:
         self._hide_context_menu()
-        if self._is_batch_active():
-            messagebox.showinfo("Batch Running", "Please wait for the current batch to finish or stop it before starting a new extract batch.")
-            return
-
         targets = self._build_selected_targets()
         if not targets:
             messagebox.showwarning("No Selection", "Please select at least one server to extract from.", parent=self.window)
@@ -762,10 +754,6 @@ class ServerListWindow:
 
     def _on_pry_selected(self) -> None:
         self._hide_context_menu()
-        if self._is_batch_active():
-            messagebox.showinfo("Batch Running", "Please wait for the current batch to finish or stop it before starting Pry.")
-            return
-
         targets = self._build_selected_targets()
         if len(targets) != 1:
             messagebox.showwarning("Select one server", "Choose exactly one server to run Pry.", parent=self.window)
@@ -815,10 +803,6 @@ class ServerListWindow:
 
     def _on_file_browser_selected(self) -> None:
         self._hide_context_menu()
-        if self._is_batch_active():
-            messagebox.showinfo("Batch Running", "Please wait for the current batch to finish or stop it before browsing.")
-            return
-
         targets = self._build_selected_targets()
         if len(targets) != 1:
             messagebox.showwarning("Select one server", "Choose exactly one server to browse.", parent=self.window)
