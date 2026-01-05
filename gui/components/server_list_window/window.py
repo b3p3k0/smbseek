@@ -132,7 +132,7 @@ class ServerListWindow:
         self.all_servers = []
         self.filtered_servers = []
         self.selected_servers = []
-        self.batch_job = None
+        self.active_jobs: Dict[str, Dict[str, Any]] = {}
         self._pending_table_refresh = False
         self._pending_selection = []
 
@@ -988,7 +988,8 @@ class ServerListWindow:
     @staticmethod
     def _is_table_lock_required(job_type: str) -> bool:
         """Return True if the server table should be locked for this batch type."""
-        return job_type != "pry"
+        # Concurrency-friendly: do not lock the table for any job
+        return False
 
     @staticmethod
     def _normalize_share_name(name: str) -> str:
@@ -1004,12 +1005,33 @@ class ServerListWindow:
         if not targets:
             return
 
+        # Enforce max concurrent jobs
+        if len(self.active_jobs) >= 3:
+            messagebox.showinfo("Too many tasks", "Please wait for an existing task to finish before starting another.")
+            return
+
+        # Enforce per-host exclusivity
+        active_hosts = set()
+        for job in self.active_jobs.values():
+            for t in job.get("targets", []):
+                ip = t.get("ip_address")
+                if ip:
+                    active_hosts.add(ip)
+        for t in targets:
+            ip = t.get("ip_address")
+            if ip and ip in active_hosts:
+                messagebox.showinfo("Task already running", f"A task is already running for host {ip}. Please wait or stop it first.")
+                return
+
         worker_count = max(1, min(8, int(options.get("worker_count", 1))))
         cancel_event = threading.Event()
         executor = ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix=f"{job_type}-batch")
         options = {**options, "worker_count": worker_count}
 
-        self.batch_job = {
+        job_id = f"{job_type}-{len(self.active_jobs)+1}-{int(threading.get_ident())}"
+
+        job_record = {
+            "id": job_id,
             "type": job_type,
             "targets": targets,
             "options": options,
@@ -1018,15 +1040,17 @@ class ServerListWindow:
             "results": [],
             "completed": 0,
             "total": len(targets),
-            "futures": []
+            "futures": [],
+            "dialog": None,
         }
+        self.active_jobs[job_id] = job_record
 
         self._set_status(f"Running {job_type} batch (0/{len(targets)})…")
         self._update_action_buttons_state()
 
         if job_type == "pry":
             host_label = targets[0].get("ip_address") or "-"
-            self._init_batch_status_dialog(
+            dialog = self._init_batch_status_dialog(
                 "pry",
                 {
                     "Host": host_label,
@@ -1036,8 +1060,9 @@ class ServerListWindow:
                 },
                 cancel_event,
             )
+            job_record["dialog"] = dialog
         elif job_type == "probe":
-            self._init_batch_status_dialog(
+            dialog = self._init_batch_status_dialog(
                 "probe",
                 {
                     "Targets": str(len(targets)),
@@ -1047,8 +1072,9 @@ class ServerListWindow:
                 },
                 cancel_event,
             )
+            job_record["dialog"] = dialog
         elif job_type == "extract":
-            self._init_batch_status_dialog(
+            dialog = self._init_batch_status_dialog(
                 "extract",
                 {
                     "Targets": str(len(targets)),
@@ -1058,16 +1084,17 @@ class ServerListWindow:
                 },
                 cancel_event,
             )
+            job_record["dialog"] = dialog
 
         for target in targets:
-            future = executor.submit(self._run_batch_task, job_type, target, options, cancel_event)
-            self.batch_job["futures"].append((target, future))
-            future.add_done_callback(lambda fut, target=target: self.window.after(0, self._on_batch_future_done, target, fut))
+            future = executor.submit(self._run_batch_task, job_id, job_type, target, options, cancel_event)
+            job_record["futures"].append((target, future))
+            future.add_done_callback(lambda fut, target=target, jid=job_id: self.window.after(0, self._on_batch_future_done, jid, target, fut))
 
         if self._is_table_lock_required(job_type):
             self._set_table_interaction_enabled(False)
 
-    def _run_batch_task(self, job_type: str, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
+    def _run_batch_task(self, job_id: str, job_type: str, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
         if cancel_event.is_set():
             return {
                 "ip_address": target.get("ip_address"),
@@ -1078,11 +1105,11 @@ class ServerListWindow:
 
         try:
             if job_type == "probe":
-                return self._execute_probe_target(target, options, cancel_event)
+                return self._execute_probe_target(job_id, target, options, cancel_event)
             if job_type == "extract":
-                return self._execute_extract_target(target, options, cancel_event)
+                return self._execute_extract_target(job_id, target, options, cancel_event)
             if job_type == "pry":
-                return self._execute_pry_target(target, options, cancel_event)
+                return self._execute_pry_target(job_id, target, options, cancel_event)
             raise RuntimeError(f"Unknown batch job type: {job_type}")
         except Exception as exc:
             return {
@@ -1092,7 +1119,7 @@ class ServerListWindow:
                 "notes": str(exc)
             }
 
-    def _execute_probe_target(self, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
+    def _execute_probe_target(self, job_id: str, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
         ip_address = target.get("ip_address")
         shares = target.get("shares", [])
         limits = options.get("limits", {})
@@ -1134,7 +1161,8 @@ class ServerListWindow:
         self._handle_probe_status_update(ip_address, 'issue' if issue_detected else 'clean')
 
         # Update dialog progress (per target)
-        self.window.after(0, self._update_batch_status_dialog, self.batch_job.get("completed", 0), self.batch_job.get("total"), f"Probed {ip_address}")
+        dialog = self.active_jobs.get(job_id, {}).get("dialog")
+        self.window.after(0, self._update_batch_status_dialog, dialog, self.active_jobs.get(job_id, {}).get("completed", 0), self.active_jobs.get(job_id, {}).get("total"), f"Probed {ip_address}")
 
         share_count = len(result.get("shares", []))
         notes: List[str] = []
@@ -1157,7 +1185,7 @@ class ServerListWindow:
             "notes": ", ".join(notes)
         }
 
-    def _execute_extract_target(self, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
+    def _execute_extract_target(self, job_id: str, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
         ip_address = target.get("ip_address")
         shares = target.get("shares", [])
         if not shares:
@@ -1221,7 +1249,8 @@ class ServerListWindow:
         note_parts.append(f"log: {log_path}")
 
         # Update dialog progress (per target)
-        self.window.after(0, self._update_batch_status_dialog, self.batch_job.get("completed", 0), self.batch_job.get("total"), f"Extracted {ip_address}")
+        dialog = self.active_jobs.get(job_id, {}).get("dialog")
+        self.window.after(0, self._update_batch_status_dialog, dialog, self.active_jobs.get(job_id, {}).get("completed", 0), self.active_jobs.get(job_id, {}).get("total"), f"Extracted {ip_address}")
 
         return {
             "ip_address": ip_address,
@@ -1230,7 +1259,7 @@ class ServerListWindow:
             "notes": ", ".join(note_parts)
         }
 
-    def _execute_pry_target(self, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
+    def _execute_pry_target(self, job_id: str, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:
         ip_address = target.get("ip_address")
         username = (options.get("username") or "").strip()
         wordlist_path = (options.get("wordlist_path") or "").strip()
@@ -1267,7 +1296,8 @@ class ServerListWindow:
             total_display = total if total is not None and total > 0 else "?"
             try:
                 self.window.after(0, self._set_status, f"Pry {ip_address}: tried {done}/{total_display} passwords…")
-                self.window.after(0, self._update_batch_status_dialog, done, total, f"Tried {done}/{total_display}")
+                dialog = self.active_jobs.get(job_id, {}).get("dialog")
+                self.window.after(0, self._update_batch_status_dialog, dialog, done, total, f"Tried {done}/{total_display}")
             except Exception:
                 pass
 
@@ -1318,8 +1348,9 @@ class ServerListWindow:
             "notes": notes_text
         }
 
-    def _on_batch_future_done(self, target: Dict[str, Any], future: Future) -> None:
-        if not self.batch_job:
+    def _on_batch_future_done(self, job_id: str, target: Dict[str, Any], future: Future) -> None:
+        job = self.active_jobs.get(job_id)
+        if not job:
             return
 
         try:
@@ -1327,91 +1358,100 @@ class ServerListWindow:
         except Exception as exc:
             result = {
                 "ip_address": target.get("ip_address"),
-                "action": self.batch_job.get("type", "batch"),
+                "action": job.get("type", "batch"),
                 "status": "failed",
                 "notes": str(exc)
             }
 
-        if not self.batch_job:
-            return
-
-        self.batch_job["results"].append(result)
-        self.batch_job["completed"] += 1
-        completed = self.batch_job["completed"]
-        total = self.batch_job["total"]
-        job_type = self.batch_job["type"].title()
+        job["results"].append(result)
+        job["completed"] += 1
+        completed = job["completed"]
+        total = job["total"]
+        job_type = job["type"].title()
         self._set_status(f"{job_type} batch {completed}/{total} complete")
 
         if completed >= total:
-            self._finalize_batch_job()
+            self._finalize_batch_job(job_id)
 
-    def _finalize_batch_job(self) -> None:
-        if not self.batch_job:
+    def _finalize_batch_job(self, job_id: str) -> None:
+        job = self.active_jobs.pop(job_id, None)
+        if not job:
             return
 
-        executor = self.batch_job.get("executor")
+        executor = job.get("executor")
         if executor:
             executor.shutdown(wait=False, cancel_futures=True)
 
-        results = list(self.batch_job.get("results", []))
-        job_type = self.batch_job.get("type", "batch")
-        self.batch_job = None
+        results = list(job.get("results", []))
+        job_type = job.get("type", "batch")
+        dialog = job.get("dialog")
+        if dialog:
+            primary_result = results[0] if results else {"status": "unknown", "notes": ""}
+            self._finish_batch_status_dialog(primary_result.get("status", "unknown"), primary_result.get("notes", ""))
+
         self._update_action_buttons_state()
         self._set_status(f"{job_type.title()} batch finished")
         self._flush_pending_refresh()
         self._set_table_interaction_enabled(True)
-        if job_type in ("pry", "probe", "extract"):
-            primary_result = results[0] if results else {"status": "unknown", "notes": ""}
-            self._finish_batch_status_dialog(primary_result.get("status", "unknown"), primary_result.get("notes", ""))
         if results:
             self._show_batch_summary(job_type, results)
-        self._update_stop_button_style(False)
+        self._update_stop_button_style(self._is_batch_active())
 
     def _stop_active_batch(self) -> None:
-        if not self._is_batch_active():
+        """
+        Stop the most recently started active job. Individual dialogs also have Cancel.
+        """
+        if not self.active_jobs:
             return
-        cancel_event = self.batch_job.get("cancel_event")
+        # Stop the last inserted job (most recent)
+        job_id = list(self.active_jobs.keys())[-1]
+        job = self.active_jobs.get(job_id)
+        if not job:
+            return
+        cancel_event = job.get("cancel_event")
         if cancel_event:
             cancel_event.set()
-        executor = self.batch_job.get("executor")
+        executor = job.get("executor")
         if executor:
             executor.shutdown(wait=False, cancel_futures=True)
 
         pending = []
-        futures = self.batch_job.get("futures", [])
+        futures = job.get("futures", [])
         for target, future in futures:
             if not future.done():
                 future.cancel()
                 pending.append(target)
 
         for target in pending:
-            self.batch_job["results"].append({
+            job["results"].append({
                 "ip_address": target.get("ip_address"),
-                "action": self.batch_job.get("type", "batch"),
+                "action": job.get("type", "batch"),
                 "status": "cancelled",
                 "notes": "Stopped by user"
             })
 
-        self.batch_job["completed"] = self.batch_job["total"]
+        job["completed"] = job["total"]
         self._set_status("Batch stopped")
-        self._finalize_batch_job()
+        self._finalize_batch_job(job_id)
 
     def _is_batch_active(self) -> bool:
-        return bool(self.batch_job and self.batch_job.get("completed", 0) < self.batch_job.get("total", 0))
+        return any(job.get("completed", 0) < job.get("total", 0) for job in self.active_jobs.values())
 
     def _current_batch_type(self) -> Optional[str]:
-        if not self.batch_job:
+        # Return most recently started job type if any
+        if not self.active_jobs:
             return None
-        return self.batch_job.get("type")
+        latest = list(self.active_jobs.values())[-1]
+        return latest.get("type")
 
     def _is_pry_batch_active(self) -> bool:
-        return self._is_batch_active() and self._current_batch_type() == "pry"
+        return any(job.get("type") == "pry" and job.get("completed", 0) < job.get("total", 0) for job in self.active_jobs.values())
 
     def _is_probe_batch_active(self) -> bool:
-        return self._is_batch_active() and self._current_batch_type() == "probe"
+        return any(job.get("type") == "probe" and job.get("completed", 0) < job.get("total", 0) for job in self.active_jobs.values())
 
     def _is_extract_batch_active(self) -> bool:
-        return self._is_batch_active() and self._current_batch_type() == "extract"
+        return any(job.get("type") == "extract" and job.get("completed", 0) < job.get("total", 0) for job in self.active_jobs.values())
 
     def _set_status(self, message: str) -> None:
         if self.status_label:
@@ -1434,42 +1474,42 @@ class ServerListWindow:
     def _show_pry_status_dialog(self) -> None:
         if self.batch_status_dialog:
             self.batch_status_dialog.show()
+        elif self.active_jobs:
+            # Show the most recent job dialog if available
+            for job in reversed(list(self.active_jobs.values())):
+                dlg = job.get("dialog")
+                if dlg:
+                    dlg.show()
+                    self.batch_status_dialog = dlg
+                    break
 
-    def _init_batch_status_dialog(self, job_type: str, fields: Dict[str, str], cancel_event: threading.Event) -> None:
+    def _init_batch_status_dialog(self, job_type: str, fields: Dict[str, str], cancel_event: threading.Event) -> BatchStatusDialog:
         """Create a fresh batch status dialog for the active run."""
-        self._destroy_batch_status_dialog()
-        self.batch_status_dialog = BatchStatusDialog(
+        dialog = BatchStatusDialog(
             parent=self.window,
             theme=self.theme,
             title=f"{job_type.title()} Status",
             fields=fields,
             on_cancel=lambda: cancel_event.set()
         )
+        self.batch_status_dialog = dialog  # keep latest for quick reopen
         self._set_pry_status_button_visible(True)
+        return dialog
 
-    def _destroy_batch_status_dialog(self) -> None:
-        if self.batch_status_dialog:
-            try:
-                self.batch_status_dialog.destroy()
-            except Exception:
-                pass
-        self.batch_status_dialog = None
-        self._set_pry_status_button_visible(False)
-
-    def _update_batch_status_dialog(self, done: int, total: Optional[int], message: Optional[str]) -> None:
-        if not self.batch_status_dialog:
+    def _update_batch_status_dialog(self, dialog: BatchStatusDialog, done: int, total: Optional[int], message: Optional[str]) -> None:
+        if not dialog:
             return
         try:
-            self.batch_status_dialog.update_progress(done, total, message)
+            dialog.update_progress(done, total, message)
         except Exception:
             pass
 
-    def _finish_batch_status_dialog(self, status: str, notes: str) -> None:
-        if not self.batch_status_dialog:
+    def _finish_batch_status_dialog(self, dialog: BatchStatusDialog, status: str, notes: str) -> None:
+        if not dialog:
             return
         try:
-            self.batch_status_dialog.mark_finished(status, notes)
-            self.batch_status_dialog.show()
+            dialog.mark_finished(status, notes)
+            dialog.show()
         except Exception:
             pass
         self._set_pry_status_button_visible(True)
@@ -1592,25 +1632,31 @@ class ServerListWindow:
         has_selection = bool(self.tree and self.tree.selection())
         batch_active = self._is_batch_active()
         pry_batch_active = self._is_pry_batch_active()
+        probe_batch_active = self._is_probe_batch_active()
+        extract_batch_active = self._is_extract_batch_active()
 
-        new_state = tk.NORMAL if has_selection and not batch_active else tk.DISABLED
-        for button in (self.probe_button, self.extract_button, self.pry_button, self.browser_button):
+        # Allow browsing/details/export during running batches (read-only), but block starting new batches
+        start_state = tk.NORMAL if has_selection and len(self.active_jobs) < 3 else tk.DISABLED
+        for button in (self.probe_button, self.extract_button, self.pry_button):
             if button:
-                button.configure(state=new_state)
+                button.configure(state=start_state)
+        # Browse stays enabled during batch
+        if self.browser_button:
+            self.browser_button.configure(state=tk.NORMAL if has_selection else tk.DISABLED)
 
         if self.stop_button:
             self.stop_button.configure(state=tk.NORMAL if batch_active else tk.DISABLED)
             self._update_stop_button_style(batch_active)
 
-        detail_state = tk.NORMAL if has_selection and (not batch_active or pry_batch_active) else tk.DISABLED
+        detail_state = tk.NORMAL if has_selection else tk.DISABLED
         if self.details_button:
             self.details_button.configure(state=detail_state)
 
-        export_selected_state = tk.NORMAL if has_selection and (not batch_active or pry_batch_active) else tk.DISABLED
+        export_selected_state = tk.NORMAL if has_selection else tk.DISABLED
         if self.export_selected_button:
             self.export_selected_button.configure(state=export_selected_state)
 
-        export_all_state = tk.NORMAL if (not batch_active or pry_batch_active) else tk.DISABLED
+        export_all_state = tk.NORMAL
         if self.export_all_button:
             self.export_all_button.configure(state=export_all_state)
 
