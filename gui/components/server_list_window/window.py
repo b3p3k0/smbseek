@@ -589,7 +589,8 @@ class ServerListWindow:
         except Exception as e:
             messagebox.showerror(
                 "Data Loading Error",
-                f"Failed to load server data:\n{str(e)}"
+                f"Failed to load server data:\n{str(e)}",
+                parent=self.window
             )
 
     def _reset_sort_state(self) -> None:
@@ -621,7 +622,7 @@ class ServerListWindow:
         """Handle double-click on table row using table module."""
         table.handle_double_click(
             self.tree, event, self.filtered_servers,
-            self._show_server_detail_popup
+            self._show_server_detail_popup, self.window
         )
 
     def _on_treeview_click(self, event) -> None:
@@ -649,11 +650,11 @@ class ServerListWindow:
         selected_items = self.tree.selection()
 
         if not selected_items:
-            messagebox.showwarning("No Selection", "Please select a server to view details.")
+            messagebox.showwarning("No Selection", "Please select a server to view details.", parent=self.window)
             return
 
         if len(selected_items) > 1:
-            messagebox.showwarning("Multiple Selection", "Please select only one server to view details.")
+            messagebox.showwarning("Multiple Selection", "Please select only one server to view details.", parent=self.window)
             return
 
         # Get server data
@@ -668,7 +669,7 @@ class ServerListWindow:
         )
 
         if not server_data:
-            messagebox.showerror("Error", "Server data not found.")
+            messagebox.showerror("Error", "Server data not found.", parent=self.window)
             return
 
         # Show details using details module
@@ -689,7 +690,7 @@ class ServerListWindow:
         """Export selected servers using export module."""
         selected_data = table.get_selected_server_data(self.tree, self.filtered_servers)
         if not selected_data:
-            messagebox.showwarning("No Selection", "Please select servers to export.")
+            messagebox.showwarning("No Selection", "Please select servers to export.", parent=self.window)
             return
 
         export.show_export_menu(
@@ -716,7 +717,7 @@ class ServerListWindow:
 
         targets = self._build_selected_targets()
         if not targets:
-            messagebox.showwarning("No Selection", "Please select at least one server to probe.")
+            messagebox.showwarning("No Selection", "Please select at least one server to probe.", parent=self.window)
             return
 
         dialog_config = self._prompt_probe_batch_settings(len(targets))
@@ -733,7 +734,7 @@ class ServerListWindow:
 
         targets = self._build_selected_targets()
         if not targets:
-            messagebox.showwarning("No Selection", "Please select at least one server to extract from.")
+            messagebox.showwarning("No Selection", "Please select at least one server to extract from.", parent=self.window)
             return
 
         # Get config path from settings manager
@@ -766,7 +767,7 @@ class ServerListWindow:
 
         targets = self._build_selected_targets()
         if len(targets) != 1:
-            messagebox.showwarning("Select one server", "Choose exactly one server to run Pry.")
+            messagebox.showwarning("Select one server", "Choose exactly one server to run Pry.", parent=self.window)
             return
 
         target = targets[0]
@@ -819,13 +820,13 @@ class ServerListWindow:
 
         targets = self._build_selected_targets()
         if len(targets) != 1:
-            messagebox.showwarning("Select one server", "Choose exactly one server to browse.")
+            messagebox.showwarning("Select one server", "Choose exactly one server to browse.", parent=self.window)
             return
 
         target = targets[0]
         ip_addr = target.get("ip_address")
         if not ip_addr:
-            messagebox.showerror("Missing IP", "Unable to determine IP for selected server.")
+            messagebox.showerror("Missing IP", "Unable to determine IP for selected server.", parent=self.window)
             return
 
         shares = self.db_reader.get_accessible_shares(ip_addr) if self.db_reader else []
@@ -1236,6 +1237,7 @@ class ServerListWindow:
                 ip_address=ip_address,
                 username=username,
                 wordlist_path=wordlist_path,
+                share_name=options.get("share_name", ""),
                 user_as_pass=user_as_pass,
                 stop_on_lockout=stop_on_lockout,
                 verbose=verbose,

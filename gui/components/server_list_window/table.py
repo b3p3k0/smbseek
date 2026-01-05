@@ -367,7 +367,7 @@ def handle_treeview_click(tree, event, settings_manager, callbacks):
     return None
 
 
-def handle_double_click(tree, event, filtered_servers: List[Dict[str, Any]], detail_callback: Callable):
+def handle_double_click(tree, event, filtered_servers: List[Dict[str, Any]], detail_callback: Callable, parent_window=None):
     """
     Handle double-click on table row - equivalent to select + View Details button.
 
@@ -376,6 +376,7 @@ def handle_double_click(tree, event, filtered_servers: List[Dict[str, Any]], det
         event: Double-click event
         filtered_servers: List of currently displayed servers
         detail_callback: Callback function to show server details
+        parent_window: Optional parent window for messageboxes
 
     Returns:
         bool: True if handled successfully, False otherwise
@@ -390,7 +391,7 @@ def handle_double_click(tree, event, filtered_servers: List[Dict[str, Any]], det
 
     if not clicked_item:
         # Error handling: double-click didn't hit a valid data row
-        messagebox.showwarning("Invalid Selection", "Please double-click on a server entry to view details.")
+        messagebox.showwarning("Invalid Selection", "Please double-click on a server entry to view details.", parent=parent_window)
         return False
 
     # File browser UX: select the double-clicked row for visual feedback
@@ -399,7 +400,7 @@ def handle_double_click(tree, event, filtered_servers: List[Dict[str, Any]], det
     # Use identical logic as "View Details" button - get data from clicked row
     values = tree.item(clicked_item)["values"]
     if not values or len(values) < 4:
-        messagebox.showerror("Error", "Unable to retrieve server data.")
+        messagebox.showerror("Error", "Unable to retrieve server data.", parent=parent_window)
         return False
 
     ip_address = values[3]  # IP Address is now at index 3 due to favorite/avoid/probe columns
@@ -412,7 +413,7 @@ def handle_double_click(tree, event, filtered_servers: List[Dict[str, Any]], det
 
     if not server_data:
         # Same error message as "View Details" button for consistency
-        messagebox.showerror("Error", "Server data not found.")
+        messagebox.showerror("Error", "Server data not found.", parent=parent_window)
         return False
 
     # Call the detail callback

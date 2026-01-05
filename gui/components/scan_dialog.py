@@ -501,7 +501,7 @@ class ScanDialog:
             return
         name = name.strip()
         if not name:
-            messagebox.showwarning("Save Template", "Template name cannot be empty.")
+            messagebox.showwarning("Save Template", "Template name cannot be empty.", parent=self.dialog)
             return
 
         slug = TemplateStore.slugify(name)
@@ -540,7 +540,7 @@ class ScanDialog:
         if deleted:
             messagebox.showinfo("Template Deleted", f"Template '{label}' removed.")
         else:
-            messagebox.showwarning("Delete Template", "Failed to delete template.")
+            messagebox.showwarning("Delete Template", "Failed to delete template.", parent=self.dialog)
 
         self._refresh_template_toolbar()
 
@@ -627,7 +627,7 @@ class ScanDialog:
         template = self.template_store.load_template(slug)
         if not template:
             if not silent:
-                messagebox.showwarning("Template Missing", "Selected template could not be loaded.")
+                messagebox.showwarning("Template Missing", "Selected template could not be loaded.", parent=self.dialog)
             self._refresh_template_toolbar()
             return
 
@@ -2023,7 +2023,8 @@ class ScanDialog:
         if error_msg:
             messagebox.showerror(
                 "Invalid Country Selection",
-                error_msg + "\n\nTip: You can combine manual country codes with region selections."
+                error_msg + "\n\nTip: You can combine manual country codes with region selections.",
+                parent=self.dialog
             )
             self.country_entry.focus_set()
             return
@@ -2076,7 +2077,8 @@ class ScanDialog:
         except ValueError as e:
             messagebox.showerror(
                 "Invalid Input",
-                str(e)
+                str(e),
+                parent=self.dialog
             )
             return
         except Exception as e:
@@ -2084,7 +2086,8 @@ class ScanDialog:
             messagebox.showerror(
                 "Scan Start Error",
                 f"Failed to start scan:\n{str(e)}\n\n"
-                "Please check that the backend is properly configured and try again."
+                "Please check that the backend is properly configured and try again.",
+                parent=self.dialog
             )
             # Don't close dialog so user can try again
     

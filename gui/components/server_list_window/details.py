@@ -473,7 +473,7 @@ def _start_probe(
 
     ip_address = server_data.get('ip_address')
     if not ip_address:
-        messagebox.showwarning("Probe Unavailable", "Server IP address is missing.")
+        messagebox.showwarning("Probe Unavailable", "Server IP address is missing.", parent=detail_window)
         return
 
     accessible_shares = _parse_accessible_shares(server_data.get('accessible_shares_list', ''))
@@ -535,7 +535,7 @@ def _start_probe(
                 if probe_button:
                     probe_button.configure(state=tk.NORMAL)
                 status_var.set("Probe failed.")
-                messagebox.showerror("Probe Failed", error_message)
+                messagebox.showerror("Probe Failed", error_message, parent=detail_window)
 
             detail_window.after(0, on_error)
 
@@ -616,7 +616,7 @@ def _open_probe_dialog(
                 "timeout_seconds": max(1, int(timeout_var.get()))
             }
         except ValueError:
-            messagebox.showerror("Invalid Input", "Please enter valid integers for all fields.")
+            messagebox.showerror("Invalid Input", "Please enter valid integers for all fields.", parent=dialog)
             return
 
         if settings_manager:
@@ -735,7 +735,7 @@ def _open_extract_dialog(
                 "max_files_per_target": max(1, int(max_count_var.get()))
             }
         except ValueError:
-            messagebox.showerror("Invalid Input", "Please enter valid numeric values for limits.")
+            messagebox.showerror("Invalid Input", "Please enter valid numeric values for limits.", parent=dialog)
             return
 
         if settings_manager:
@@ -798,7 +798,7 @@ def _start_extract(
             base_path=quarantine_root
         )
     except Exception as exc:
-        messagebox.showerror("Quarantine Error", f"Unable to prepare quarantine directory:\n{exc}")
+        messagebox.showerror("Quarantine Error", f"Unable to prepare quarantine directory:\n{exc}", parent=detail_window)
         return
 
     username, password = _derive_credentials(server_data.get('auth_method', ''))
