@@ -88,6 +88,7 @@ class FileBrowserWindow:
             max_path_length=int(self.config.get("max_path_length", 240)),
             download_chunk_mb=int(self.config.get("download_chunk_mb", 4)),
         )
+        self.max_batch_files = int(self.config.get("max_batch_files", 50))
 
         self._build_window()
         if self.shares:
@@ -134,7 +135,7 @@ class FileBrowserWindow:
 
         # Treeview for entries
         columns = ("name", "type", "size", "modified")
-        self.tree = ttk.Treeview(self.window, columns=columns, show="headings")
+        self.tree = ttk.Treeview(self.window, columns=columns, show="headings", selectmode="extended")
         self.tree.heading("name", text="Name")
         self.tree.heading("type", text="Type")
         self.tree.heading("size", text="Size (bytes)")
@@ -202,16 +203,42 @@ class FileBrowserWindow:
             return
         selection = self.tree.selection()
         if not selection:
-            messagebox.showinfo("No selection", "Select a file to download.", parent=self.window)
+            messagebox.showinfo("No selection", "Select one or more files to download.", parent=self.window)
             return
-        item = self.tree.item(selection[0])
-        values = item.get("values", [])
-        if len(values) < 2 or values[1] != "file":
-            messagebox.showinfo("Download", "Select a file (not a directory).", parent=self.window)
+
+        files = []
+        skipped_dirs = 0
+        for item_id in selection:
+            item = self.tree.item(item_id)
+            values = item.get("values", [])
+            if len(values) < 2:
+                continue
+            name = values[0]
+            type_label = values[1]
+            if type_label == "file":
+                remote_path = self._join_path(self.current_path, name)
+                files.append(remote_path)
+            else:
+                skipped_dirs += 1
+
+        if not files:
+            messagebox.showinfo("No files", "No files selected (directories are not downloaded in this mode).", parent=self.window)
             return
-        filename = values[0]
-        remote_path = self._join_path(self.current_path, filename)
-        self._start_download_thread(remote_path)
+
+        if len(files) > self.max_batch_files:
+            proceed = messagebox.askyesno(
+                "Large selection",
+                f"You selected {len(files)} files (limit {self.max_batch_files}). Download anyway?",
+                icon="warning",
+                parent=self.window,
+            )
+            if not proceed:
+                return
+
+        if skipped_dirs > 0:
+            messagebox.showinfo("Directories skipped", f"{skipped_dirs} folder(s) were skipped; only files will be downloaded.", parent=self.window)
+
+        self._start_download_thread(files)
 
     def _on_cancel(self) -> None:
         self.navigator.cancel()
@@ -241,7 +268,7 @@ class FileBrowserWindow:
         self.list_thread = threading.Thread(target=worker, daemon=True)
         self.list_thread.start()
 
-    def _start_download_thread(self, remote_path: str) -> None:
+    def _start_download_thread(self, remote_paths: List[str]) -> None:
         def worker():
             try:
                 self._set_busy(True)
@@ -251,15 +278,35 @@ class FileBrowserWindow:
                     self.current_share,
                     base_path=self.config.get("quarantine_root"),
                 )
-                result = self.navigator.download_file(remote_path, dest_dir)
-                msg = f"Downloaded to {result.saved_path}"
-                try:
-                    host_dir = Path(dest_dir).parent.parent  # host/date/share
-                    log_quarantine_event(host_dir, f"downloaded {self.current_share}{remote_path} -> {result.saved_path}")
-                except Exception:
-                    pass
-                self.window.after(0, lambda: self._set_status(msg))
-                self.window.after(0, lambda: messagebox.showinfo("Download complete", msg, parent=self.window))
+                total = len(remote_paths)
+                completed = 0
+                errors = []
+
+                for remote_path in remote_paths:
+                    if self.navigator.cancel_requested:
+                        break
+                    self.window.after(0, lambda rp=remote_path, c=completed, t=total: self._set_status(f"Downloading {rp} ({c+1}/{t})"))
+                    try:
+                        result = self.navigator.download_file(remote_path, dest_dir)
+                        try:
+                            host_dir = Path(dest_dir).parent.parent  # host/date/share
+                            log_quarantine_event(host_dir, f"downloaded {self.current_share}{remote_path} -> {result.saved_path}")
+                        except Exception:
+                            pass
+                        completed += 1
+                    except Exception as e:
+                        errors.append((remote_path, str(e)))
+                        continue
+
+                summary_msg = f"Downloaded {completed}/{total} file(s)"
+                if errors:
+                    summary_msg += f" ({len(errors)} failed)"
+                self.window.after(0, lambda: self._set_status(summary_msg))
+                if errors:
+                    err_text = "\n".join(f"{p}: {err}" for p, err in errors[:5])
+                    self.window.after(0, lambda: messagebox.showwarning("Download issues", err_text, parent=self.window))
+                else:
+                    self.window.after(0, lambda: messagebox.showinfo("Download complete", summary_msg, parent=self.window))
             except Exception as e:
                 self.window.after(0, lambda err=e: self._set_status(f"Download failed: {err}"))
                 self.window.after(0, lambda err=e: messagebox.showerror("Download failed", str(err), parent=self.window))
