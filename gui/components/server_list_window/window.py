@@ -1267,7 +1267,7 @@ class ServerListWindow:
             total_display = total if total is not None and total > 0 else "?"
             try:
                 self.window.after(0, self._set_status, f"Pry {ip_address}: tried {done}/{total_display} passwords…")
-                self.window.after(0, self._update_pry_status_dialog, done, total, f"Tried {done}/{total_display}")
+                self.window.after(0, self._update_batch_status_dialog, done, total, f"Tried {done}/{total_display}")
             except Exception:
                 pass
 
