@@ -7,18 +7,34 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+try:
+    from shared.config import SMBSeekConfig
+except Exception:
+    SMBSeekConfig = None
+
 IndicatorPattern = Tuple[str, re.Pattern]
 
 
 def load_ransomware_indicators(config_path: Optional[str]) -> List[str]:
-    """Return ransomware indicator filenames from SMBSeek config (if present)."""
+    """Return ransomware indicator filenames from SMBSeek config (with defaults)."""
     indicators: List[str] = []
-    if config_path:
+
+    # Preferred path: use SMBSeekConfig to merge user config with defaults
+    if SMBSeekConfig:
+        try:
+            cfg = SMBSeekConfig(config_path)
+            indicators = cfg.get("security", "ransomware_indicators", []) or []
+        except Exception:
+            indicators = []
+
+    # Fallback: read raw JSON if config helper unavailable
+    if not indicators and config_path:
         try:
             config_data = json.loads(Path(config_path).read_text(encoding="utf-8"))
             indicators = config_data.get("security", {}).get("ransomware_indicators", []) or []
         except Exception:
             indicators = []
+
     # Normalize and deduplicate
     normalized: List[str] = []
     seen = set()
