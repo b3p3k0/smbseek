@@ -120,9 +120,9 @@ class SettingsManager:
             },
             'backend': {
                 'mock_mode': False,
-                'backend_path': './smbseek',
-                'config_path': './smbseek/conf/config.json',
-                'database_path': './smbseek/smbseek.db',
+                'backend_path': '.',
+                'config_path': './conf/config.json',
+                'database_path': './smbseek.db',
                 'last_database_path': '',
                 'database_validated': False
             },
@@ -139,6 +139,7 @@ class SettingsManager:
         
         # Load settings from file
         self.load_settings()
+        self._auto_fix_backend_paths()
     
     def load_settings(self) -> None:
         """Load settings from file or create defaults."""
@@ -531,7 +532,7 @@ class SettingsManager:
         Returns:
             Backend path (default: '../backend')
         """
-        return self.get_setting('backend.backend_path', './smbseek')
+        return self.get_setting('backend.backend_path', '.')
     
     def set_backend_path(self, backend_path: str, validate: bool = True) -> bool:
         """
@@ -563,6 +564,33 @@ class SettingsManager:
                 callback(key_path, old_value, new_value)
             except Exception as e:
                 print(f"Warning: Settings callback error: {e}")
+
+    def _auto_fix_backend_paths(self) -> None:
+        """
+        If stored backend/config/db paths point to a non-existent nested smbseek/, try to fix them to cwd.
+        """
+        try:
+            backend_path = Path(self.get_backend_path()).expanduser()
+            config_path = Path(self.get_setting('backend.config_path', '')).expanduser()
+            db_path = Path(self.get_setting('backend.database_path', '')).expanduser()
+
+            # Already valid paths; nothing to do
+            if backend_path.exists() and config_path.exists():
+                return
+
+            cwd = Path.cwd()
+            candidate_backend = cwd
+            candidate_config = cwd / "conf" / "config.json"
+            candidate_db = cwd / "smbseek.db"
+
+            if candidate_config.exists():
+                self.set_backend_path(str(candidate_backend), validate=False)
+                self.set_setting('backend.config_path', str(candidate_config))
+                if not db_path.exists():
+                    self.set_setting('backend.database_path', str(candidate_db))
+        except Exception:
+            # Fail silently; worst case the user corrects via dialog
+            pass
     
     def validate_smbseek_installation(self, path: str) -> Dict[str, Any]:
         """
@@ -611,7 +639,7 @@ class SettingsManager:
                 
         except Exception as e:
             return {'valid': False, 'message': f'Validation error: {str(e)}'}
-    
+
     def get_smbseek_config_path(self) -> str:
         """
         Get the SMBSeek configuration file path based on SMBSeek installation path.
