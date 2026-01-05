@@ -1193,7 +1193,17 @@ class ServerListWindow:
 
         username, password = details._derive_credentials(target.get("auth_method", ""))
 
+        dialog = self.active_jobs.get(job_id, {}).get("dialog")
+
         try:
+            self.window.after(0, self._update_batch_status_dialog, dialog, 0, self.active_jobs.get(job_id, {}).get("total"), f"Extracting {ip_address}")
+
+            def progress_cb(rel_path: str, index: int, limit: Optional[int]) -> None:
+                try:
+                    self.window.after(0, self._update_batch_status_dialog, dialog, 0, None, f"{ip_address}: {index}/{limit or '?'} {rel_path}")
+                except Exception:
+                    pass
+
             summary = extract_runner.run_extract(
                 ip_address,
                 shares,
@@ -1209,7 +1219,7 @@ class ServerListWindow:
                 denied_extensions=options["excluded_extensions"],
                 delay_seconds=options["download_delay_seconds"],
                 connection_timeout=options["connection_timeout"],
-                progress_callback=None,
+                progress_callback=progress_cb,
                 cancel_event=cancel_event
             )
             log_path = extract_runner.write_extract_log(summary)
@@ -1233,8 +1243,7 @@ class ServerListWindow:
         note_parts.append(f"log: {log_path}")
 
         # Update dialog progress (per target)
-        dialog = self.active_jobs.get(job_id, {}).get("dialog")
-        self.window.after(0, self._update_batch_status_dialog, dialog, self.active_jobs.get(job_id, {}).get("completed", 0), self.active_jobs.get(job_id, {}).get("total"), f"Extracted {ip_address}")
+        self.window.after(0, self._update_batch_status_dialog, dialog, 1, self.active_jobs.get(job_id, {}).get("total"), f"Extracted {ip_address}")
 
         return {
             "ip_address": ip_address,
