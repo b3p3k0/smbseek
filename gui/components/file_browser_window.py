@@ -12,7 +12,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 
 from shared.smb_browser import SMBNavigator, ListResult, Entry
@@ -73,6 +73,8 @@ class FileBrowserWindow:
 
         creds = detail_helpers._derive_credentials(self.auth_method)
         self.username, self.password = creds
+        self.folder_defaults = self.config.get("folder_download", {})
+        self.max_batch_files = int(self.config.get("max_batch_files", 50))
         self.current_share: Optional[str] = None
         self.current_path = "\\"
         self.list_thread: Optional[threading.Thread] = None
@@ -207,6 +209,7 @@ class FileBrowserWindow:
             return
 
         files = []
+        dirs = []
         skipped_dirs = 0
         for item_id in selection:
             item = self.tree.item(item_id)
@@ -219,10 +222,11 @@ class FileBrowserWindow:
                 remote_path = self._join_path(self.current_path, name)
                 files.append(remote_path)
             else:
-                skipped_dirs += 1
+                dir_path = self._join_path(self.current_path, name)
+                dirs.append(dir_path)
 
-        if not files:
-            messagebox.showinfo("No files", "No files selected (directories are not downloaded in this mode).", parent=self.window)
+        if not files and not dirs:
+            messagebox.showinfo("No files", "No files or folders selected.", parent=self.window)
             return
 
         if len(files) > self.max_batch_files:
@@ -235,10 +239,11 @@ class FileBrowserWindow:
             if not proceed:
                 return
 
-        if skipped_dirs > 0:
-            messagebox.showinfo("Directories skipped", f"{skipped_dirs} folder(s) were skipped; only files will be downloaded.", parent=self.window)
-
-        self._start_download_thread(files)
+        if dirs:
+            limits = self._prompt_folder_limits()
+            if not limits:
+                return
+        self._start_download_thread(files, dirs, limits if dirs else None)
 
     def _on_cancel(self) -> None:
         self.navigator.cancel()
@@ -251,6 +256,54 @@ class FileBrowserWindow:
         self.window.destroy()
 
     # --- Thread wrappers ----------------------------------------------
+
+    def _prompt_folder_limits(self) -> Optional[Dict[str, int]]:
+        dlg = tk.Toplevel(self.window)
+        dlg.title("Folder Download Limits")
+        dlg.transient(self.window)
+        dlg.grab_set()
+
+        defaults = self.folder_defaults or {}
+        max_depth_var = tk.IntVar(value=int(defaults.get("max_depth", 5)))
+        max_files_var = tk.IntVar(value=int(defaults.get("max_files", 200)))
+        max_total_mb_var = tk.IntVar(value=int(defaults.get("max_total_mb", 500)))
+        max_file_mb_var = tk.IntVar(value=int(defaults.get("max_file_mb", 100)))
+
+        def add_row(label, var, row):
+            tk.Label(dlg, text=label).grid(row=row, column=0, sticky="w", padx=8, pady=4)
+            tk.Entry(dlg, textvariable=var, width=8).grid(row=row, column=1, sticky="w", padx=8, pady=4)
+
+        add_row("Max depth", max_depth_var, 0)
+        add_row("Max files", max_files_var, 1)
+        add_row("Max total MB", max_total_mb_var, 2)
+        add_row("Max file MB", max_file_mb_var, 3)
+
+        limits: Dict[str, int] = {}
+
+        def on_ok():
+            try:
+                limits.update({
+                    "max_depth": max(0, int(max_depth_var.get())),
+                    "max_files": max(0, int(max_files_var.get())),
+                    "max_total_mb": max(0, int(max_total_mb_var.get())),
+                    "max_file_mb": max(0, int(max_file_mb_var.get())),
+                })
+            except Exception:
+                messagebox.showerror("Invalid input", "Please enter numeric limits.", parent=dlg)
+                return
+            dlg.destroy()
+
+        def on_cancel():
+            limits.clear()
+            dlg.destroy()
+
+        btn_frame = tk.Frame(dlg)
+        btn_frame.grid(row=4, column=0, columnspan=2, pady=(8, 6))
+        tk.Button(btn_frame, text="Cancel", command=on_cancel).pack(side=tk.RIGHT, padx=5)
+        tk.Button(btn_frame, text="Start", command=on_ok).pack(side=tk.RIGHT)
+
+        dlg.wait_window()
+        return limits or None
 
     def _start_list_thread(self, path: str) -> None:
         def worker():
@@ -268,7 +321,7 @@ class FileBrowserWindow:
         self.list_thread = threading.Thread(target=worker, daemon=True)
         self.list_thread.start()
 
-    def _start_download_thread(self, remote_paths: List[str]) -> None:
+    def _start_download_thread(self, remote_paths: List[str], remote_dirs: List[str], folder_limits: Optional[Dict[str, int]]) -> None:
         def worker():
             try:
                 self._set_busy(True)
@@ -278,11 +331,16 @@ class FileBrowserWindow:
                     self.current_share,
                     base_path=self.config.get("quarantine_root"),
                 )
-                total = len(remote_paths)
+                files_to_download = list(remote_paths)
+                expand_errors: List[Tuple[str, str]] = []
+                if remote_dirs and folder_limits:
+                    expanded, skipped, expand_errors = self._expand_directories(remote_dirs, folder_limits)
+                    files_to_download.extend(expanded)
+                total = len(files_to_download)
                 completed = 0
-                errors = []
+                errors: List[Tuple[str, str]] = []
 
-                for remote_path in remote_paths:
+                for remote_path in files_to_download:
                     self.window.after(0, lambda rp=remote_path, c=completed, t=total: self._set_status(f"Downloading {rp} ({c+1}/{t})"))
                     try:
                         result = self.navigator.download_file(remote_path, dest_dir)
@@ -297,11 +355,13 @@ class FileBrowserWindow:
                         continue
 
                 summary_msg = f"Downloaded {completed}/{total} file(s)"
-                if errors:
-                    summary_msg += f" ({len(errors)} failed)"
+                total_errors = len(errors) + len(expand_errors)
+                if total_errors:
+                    summary_msg += f" ({total_errors} failed)"
                 self.window.after(0, lambda: self._set_status(summary_msg))
-                if errors:
-                    err_text = "\n".join(f"{p}: {err}" for p, err in errors[:5])
+                if total_errors:
+                    combined = errors + expand_errors
+                    err_text = "\n".join(f"{p}: {err}" for p, err in combined[:5])
                     self.window.after(0, lambda: messagebox.showwarning("Download issues", err_text, parent=self.window))
                 else:
                     self.window.after(0, lambda: messagebox.showinfo("Download complete", summary_msg, parent=self.window))
@@ -315,6 +375,50 @@ class FileBrowserWindow:
         self.download_thread.start()
 
     # --- SMB helpers ---------------------------------------------------
+
+    def _expand_directories(self, dirs: List[str], limits: Dict[str, int]) -> Tuple[List[str], int, List[Tuple[str, str]]]:
+        max_depth = limits.get("max_depth", 0)
+        max_files = limits.get("max_files", 0)
+        max_total_mb = limits.get("max_total_mb", 0)
+        max_file_mb = limits.get("max_file_mb", 0)
+
+        expanded: List[str] = []
+        errors: List[Tuple[str, str]] = []
+        skipped = 0
+        total_bytes = 0
+
+        stack: List[Tuple[str, int]] = [(d, 0) for d in dirs]
+
+        while stack:
+            current_path, depth = stack.pop()
+            if max_depth and depth > max_depth:
+                continue
+            try:
+                entries = self.navigator.list_dir(current_path)
+            except Exception as exc:
+                errors.append((current_path, str(exc)))
+                continue
+            for entry in entries.entries:
+                name = entry.name
+                rel = self._join_path(current_path, name)
+                if entry.is_dir:
+                    stack.append((rel, depth + 1))
+                    continue
+
+                size = entry.size or 0
+                if max_file_mb and size > max_file_mb * 1024 * 1024:
+                    skipped += 1
+                    continue
+                if max_total_mb:
+                    if (total_bytes + size) > max_total_mb * 1024 * 1024:
+                        errors.append((rel, "total size limit reached"))
+                        return expanded, skipped, errors
+                expanded.append(rel)
+                total_bytes += size
+                if max_files and len(expanded) >= max_files:
+                    return expanded, skipped, errors
+
+        return expanded, skipped, errors
 
     def _ensure_connected(self) -> None:
         if self.navigator and self.current_share and self.navigator.share_name == self.current_share:
