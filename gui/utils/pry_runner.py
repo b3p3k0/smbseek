@@ -39,6 +39,7 @@ def run_pry(
     wordlist_path: str,
     *,
     domain: str = "",
+    share_name: str = "",
     user_as_pass: bool = True,
     stop_on_lockout: bool = True,
     verbose: bool = False,
@@ -55,6 +56,7 @@ def run_pry(
         ip_address: Target host/IP.
         username: Username (optionally DOMAIN\\user).
         wordlist_path: Plaintext password list (one per line).
+        share_name: Optional share to verify access against (tree connect).
         domain: Optional domain override (DOMAIN\\user is parsed automatically).
         user_as_pass: Try username as password first if True.
         stop_on_lockout: Halt on STATUS_ACCOUNT_LOCKED_OUT if True.
@@ -119,6 +121,7 @@ def run_pry(
                 username_only,
                 domain,
                 socket_timeout,
+                share_name=share_name,
             )
             if outcome == "lockout":
                 lockout_detected = True
@@ -162,6 +165,7 @@ def run_pry(
                     password,
                     domain,
                     socket_timeout,
+                    share_name=share_name,
                 )
 
                 if outcome == "success":
@@ -185,6 +189,9 @@ def run_pry(
                             notes=f"Stopped due to account lockout after {attempts_made} attempts",
                             attempts=attempts_made,
                         )
+                elif outcome == "guest":
+                    # Treat guest fallback as failure when a credential was supplied
+                    pass
 
                 if attempt_delay > 0:
                     _sleep_with_cancel(attempt_delay, cancel_event)
@@ -247,9 +254,11 @@ def _attempt_login(
     password: str,
     domain: str,
     timeout: float,
+    share_name: str = "",
 ) -> str:
     """
-    Attempt a single SMB login. Returns: "success", "failure", "lockout".
+    Attempt a single SMB login (and optional share connect).
+    Returns: "success", "failure", "lockout", "guest".
     Raises PryError for connection-level failures.
     """
     conn = None
@@ -261,6 +270,24 @@ def _attempt_login(
             timeout=timeout,
         )
         conn.login(username, password, domain)
+        # Detect guest fallback when credentials were supplied
+        if conn.isGuestSession() and (username or password):
+            return "guest"
+
+        # Optionally verify share access
+        if share_name:
+            share_clean = share_name.strip().strip("\\/").strip()
+            if share_clean:
+                try:
+                    conn.tree_connect(f"\\\\{ip_address}\\{share_clean}")
+                except SessionError as exc:
+                    message = str(exc).upper()
+                    if "STATUS_ACCOUNT_LOCKED_OUT" in message or "ACCOUNT_LOCKED_OUT" in message:
+                        return "lockout"
+                    return "failure"
+                except Exception:
+                    return "failure"
+
         return "success"
     except SessionError as exc:  # pragma: no cover - status parsing
         message = str(exc).upper()
