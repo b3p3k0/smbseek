@@ -43,6 +43,7 @@
   "security": {
     "ransomware_indicators": [
       "!want_to_cry.txt",
+      "*.want_to_cry",
       "0XXX_DECRYPTION_README.TXT",
       "HOW_TO_DECRYPT_FILES.txt",
       "DECRYPT_INSTRUCTIONS.txt",
@@ -60,7 +61,6 @@
       "RECOVER-FILES.txt",
       "HOW TO RECOVER YOUR FILES.txt",
       "RETURN FILES.txt",
-      "*.want_to_cry",
       "Restore-My-Files.txt"
     ],
     "exclusion_file": "conf/exclusion_list.txt"
