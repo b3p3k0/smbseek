@@ -29,7 +29,7 @@ try:
     from gui.utils.dialog_helpers import ensure_dialog_focus
     from gui.components.file_browser_window import FileBrowserWindow
     from gui.components.pry_dialog import PryDialog
-    from gui.components.pry_status_dialog import PryStatusDialog
+    from gui.components.pry_status_dialog import BatchStatusDialog
     from shared.db_migrations import run_migrations
 except ImportError:
     # Handle relative imports when running from gui directory
@@ -40,7 +40,7 @@ except ImportError:
     from utils.dialog_helpers import ensure_dialog_focus
     from components.file_browser_window import FileBrowserWindow
     from components.pry_dialog import PryDialog
-    from components.pry_status_dialog import PryStatusDialog
+    from components.pry_status_dialog import BatchStatusDialog
     from shared.db_migrations import run_migrations
 
 # Import modular components
@@ -119,6 +119,7 @@ class ServerListWindow:
         self.table_overlay = None
         self.table_overlay_label = None
         self.pry_status_button = None
+        self.batch_status_dialog = None
         self._stop_button_original_style = None
         self._context_menu_visible = False
         self._context_menu_bindings = []
@@ -385,10 +386,10 @@ class ServerListWindow:
         )
         self.status_label.pack(anchor="w")
 
-        # Hidden by default; becomes visible to reopen Pry status dialog
+        # Hidden by default; becomes visible to reopen batch status dialog
         self.pry_status_button = tk.Button(
             info_container,
-            text="Show Pry Status",
+            text="Show Task Status",
             command=self._show_pry_status_dialog
         )
         self.theme.apply_to_widget(self.pry_status_button, "button_secondary")
@@ -1024,7 +1025,39 @@ class ServerListWindow:
         self._update_action_buttons_state()
 
         if job_type == "pry":
-            self._init_pry_status_dialog(targets[0], options, cancel_event)
+            host_label = targets[0].get("ip_address") or "-"
+            self._init_batch_status_dialog(
+                "pry",
+                {
+                    "Host": host_label,
+                    "Username": (options.get("username") or "").strip(),
+                    "Share": (options.get("share_name") or "").strip(),
+                    "Wordlist": Path(options.get("wordlist_path", "")).name if options.get("wordlist_path") else "-",
+                },
+                cancel_event,
+            )
+        elif job_type == "probe":
+            self._init_batch_status_dialog(
+                "probe",
+                {
+                    "Targets": str(len(targets)),
+                    "Workers": str(worker_count),
+                    "Max dirs/share": str(options.get("limits", {}).get("max_directories", "")),
+                    "Max files/dir": str(options.get("limits", {}).get("max_files", "")),
+                },
+                cancel_event,
+            )
+        elif job_type == "extract":
+            self._init_batch_status_dialog(
+                "extract",
+                {
+                    "Targets": str(len(targets)),
+                    "Workers": str(worker_count),
+                    "Max files/host": str(options.get("max_files_per_target", "")),
+                    "Max size MB": str(options.get("max_total_size_mb", "")),
+                },
+                cancel_event,
+            )
 
         for target in targets:
             future = executor.submit(self._run_batch_task, job_type, target, options, cancel_event)
@@ -1099,6 +1132,9 @@ class ServerListWindow:
         analysis = probe_patterns.attach_indicator_analysis(result, self.indicator_patterns)
         issue_detected = bool(analysis.get("is_suspicious"))
         self._handle_probe_status_update(ip_address, 'issue' if issue_detected else 'clean')
+
+        # Update dialog progress (per target)
+        self.window.after(0, self._update_batch_status_dialog, self.batch_job.get("completed", 0), self.batch_job.get("total"), f"Probed {ip_address}")
 
         share_count = len(result.get("shares", []))
         notes: List[str] = []
@@ -1183,6 +1219,9 @@ class ServerListWindow:
         if summary.get("stop_reason"):
             note_parts.append(summary["stop_reason"].replace("_", " "))
         note_parts.append(f"log: {log_path}")
+
+        # Update dialog progress (per target)
+        self.window.after(0, self._update_batch_status_dialog, self.batch_job.get("completed", 0), self.batch_job.get("total"), f"Extracted {ip_address}")
 
         return {
             "ip_address": ip_address,
@@ -1321,9 +1360,9 @@ class ServerListWindow:
         self._set_status(f"{job_type.title()} batch finished")
         self._flush_pending_refresh()
         self._set_table_interaction_enabled(True)
-        if job_type == "pry":
+        if job_type in ("pry", "probe", "extract"):
             primary_result = results[0] if results else {"status": "unknown", "notes": ""}
-            self._finish_pry_status_dialog(primary_result.get("status", "unknown"), primary_result.get("notes", ""))
+            self._finish_batch_status_dialog(primary_result.get("status", "unknown"), primary_result.get("notes", ""))
         if results:
             self._show_batch_summary(job_type, results)
         self._update_stop_button_style(False)
@@ -1368,6 +1407,12 @@ class ServerListWindow:
     def _is_pry_batch_active(self) -> bool:
         return self._is_batch_active() and self._current_batch_type() == "pry"
 
+    def _is_probe_batch_active(self) -> bool:
+        return self._is_batch_active() and self._current_batch_type() == "probe"
+
+    def _is_extract_batch_active(self) -> bool:
+        return self._is_batch_active() and self._current_batch_type() == "extract"
+
     def _set_status(self, message: str) -> None:
         if self.status_label:
             self.status_label.configure(text=message)
@@ -1387,51 +1432,44 @@ class ServerListWindow:
                 pass
 
     def _show_pry_status_dialog(self) -> None:
-        if self.pry_status_dialog:
-            self.pry_status_dialog.show()
+        if self.batch_status_dialog:
+            self.batch_status_dialog.show()
 
-    def _init_pry_status_dialog(self, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> None:
-        """Create a fresh Pry status dialog for the active run."""
-        self._destroy_pry_status_dialog()
-        ip_addr = target.get("ip_address") or "-"
-        username = (options.get("username") or "").strip()
-        share_name = (options.get("share_name") or "").strip()
-        wordlist_path = options.get("wordlist_path", "")
-
-        self.pry_status_dialog = PryStatusDialog(
+    def _init_batch_status_dialog(self, job_type: str, fields: Dict[str, str], cancel_event: threading.Event) -> None:
+        """Create a fresh batch status dialog for the active run."""
+        self._destroy_batch_status_dialog()
+        self.batch_status_dialog = BatchStatusDialog(
             parent=self.window,
             theme=self.theme,
-            host=ip_addr,
-            username=username,
-            share=share_name,
-            wordlist_path=wordlist_path,
+            title=f"{job_type.title()} Status",
+            fields=fields,
             on_cancel=lambda: cancel_event.set()
         )
         self._set_pry_status_button_visible(True)
 
-    def _destroy_pry_status_dialog(self) -> None:
-        if self.pry_status_dialog:
+    def _destroy_batch_status_dialog(self) -> None:
+        if self.batch_status_dialog:
             try:
-                self.pry_status_dialog.destroy()
+                self.batch_status_dialog.destroy()
             except Exception:
                 pass
-        self.pry_status_dialog = None
+        self.batch_status_dialog = None
         self._set_pry_status_button_visible(False)
 
-    def _update_pry_status_dialog(self, attempts: int, total: Optional[int], message: Optional[str]) -> None:
-        if not self.pry_status_dialog:
+    def _update_batch_status_dialog(self, done: int, total: Optional[int], message: Optional[str]) -> None:
+        if not self.batch_status_dialog:
             return
         try:
-            self.pry_status_dialog.update_progress(attempts, total, message)
+            self.batch_status_dialog.update_progress(done, total, message)
         except Exception:
             pass
 
-    def _finish_pry_status_dialog(self, status: str, notes: str) -> None:
-        if not self.pry_status_dialog:
+    def _finish_batch_status_dialog(self, status: str, notes: str) -> None:
+        if not self.batch_status_dialog:
             return
         try:
-            self.pry_status_dialog.mark_finished(status, notes)
-            self.pry_status_dialog.show()
+            self.batch_status_dialog.mark_finished(status, notes)
+            self.batch_status_dialog.show()
         except Exception:
             pass
         self._set_pry_status_button_visible(True)
@@ -1576,7 +1614,7 @@ class ServerListWindow:
         if self.export_all_button:
             self.export_all_button.configure(state=export_all_state)
 
-        self._set_pry_status_button_visible(bool(pry_batch_active or self.pry_status_dialog))
+        self._set_pry_status_button_visible(bool(batch_active or self.batch_status_dialog))
 
         self._update_context_menu_state()
 
@@ -1893,7 +1931,7 @@ class ServerListWindow:
         """Close the server list window."""
         if self._is_batch_active():
             self._stop_active_batch()
-        self._destroy_pry_status_dialog()
+        self._destroy_batch_status_dialog()
         self.window.destroy()
 
     # Public API methods for external compatibility

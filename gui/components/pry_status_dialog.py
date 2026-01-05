@@ -1,14 +1,14 @@
 """
-Non-modal status dialog for Pry runs.
+Non-modal status dialog for long-running batch jobs (probe/pry/extract).
 """
 
 import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict
 
 
-class PryStatusDialog:
+class BatchStatusDialog:
     """Lightweight status window that can be hidden and reopened."""
 
     def __init__(
@@ -16,10 +16,8 @@ class PryStatusDialog:
         parent: tk.Toplevel,
         theme,
         *,
-        host: str,
-        username: str,
-        share: str,
-        wordlist_path: str,
+        title: str,
+        fields: Dict[str, str],
         on_cancel: Callable[[], None],
     ):
         self.parent = parent
@@ -27,19 +25,17 @@ class PryStatusDialog:
         self.on_cancel = on_cancel
 
         self.window = tk.Toplevel(parent)
-        self.window.title("Pry Status")
+        self.window.title(title)
         self.window.transient(parent)
 
         if self.theme:
             self.theme.apply_to_widget(self.window, "main_window")
 
-        self.host_var = tk.StringVar(value=host or "-")
-        self.user_var = tk.StringVar(value=username or "-")
-        self.share_var = tk.StringVar(value=share or "-")
-        self.wordlist_var = tk.StringVar(value=Path(wordlist_path).name if wordlist_path else "-")
-        self.attempts_var = tk.StringVar(value="0/?")
-        self.last_event_var = tk.StringVar(value="Starting…")
+        # Dynamic fields
+        self.field_vars = {k: tk.StringVar(value=v or "-") for k, v in fields.items()}
         self.status_var = tk.StringVar(value="Running")
+        self.progress_var = tk.StringVar(value="0/?")
+        self.last_event_var = tk.StringVar(value="Starting…")
 
         self._cancel_button: Optional[tk.Button] = None
         self._hide_button: Optional[tk.Button] = None
@@ -54,18 +50,21 @@ class PryStatusDialog:
         main = tk.Frame(self.window)
         main.pack(fill=tk.BOTH, expand=True, padx=14, pady=12)
 
-        def row(label_text: str, var: tk.StringVar):
+        for label_text, var in self.field_vars.items():
             row_frame = tk.Frame(main)
             row_frame.pack(fill=tk.X, pady=2)
             tk.Label(row_frame, text=label_text, width=14, anchor="w").pack(side=tk.LEFT)
             ttk.Label(row_frame, textvariable=var).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        row("Host", self.host_var)
-        row("Username", self.user_var)
-        row("Share", self.share_var)
-        row("Wordlist", self.wordlist_var)
-        row("Attempts", self.attempts_var)
-        row("Status", self.status_var)
+        row_frame = tk.Frame(main)
+        row_frame.pack(fill=tk.X, pady=2)
+        tk.Label(row_frame, text="Progress", width=14, anchor="w").pack(side=tk.LEFT)
+        ttk.Label(row_frame, textvariable=self.progress_var).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        row_frame = tk.Frame(main)
+        row_frame.pack(fill=tk.X, pady=2)
+        tk.Label(row_frame, text="Status", width=14, anchor="w").pack(side=tk.LEFT)
+        ttk.Label(row_frame, textvariable=self.status_var).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         event_frame = tk.Frame(main)
         event_frame.pack(fill=tk.X, pady=(8, 4))
@@ -112,9 +111,9 @@ class PryStatusDialog:
             pass
         self.window = None
 
-    def update_progress(self, attempts: int, total: Optional[int], message: Optional[str] = None) -> None:
+    def update_progress(self, done: int, total: Optional[int], message: Optional[str] = None) -> None:
         total_display = total if total and total > 0 else "?"
-        self.attempts_var.set(f"{attempts}/{total_display}")
+        self.progress_var.set(f"{done}/{total_display}")
         if message:
             self.last_event_var.set(message)
 
@@ -133,4 +132,4 @@ class PryStatusDialog:
         return bool(self.window.state() != "withdrawn")
 
 
-__all__ = ["PryStatusDialog"]
+__all__ = ["BatchStatusDialog"]
