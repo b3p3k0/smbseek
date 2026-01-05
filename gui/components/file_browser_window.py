@@ -202,12 +202,12 @@ class FileBrowserWindow:
             return
         selection = self.tree.selection()
         if not selection:
-            messagebox.showinfo("No selection", "Select a file to download.")
+            messagebox.showinfo("No selection", "Select a file to download.", parent=self.window)
             return
         item = self.tree.item(selection[0])
         values = item.get("values", [])
         if len(values) < 2 or values[1] != "file":
-            messagebox.showinfo("Download", "Select a file (not a directory).")
+            messagebox.showinfo("Download", "Select a file (not a directory).", parent=self.window)
             return
         filename = values[0]
         remote_path = self._join_path(self.current_path, filename)
@@ -234,7 +234,7 @@ class FileBrowserWindow:
                 self.window.after(0, self._populate_entries, result, path)
             except Exception as e:
                 self.window.after(0, lambda err=e: self._set_status(f"Error: {err}"))
-                self.window.after(0, lambda err=e: messagebox.showerror("Browse error", str(err)))
+                self.window.after(0, lambda err=e: messagebox.showerror("Browse error", str(err), parent=self.window))
             finally:
                 self.window.after(0, lambda: self._set_busy(False))
 
@@ -259,10 +259,10 @@ class FileBrowserWindow:
                 except Exception:
                     pass
                 self.window.after(0, lambda: self._set_status(msg))
-                self.window.after(0, lambda: messagebox.showinfo("Download complete", msg))
+                self.window.after(0, lambda: messagebox.showinfo("Download complete", msg, parent=self.window))
             except Exception as e:
                 self.window.after(0, lambda err=e: self._set_status(f"Download failed: {err}"))
-                self.window.after(0, lambda err=e: messagebox.showerror("Download failed", str(err)))
+                self.window.after(0, lambda err=e: messagebox.showerror("Download failed", str(err), parent=self.window))
             finally:
                 self.window.after(0, lambda: self._set_busy(False))
 
