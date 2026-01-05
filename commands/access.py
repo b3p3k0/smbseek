@@ -451,7 +451,7 @@ class AccessOperation:
                         self.output.print_if_verbose(f"Share '{share_name}' is accessible")
                 else:
                     access_result['error'] = f"Access denied or empty share"
-                    access_result['auth_status'] = _extract_nt_status(result.stderr) or "ACCESS_DENIED"
+                    access_result['auth_status'] = self._extract_nt_status(result.stderr) or "ACCESS_DENIED"
                     if True:  # verbose check handled by output methods
                         self.output.print_if_verbose(f"Share '{share_name}' - no readable content")
             else:
@@ -464,7 +464,7 @@ class AccessOperation:
                     access_result['auth_status'] = "NT_STATUS_BAD_NETWORK_NAME"
                 else:
                     access_result['error'] = friendly_msg
-                    access_result['auth_status'] = _extract_nt_status(friendly_msg) or "ERROR"
+                    access_result['auth_status'] = self._extract_nt_status(friendly_msg) or "ERROR"
 
                 # In cautious mode, provide informational message for security-related failures
                 if self.cautious_mode and "NT_STATUS" in friendly_msg:
