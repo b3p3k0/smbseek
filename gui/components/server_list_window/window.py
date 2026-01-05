@@ -1350,6 +1350,7 @@ class ServerListWindow:
         job = self.active_jobs.get(job_id)
         if not job:
             return
+        dialog = job.get("dialog")
 
         try:
             result = future.result()
@@ -1369,9 +1370,9 @@ class ServerListWindow:
         self._set_status(f"{job_type} batch {completed}/{total} complete")
 
         if completed >= total:
-            self._finalize_batch_job(job_id)
+            self._finalize_batch_job(job_id, dialog)
 
-    def _finalize_batch_job(self, job_id: str) -> None:
+    def _finalize_batch_job(self, job_id: str, dialog: Optional[BatchStatusDialog] = None) -> None:
         job = self.active_jobs.pop(job_id, None)
         if not job:
             return
@@ -1382,10 +1383,10 @@ class ServerListWindow:
 
         results = list(job.get("results", []))
         job_type = job.get("type", "batch")
-        dialog = job.get("dialog")
-        if dialog:
+        dlg = dialog or job.get("dialog")
+        if dlg:
             primary_result = results[0] if results else {"status": "unknown", "notes": ""}
-            self._finish_batch_status_dialog(dialog, primary_result.get("status", "unknown"), primary_result.get("notes", ""))
+            self._finish_batch_status_dialog(dlg, primary_result.get("status", "unknown"), primary_result.get("notes", ""))
 
         self._update_action_buttons_state()
         self._set_status(f"{job_type.title()} batch finished")
