@@ -83,10 +83,75 @@ def run_migrations(db_path: str) -> None:
             """
         )
 
+        # One-time migration: import favorites/avoids/probe status from legacy settings if present
+        _import_legacy_settings(cur)
+
         conn.commit()
     finally:
         if conn:
             conn.close()
+
+
+def _import_legacy_settings(cur: sqlite3.Cursor) -> None:
+    """
+    Import favorite/avoid/probe status from legacy GUI settings if paths are found.
+    Safe to run multiple times; skips if data already present.
+    """
+    try:
+        settings_path = Path.home() / ".smbseek" / "gui_settings.json"
+        if not settings_path.exists():
+            return
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+
+        favs = set(data.get("data", {}).get("favorite_servers", []) or [])
+        avoids = set(data.get("data", {}).get("avoid_servers", []) or [])
+        probe_status_map = data.get("probe", {}).get("status_by_ip", {}) or {}
+
+        if not (favs or avoids or probe_status_map):
+            return
+
+        cur.execute("SELECT COUNT(*) FROM host_user_flags")
+        if cur.fetchone()[0] > 0:
+            return  # assume already imported
+
+        # Build server_id map
+        cur.execute("SELECT id, ip_address FROM smb_servers")
+        server_map = {row[1]: row[0] for row in cur.fetchall()}
+
+        for ip in favs | avoids:
+            server_id = server_map.get(ip)
+            if not server_id:
+                continue
+            cur.execute(
+                """
+                INSERT INTO host_user_flags (server_id, favorite, avoid, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(server_id) DO UPDATE SET
+                    favorite=excluded.favorite,
+                    avoid=excluded.avoid,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (server_id, 1 if ip in favs else 0, 1 if ip in avoids else 0),
+            )
+
+        for ip, status in probe_status_map.items():
+            server_id = server_map.get(ip)
+            if not server_id:
+                continue
+            cur.execute(
+                """
+                INSERT INTO host_probe_cache (server_id, status, last_probe_at, indicator_matches, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP)
+                ON CONFLICT(server_id) DO UPDATE SET
+                    status=excluded.status,
+                    last_probe_at=excluded.last_probe_at,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (server_id, status or "unprobed"),
+            )
+    except Exception:
+        # Silent fail; migration remains best-effort
+        pass
 
 
 __all__ = ["run_migrations"]

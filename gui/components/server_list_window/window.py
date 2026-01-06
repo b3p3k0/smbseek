@@ -1168,7 +1168,7 @@ class ServerListWindow:
                 ip_address,
                 status='issue' if issue_detected else 'clean',
                 indicator_matches=len(analysis.get("matches", [])),
-                snapshot_path=None
+                snapshot_path=probe_cache.get_probe_result_path(ip_address) if hasattr(probe_cache, "get_probe_result_path") else None
             )
         except Exception:
             pass
