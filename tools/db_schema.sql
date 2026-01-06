@@ -83,6 +83,28 @@ CREATE TABLE share_credentials (
 CREATE UNIQUE INDEX idx_share_credentials_server_share_source
     ON share_credentials(server_id, share_name, source);
 
+-- GUI user flags (favorites/avoid/notes)
+CREATE TABLE host_user_flags (
+    server_id INTEGER PRIMARY KEY,
+    favorite BOOLEAN DEFAULT 0,
+    avoid BOOLEAN DEFAULT 0,
+    notes TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (server_id) REFERENCES smb_servers(id) ON DELETE CASCADE
+);
+
+-- GUI probe cache (latest probe status/indicators)
+CREATE TABLE host_probe_cache (
+    server_id INTEGER PRIMARY KEY,
+    status TEXT DEFAULT 'unprobed',
+    last_probe_at DATETIME,
+    indicator_matches INTEGER DEFAULT 0,
+    indicator_samples TEXT,
+    snapshot_path TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (server_id) REFERENCES smb_servers(id) ON DELETE CASCADE
+);
+
 -- File discovery and manifest records
 CREATE TABLE file_manifests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -332,6 +332,11 @@ def handle_treeview_click(tree, event, settings_manager, callbacks):
     if column == '#1':
         # Toggle favorite status
         is_now_favorite = settings_manager.toggle_favorite_server(ip_address)
+        try:
+            if callbacks.get('on_favorite_toggle'):
+                callbacks['on_favorite_toggle'](ip_address, is_now_favorite)
+        except Exception:
+            pass
         star = "★" if is_now_favorite else "☆"
         tree.set(item, "favorite", star)
 
@@ -350,6 +355,11 @@ def handle_treeview_click(tree, event, settings_manager, callbacks):
     elif column == '#2':
         # Toggle avoid status
         is_now_avoided = settings_manager.toggle_avoid_server(ip_address)
+        try:
+            if callbacks.get('on_avoid_toggle'):
+                callbacks['on_avoid_toggle'](ip_address, is_now_avoided)
+        except Exception:
+            pass
         skull = "☠" if is_now_avoided else "💀"
         tree.set(item, "avoid", skull)
 

@@ -129,6 +129,34 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     theme.apply_to_widget(extract_button, "button_secondary")
     extract_button.pack(side=tk.LEFT, padx=(0, 10))
 
+    # Notes editor
+    notes_frame = tk.Frame(detail_window)
+    notes_frame.pack(fill=tk.X, padx=10, pady=(5, 5))
+    tk.Label(notes_frame, text="Notes:").pack(anchor="w")
+    notes_text = tk.Text(notes_frame, height=3, wrap="word")
+    current_notes = server_data.get("notes", "") or ""
+    notes_text.insert("1.0", current_notes)
+    notes_text.pack(fill=tk.X, expand=True)
+    theme.apply_to_widget(notes_text, "main_window")
+
+    def save_notes():
+        new_notes = notes_text.get("1.0", tk.END).strip()
+        try:
+            if settings_manager:
+                try:
+                    db_reader = DatabaseReader(settings_manager.get_database_path())
+                    db_reader.upsert_user_flags(server_data.get("ip_address", ""), notes=new_notes)
+                except Exception:
+                    pass
+            server_data["notes"] = new_notes
+            messagebox.showinfo("Notes saved", "Notes updated for this host.", parent=detail_window)
+        except Exception as exc:
+            messagebox.showerror("Error", f"Failed to save notes: {exc}", parent=detail_window)
+
+    notes_btn_frame = tk.Frame(detail_window)
+    notes_btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+    tk.Button(notes_btn_frame, text="Save Notes", command=save_notes).pack(side=tk.RIGHT)
+
     def _open_browse_window() -> None:
         def _clean_share_name(name: str) -> str:
             return name.strip().strip("\\/").strip()

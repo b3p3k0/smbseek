@@ -704,10 +704,17 @@ class DatabaseReader:
         
         params.extend([limit, offset])
         results = conn.execute(data_query, params).fetchall()
-        
-        servers = [
-            {
-                "ip_address": row["ip_address"],
+
+        flags_map = self._load_user_flags_map(conn)
+        probe_map = self._load_probe_cache_map(conn)
+
+        servers = []
+        for row in results:
+            ip = row["ip_address"]
+            flags = flags_map.get(ip, {})
+            probe = probe_map.get(ip, {})
+            servers.append({
+                "ip_address": ip,
                 "country": row["country"],
                 "country_code": row["country_code"],
                 "auth_method": row["auth_method"],
@@ -717,12 +724,15 @@ class DatabaseReader:
                 "accessible_shares": row["accessible_shares_count"],
                 "accessible_shares_list": row["accessible_shares_list"] or "",
                 "access_rate_percent": row["access_rate_percent"],
+                "favorite": flags.get("favorite", 0),
+                "avoid": flags.get("avoid", 0),
+                "notes": flags.get("notes", ""),
+                "probe_status": probe.get("status", "unprobed"),
+                "indicator_matches": probe.get("indicator_matches", 0),
                 # Include vulnerabilities as 0 for backward compatibility
                 "vulnerabilities": 0
-            }
-            for row in results
-        ]
-        
+            })
+
         return servers, total_count
     
     def _query_server_list_legacy(self, conn: sqlite3.Connection, limit: int, offset: int,
@@ -801,9 +811,16 @@ class DatabaseReader:
         params.extend([limit, offset])
         results = conn.execute(data_query, params).fetchall()
         
-        servers = [
-            {
-                "ip_address": row["ip_address"],
+        flags_map = self._load_user_flags_map(conn)
+        probe_map = self._load_probe_cache_map(conn)
+
+        servers = []
+        for row in results:
+            ip = row["ip_address"]
+            flags = flags_map.get(ip, {})
+            probe = probe_map.get(ip, {})
+            servers.append({
+                "ip_address": ip,
                 "country": row["country"],
                 "country_code": row["country_code"],
                 "auth_method": row["auth_method"],
@@ -812,12 +829,46 @@ class DatabaseReader:
                 "total_shares": row["total_shares"],
                 "accessible_shares": row["accessible_shares"],
                 "accessible_shares_list": row["accessible_shares_list"] or "",
-                "vulnerabilities": row["vulnerabilities"]
-            }
-            for row in results
-        ]
+                "vulnerabilities": row["vulnerabilities"],
+                "favorite": flags.get("favorite", 0),
+                "avoid": flags.get("avoid", 0),
+                "notes": flags.get("notes", ""),
+                "probe_status": probe.get("status", "unprobed"),
+                "indicator_matches": probe.get("indicator_matches", 0),
+            })
         
         return servers, total_count
+
+    def _load_user_flags_map(self, conn: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
+        query = """
+        SELECT s.ip_address, f.favorite, f.avoid, f.notes
+        FROM host_user_flags f
+        JOIN smb_servers s ON s.id = f.server_id
+        """
+        rows = conn.execute(query).fetchall()
+        return {
+            row["ip_address"]: {
+                "favorite": row["favorite"] or 0,
+                "avoid": row["avoid"] or 0,
+                "notes": row["notes"] or "",
+            }
+            for row in rows
+        }
+
+    def _load_probe_cache_map(self, conn: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
+        query = """
+        SELECT s.ip_address, pc.status, pc.indicator_matches
+        FROM host_probe_cache pc
+        JOIN smb_servers s ON s.id = pc.server_id
+        """
+        rows = conn.execute(query).fetchall()
+        return {
+            row["ip_address"]: {
+                "status": row["status"] or "unprobed",
+                "indicator_matches": row["indicator_matches"] or 0,
+            }
+            for row in rows
+        }
     
     def _is_cached(self, key: str) -> bool:
         """Check if data is cached and still valid."""
@@ -849,6 +900,74 @@ class DatabaseReader:
         """Clear all cached data."""
         self.cache.clear()
         self.cache_timestamps.clear()
+
+    # --- Write helpers for GUI flags/probe cache -------------------------
+
+    def upsert_user_flags(self, ip_address: str, *, favorite: Optional[bool] = None,
+                          avoid: Optional[bool] = None, notes: Optional[str] = None) -> None:
+        """Upsert favorite/avoid/notes for a host."""
+        if not ip_address:
+            return
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM smb_servers WHERE ip_address = ?", (ip_address,))
+            row = cur.fetchone()
+            if not row:
+                return
+            server_id = row["id"]
+            cur.execute("SELECT favorite, avoid, notes FROM host_user_flags WHERE server_id = ?", (server_id,))
+            existing = cur.fetchone()
+            fav_val = existing["favorite"] if existing else 0
+            avoid_val = existing["avoid"] if existing else 0
+            notes_val = existing["notes"] if existing else ""
+            if favorite is not None:
+                fav_val = 1 if favorite else 0
+            if avoid is not None:
+                avoid_val = 1 if avoid else 0
+            if notes is not None:
+                notes_val = notes
+            cur.execute(
+                """
+                INSERT INTO host_user_flags (server_id, favorite, avoid, notes, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(server_id) DO UPDATE SET
+                    favorite=excluded.favorite,
+                    avoid=excluded.avoid,
+                    notes=excluded.notes,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (server_id, fav_val, avoid_val, notes_val),
+            )
+            conn.commit()
+        self.clear_cache()
+
+    def upsert_probe_cache(self, ip_address: str, *, status: str, indicator_matches: int,
+                           snapshot_path: Optional[str] = None) -> None:
+        """Upsert probe cache info for a host."""
+        if not ip_address:
+            return
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM smb_servers WHERE ip_address = ?", (ip_address,))
+            row = cur.fetchone()
+            if not row:
+                return
+            server_id = row["id"]
+            cur.execute(
+                """
+                INSERT INTO host_probe_cache (server_id, status, last_probe_at, indicator_matches, snapshot_path, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(server_id) DO UPDATE SET
+                    status=excluded.status,
+                    last_probe_at=excluded.last_probe_at,
+                    indicator_matches=excluded.indicator_matches,
+                    snapshot_path=COALESCE(excluded.snapshot_path, host_probe_cache.snapshot_path),
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (server_id, status, indicator_matches, snapshot_path),
+            )
+            conn.commit()
+        self.clear_cache()
     
     def _get_mock_data(self) -> Dict[str, Any]:
         """Get mock data for testing."""

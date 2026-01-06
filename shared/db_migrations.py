@@ -50,6 +50,34 @@ def run_migrations(db_path: str) -> None:
 
         cur.execute(
             """
+            CREATE TABLE IF NOT EXISTS host_user_flags (
+                server_id INTEGER PRIMARY KEY,
+                favorite BOOLEAN DEFAULT 0,
+                avoid BOOLEAN DEFAULT 0,
+                notes TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (server_id) REFERENCES smb_servers(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS host_probe_cache (
+                server_id INTEGER PRIMARY KEY,
+                status TEXT DEFAULT 'unprobed',
+                last_probe_at DATETIME,
+                indicator_matches INTEGER DEFAULT 0,
+                indicator_samples TEXT,
+                snapshot_path TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (server_id) REFERENCES smb_servers(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        cur.execute(
+            """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_share_credentials_server_share_source
             ON share_credentials (server_id, share_name, source)
             """

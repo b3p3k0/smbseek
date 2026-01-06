@@ -312,6 +312,8 @@ class ServerListWindow:
             'on_selection_changed': self._on_selection_changed,
             'on_double_click': self._on_double_click,
             'on_treeview_click': self._on_treeview_click,
+            'on_favorite_toggle': self._on_favorite_toggle,
+            'on_avoid_toggle': self._on_avoid_toggle,
             'on_sort_column': self._sort_by_column
         }
 
@@ -619,6 +621,22 @@ class ServerListWindow:
 
         self._update_action_buttons_state()
 
+    def _on_favorite_toggle(self, ip: str, is_favorite: bool) -> None:
+        if not ip or not self.settings_manager:
+            return
+        try:
+            self.db_reader.upsert_user_flags(ip, favorite=is_favorite)
+        except Exception:
+            pass
+
+    def _on_avoid_toggle(self, ip: str, is_avoid: bool) -> None:
+        if not ip or not self.settings_manager:
+            return
+        try:
+            self.db_reader.upsert_user_flags(ip, avoid=is_avoid)
+        except Exception:
+            pass
+
     def _on_double_click(self, event) -> None:
         """Handle double-click on table row using table module."""
         table.handle_double_click(
@@ -630,7 +648,9 @@ class ServerListWindow:
         """Handle treeview clicks using table module."""
         callbacks = {
             'on_favorites_filter_changed': self._apply_filters,
-            'on_avoid_filter_changed': self._apply_filters
+            'on_avoid_filter_changed': self._apply_filters,
+            'on_favorite_toggle': self._on_favorite_toggle,
+            'on_avoid_toggle': self._on_avoid_toggle
         }
         table.handle_treeview_click(self.tree, event, self.settings_manager, callbacks)
 
@@ -1143,6 +1163,15 @@ class ServerListWindow:
         analysis = probe_patterns.attach_indicator_analysis(result, self.indicator_patterns)
         issue_detected = bool(analysis.get("is_suspicious"))
         self._handle_probe_status_update(ip_address, 'issue' if issue_detected else 'clean')
+        try:
+            self.db_reader.upsert_probe_cache(
+                ip_address,
+                status='issue' if issue_detected else 'clean',
+                indicator_matches=len(analysis.get("matches", [])),
+                snapshot_path=None
+            )
+        except Exception:
+            pass
 
         # Update dialog progress (per target)
         dialog = self.active_jobs.get(job_id, {}).get("dialog")
@@ -1332,6 +1361,15 @@ class ServerListWindow:
         if result.status == "success" and result.found_password:
             try:
                 self._persist_pry_success(target, options.get("share_name", ""), username, result.found_password)
+            except Exception:
+                pass
+            try:
+                self.db_reader.upsert_probe_cache(
+                    ip_address,
+                    status="issue",
+                    indicator_matches=0,
+                    snapshot_path=None
+                )
             except Exception:
                 pass
 
