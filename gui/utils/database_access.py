@@ -50,6 +50,12 @@ class DatabaseReader:
         self.cache = {}
         self.cache_timestamps = {}
         self.connection_lock = threading.Lock()
+
+        try:
+            from shared.db_migrations import run_migrations
+            run_migrations(str(self.db_path))
+        except Exception:
+            pass
         
         # Mock mode for testing
         self.mock_mode = False

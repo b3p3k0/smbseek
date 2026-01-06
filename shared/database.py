@@ -16,6 +16,7 @@ tools_path = os.path.join(os.path.dirname(__file__), '..', 'tools')
 sys.path.insert(0, tools_path)
 
 from db_manager import DatabaseManager, SMBSeekDataAccessLayer
+from shared.db_migrations import run_migrations
 
 
 class SMBSeekWorkflowDatabase:
@@ -36,6 +37,10 @@ class SMBSeekWorkflowDatabase:
         """
         self.config = config
         self.db_path = config.get_database_path()
+        try:
+            run_migrations(self.db_path)
+        except Exception:
+            pass
         self.db_manager = DatabaseManager(self.db_path, config.config)
         self.dal = SMBSeekDataAccessLayer(self.db_manager)
         self._verbose = verbose
