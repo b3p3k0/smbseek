@@ -21,8 +21,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'utils'))
 
 from gui.utils import probe_cache, probe_runner, probe_patterns, extract_runner
 from gui.utils.probe_runner import ProbeError
+from gui.utils.database_access import DatabaseReader
+from gui.utils.dialog_helpers import ensure_dialog_focus
+from gui.components.batch_extract_dialog import BatchExtractSettingsDialog
 from shared.quarantine import create_quarantine_dir
-from dialog_helpers import ensure_dialog_focus
 
 
 def show_server_detail_popup(parent_window, server_data, theme, settings_manager=None,
@@ -683,118 +685,37 @@ def _open_extract_dialog(
     theme,
     extract_button: Optional[tk.Button],
 ) -> None:
-    """Show configuration dialog for file extraction."""
+    """Show configuration dialog for file extraction using the shared batch dialog."""
     if extract_state.get("running"):
         messagebox.showinfo("Extraction Running", "An extraction task is already in progress.")
         return
 
-    config = _load_file_collection_config(settings_manager)
-    ip_address = server_data.get('ip_address', 'host')
-    default_dir = _default_extract_path(ip_address)
-
+    config_path = None
     if settings_manager:
-        default_dir = settings_manager.get_setting('extract.last_directory', default_dir)
-        config["max_file_size_mb"] = int(settings_manager.get_setting('extract.max_file_size_mb', config["max_file_size_mb"]))
-        config["max_total_size_mb"] = int(settings_manager.get_setting('extract.max_total_size_mb', config["max_total_size_mb"]))
-        config["max_time_seconds"] = int(settings_manager.get_setting('extract.max_time_seconds', config["max_time_seconds"]))
-        config["max_files_per_target"] = int(settings_manager.get_setting('extract.max_files_per_target', config["max_files_per_target"]))
+        config_path = settings_manager.get_setting('backend.config_path', None)
+        if not config_path and hasattr(settings_manager, "get_smbseek_config_path"):
+            config_path = settings_manager.get_smbseek_config_path()
 
-    dialog = tk.Toplevel(parent_window)
-    dialog.title("Extract Files")
-    dialog.transient(parent_window)
-    dialog.grab_set()
-    if theme:
-        theme.apply_to_widget(dialog, "main_window")
+    dialog_config = BatchExtractSettingsDialog(
+        parent=parent_window,
+        theme=theme,
+        settings_manager=settings_manager,
+        config_path=config_path,
+        mode="on-demand",
+        target_count=1
+    ).show()
 
-    # Ensure dialog appears on top and gains focus (critical for VMs)
-    ensure_dialog_focus(dialog, parent_window)
+    if not dialog_config:
+        return
 
-    download_var = tk.StringVar(value=default_dir)
-    max_file_var = tk.IntVar(value=config["max_file_size_mb"])
-    max_total_var = tk.IntVar(value=config["max_total_size_mb"])
-    max_time_var = tk.IntVar(value=config["max_time_seconds"])
-    max_count_var = tk.IntVar(value=config["max_files_per_target"])
-
-    def browse_download_dir():
-        selected = filedialog.askdirectory(parent=dialog, title="Select Download Directory")
-        if selected:
-            download_var.set(selected)
-
-    row = 0
-    tk.Label(dialog, text="Quarantine root:").grid(row=row, column=0, sticky="w", padx=10, pady=(10, 5))
-    path_frame = tk.Frame(dialog)
-    path_frame.grid(row=row, column=1, padx=10, pady=(10, 5), sticky="we")
-    tk.Entry(path_frame, textvariable=download_var, width=40).pack(side=tk.LEFT, fill=tk.X, expand=True)
-    tk.Button(path_frame, text="Browse…", command=browse_download_dir).pack(side=tk.LEFT, padx=(5, 0))
-
-    row += 1
-    tk.Label(dialog, text="Max individual file size (MB):").grid(row=row, column=0, sticky="w", padx=10, pady=5)
-    tk.Entry(dialog, textvariable=max_file_var, width=10).grid(row=row, column=1, padx=10, pady=5, sticky="w")
-
-    row += 1
-    tk.Label(dialog, text="Max total download size (MB):").grid(row=row, column=0, sticky="w", padx=10, pady=5)
-    tk.Entry(dialog, textvariable=max_total_var, width=10).grid(row=row, column=1, padx=10, pady=5, sticky="w")
-
-    row += 1
-    tk.Label(dialog, text="Max run time (seconds):").grid(row=row, column=0, sticky="w", padx=10, pady=5)
-    tk.Entry(dialog, textvariable=max_time_var, width=10).grid(row=row, column=1, padx=10, pady=5, sticky="w")
-
-    row += 1
-    tk.Label(dialog, text="Max files per host:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
-    tk.Entry(dialog, textvariable=max_count_var, width=10).grid(row=row, column=1, padx=10, pady=5, sticky="w")
-
-    row += 1
-    info_text = (
-        "Files are quarantined inside a timestamped folder under the selected path.\n"
-        f"Allowed extensions: {', '.join(config['included_extensions']) or 'All'}\n"
-        f"Blocked extensions: {', '.join(config['excluded_extensions']) or 'None'}"
+    _start_extract(
+        parent_window,
+        server_data,
+        status_var,
+        extract_state,
+        extract_button,
+        dialog_config
     )
-    info_label = tk.Label(dialog, text=info_text, justify="left", fg="#666666")
-    info_label.grid(row=row, column=0, columnspan=2, padx=10, pady=(5, 10), sticky="w")
-
-    def start_extract_from_dialog():
-        path_value = download_var.get().strip() or default_dir
-        try:
-            extraction_settings = {
-                "download_path": path_value,
-                "max_file_size_mb": max(1, int(max_file_var.get())),
-                "max_total_size_mb": max(1, int(max_total_var.get())),
-                "max_time_seconds": max(30, int(max_time_var.get())),
-                "max_files_per_target": max(1, int(max_count_var.get()))
-            }
-        except ValueError:
-            messagebox.showerror("Invalid Input", "Please enter valid numeric values for limits.", parent=dialog)
-            return
-
-        if settings_manager:
-            settings_manager.set_setting('extract.last_directory', extraction_settings["download_path"])
-            settings_manager.set_setting('extract.max_file_size_mb', extraction_settings["max_file_size_mb"])
-            settings_manager.set_setting('extract.max_total_size_mb', extraction_settings["max_total_size_mb"])
-            settings_manager.set_setting('extract.max_time_seconds', extraction_settings["max_time_seconds"])
-            settings_manager.set_setting('extract.max_files_per_target', extraction_settings["max_files_per_target"])
-
-        extraction_settings.update({
-            "max_directory_depth": config["max_directory_depth"],
-            "download_delay_seconds": config["download_delay_seconds"],
-            "included_extensions": config["included_extensions"],
-            "excluded_extensions": config["excluded_extensions"],
-            "connection_timeout": config["connection_timeout"]
-        })
-
-        dialog.destroy()
-        _start_extract(
-            parent_window,
-            server_data,
-            status_var,
-            extract_state,
-            extract_button,
-            extraction_settings
-        )
-
-    button_frame = tk.Frame(dialog)
-    button_frame.grid(row=row + 1, column=0, columnspan=2, pady=(0, 10))
-    tk.Button(button_frame, text="Start Extract", command=start_extract_from_dialog).pack(side=tk.LEFT, padx=(0, 5))
-    tk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
 
 
 def _start_extract(
