@@ -1906,7 +1906,7 @@ class ServerListWindow:
 
         for server in servers:
             ip = server.get("ip_address")
-            status = self._determine_probe_status(ip)
+            status = server.get("probe_status") or self._determine_probe_status(ip)
             server["probe_status"] = status
             server["probe_status_emoji"] = self._probe_status_to_emoji(status)
 
