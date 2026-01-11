@@ -17,17 +17,17 @@
     }
   },
   "workflow": {
-    "rescan_after_days": 90,
+    "rescan_after_days": 30,
     "access_recent_hours": 2,
     "pause_between_steps": false,
     "auto_collect_files": true,
     "skip_failed_hosts": true
   },
   "connection": {
-    "timeout": 30,
-    "port_check_timeout": 10,
-    "rate_limit_delay": 2,
-    "share_access_delay": 3
+    "timeout": 15,
+    "port_check_timeout": 5,
+    "rate_limit_delay": 1,
+    "share_access_delay": 2
   },
   "discovery": {
     "max_concurrent_hosts": 10,
@@ -37,7 +37,7 @@
     "connectivity_precheck": true
   },
   "access": {
-    "max_concurrent_hosts": 3
+    "max_concurrent_hosts": 10
   },
   "exclusion_progress_interval": 100,
   "security": {
@@ -46,6 +46,8 @@
       "*.want_to_cry",
       "0XXX_DECRYPTION_README.TXT",
       "*.0xxx",
+      "filesrec.dat",
+      "Readme (Restore).lnk",
       "HOW_TO_DECRYPT_FILES.txt",
       "DECRYPT_INSTRUCTIONS.txt",
       "_DECRYPT_INFO_.html",
