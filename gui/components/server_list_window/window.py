@@ -1467,6 +1467,14 @@ class ServerListWindow:
         self._set_table_interaction_enabled(True)
         if results:
             self._show_batch_summary(job_type, results)
+        # Close the status pop-out once the summary is shown
+        if dlg:
+            try:
+                dlg.destroy()
+            except Exception:
+                pass
+            if self.batch_status_dialog is dlg:
+                self.batch_status_dialog = None
         self._update_stop_button_style(self._is_batch_active())
 
     def _stop_active_batch(self) -> None:
