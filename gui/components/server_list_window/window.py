@@ -704,7 +704,10 @@ class ServerListWindow:
             self.theme,
             self.settings_manager,
             probe_status_callback=self._handle_probe_status_update,
-            indicator_patterns=self.indicator_patterns
+            indicator_patterns=self.indicator_patterns,
+            probe_callback=self._launch_probe_from_detail,
+            extract_callback=self._launch_extract_from_detail,
+            browse_callback=self._launch_browse_from_detail
         )
 
     def _export_selected_servers(self) -> None:
@@ -733,44 +736,12 @@ class ServerListWindow:
     def _on_probe_selected(self) -> None:
         self._hide_context_menu()
         targets = self._build_selected_targets()
-        if not targets:
-            messagebox.showwarning("No Selection", "Please select at least one server to probe.", parent=self.window)
-            return
-
-        dialog_config = self._prompt_probe_batch_settings(len(targets))
-        if not dialog_config:
-            return
-
-        self._start_batch_job("probe", targets, dialog_config)
+        self._launch_probe_workflow(targets)
 
     def _on_extract_selected(self) -> None:
         self._hide_context_menu()
         targets = self._build_selected_targets()
-        if not targets:
-            messagebox.showwarning("No Selection", "Please select at least one server to extract from.", parent=self.window)
-            return
-
-        # Get config path from settings manager
-        config_path = None
-        if self.settings_manager:
-            config_path = self.settings_manager.get_setting('backend.config_path', None)
-            if not config_path and hasattr(self.settings_manager, "get_smbseek_config_path"):
-                config_path = self.settings_manager.get_smbseek_config_path()
-
-        # Use consolidated batch extract dialog
-        dialog_config = BatchExtractSettingsDialog(
-            parent=self.window,
-            theme=self.theme,
-            settings_manager=self.settings_manager,
-            config_path=config_path,
-            mode="on-demand",
-            target_count=len(targets)
-        ).show()
-
-        if not dialog_config:
-            return
-
-        self._start_batch_job("extract", targets, dialog_config)
+        self._launch_extract_workflow(targets)
 
     def _on_pry_selected(self) -> None:
         self._hide_context_menu()
@@ -824,66 +795,14 @@ class ServerListWindow:
     def _on_file_browser_selected(self) -> None:
         self._hide_context_menu()
         targets = self._build_selected_targets()
+        if not targets:
+            messagebox.showwarning("No Selection", "Please select a server to browse.", parent=self.window)
+            return
         if len(targets) != 1:
             messagebox.showwarning("Select one server", "Choose exactly one server to browse.", parent=self.window)
             return
 
-        target = targets[0]
-        ip_addr = target.get("ip_address")
-        if not ip_addr:
-            messagebox.showerror("Missing IP", "Unable to determine IP for selected server.", parent=self.window)
-            return
-
-        shares = self.db_reader.get_accessible_shares(ip_addr) if self.db_reader else []
-        def _clean_share_name(name: str) -> str:
-            return name.strip().strip("\\/").strip()
-
-        seen = set()
-        share_names = []
-        for s in shares:
-            raw = s.get("share_name")
-            cleaned = _clean_share_name(raw) if raw else ""
-            if not cleaned or cleaned in seen:
-                continue
-            seen.add(cleaned)
-            share_names.append(cleaned)
-        if not share_names:
-            messagebox.showinfo("No shares", "No accessible shares found for this host.")
-            return
-
-        share_creds = {}
-        try:
-            if self.db_reader:
-                creds_rows = self.db_reader.get_share_credentials(ip_addr)
-                for row in creds_rows:
-                    raw_name = row.get("share_name")
-                    cleaned_name = _clean_share_name(raw_name) if raw_name else ""
-                    if cleaned_name:
-                        share_creds[cleaned_name] = {
-                            "username": row.get("username") or "",
-                            "password": row.get("password") or "",
-                            "source": row.get("source") or "",
-                            "last_verified_at": row.get("last_verified_at")
-                        }
-        except Exception:
-            share_creds = {}
-
-        config_path = None
-        if self.settings_manager:
-            config_path = self.settings_manager.get_setting('backend.config_path', None)
-            if not config_path and hasattr(self.settings_manager, "get_smbseek_config_path"):
-                config_path = self.settings_manager.get_smbseek_config_path()
-
-        FileBrowserWindow(
-            parent=self.window,
-            ip_address=ip_addr,
-            shares=share_names,
-            auth_method=target.get("auth_method", ""),
-            config_path=config_path,
-            db_reader=self.db_reader,
-            theme=self.theme,
-            share_credentials=share_creds,
-        )
+        self._launch_browse_workflow(targets[0])
 
     def _prompt_probe_batch_settings(self, target_count: int) -> Optional[Dict[str, Any]]:
         config = details._load_probe_config(self.settings_manager)
@@ -964,22 +883,130 @@ class ServerListWindow:
         dialog.wait_window()
         return result or None
 
+    # Shared workflow launchers (used by main window + detail popup)
+
+    def _launch_probe_workflow(self, targets: List[Dict[str, Any]]) -> None:
+        if not targets:
+            messagebox.showwarning("No Selection", "Please select at least one server to probe.", parent=self.window)
+            return
+
+        dialog_config = self._prompt_probe_batch_settings(len(targets))
+        if not dialog_config:
+            return
+
+        self._start_batch_job("probe", targets, dialog_config)
+
+    def _launch_extract_workflow(self, targets: List[Dict[str, Any]]) -> None:
+        if not targets:
+            messagebox.showwarning("No Selection", "Please select at least one server to extract from.", parent=self.window)
+            return
+
+        config_path = self._get_config_path()
+
+        dialog_config = BatchExtractSettingsDialog(
+            parent=self.window,
+            theme=self.theme,
+            settings_manager=self.settings_manager,
+            config_path=config_path,
+            mode="on-demand",
+            target_count=len(targets)
+        ).show()
+
+        if not dialog_config:
+            return
+
+        self._start_batch_job("extract", targets, dialog_config)
+
+    def _launch_browse_workflow(self, target: Dict[str, Any]) -> None:
+        ip_addr = target.get("ip_address")
+        if not ip_addr:
+            messagebox.showerror("Missing IP", "Unable to determine IP for selected server.", parent=self.window)
+            return
+
+        shares = self.db_reader.get_accessible_shares(ip_addr) if self.db_reader else []
+
+        def _clean_share_name(name: str) -> str:
+            return name.strip().strip("\\/").strip()
+
+        seen = set()
+        share_names = []
+        for s in shares:
+            raw = s.get("share_name")
+            cleaned = _clean_share_name(raw) if raw else ""
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            share_names.append(cleaned)
+        if not share_names:
+            messagebox.showinfo("No shares", "No accessible shares found for this host.")
+            return
+
+        share_creds = {}
+        try:
+            if self.db_reader:
+                creds_rows = self.db_reader.get_share_credentials(ip_addr)
+                for row in creds_rows:
+                    raw_name = row.get("share_name")
+                    cleaned_name = _clean_share_name(raw_name) if raw_name else ""
+                    if cleaned_name:
+                        share_creds[cleaned_name] = {
+                            "username": row.get("username") or "",
+                            "password": row.get("password") or "",
+                            "source": row.get("source") or "",
+                            "last_verified_at": row.get("last_verified_at")
+                        }
+        except Exception:
+            share_creds = {}
+
+        config_path = self._get_config_path()
+
+        FileBrowserWindow(
+            parent=self.window,
+            ip_address=ip_addr,
+            shares=share_names,
+            auth_method=target.get("auth_method", ""),
+            config_path=config_path,
+            db_reader=self.db_reader,
+            theme=self.theme,
+            share_credentials=share_creds,
+        )
+
+    def _launch_probe_from_detail(self, server_data: Dict[str, Any]) -> None:
+        target = self._server_data_to_target(server_data)
+        if target:
+            self._launch_probe_workflow([target])
+
+    def _launch_extract_from_detail(self, server_data: Dict[str, Any]) -> None:
+        target = self._server_data_to_target(server_data)
+        if target:
+            self._launch_extract_workflow([target])
+
+    def _launch_browse_from_detail(self, server_data: Dict[str, Any]) -> None:
+        target = self._server_data_to_target(server_data)
+        if target:
+            self._launch_browse_workflow(target)
+
     # _prompt_extract_batch_settings removed - replaced by BatchExtractSettingsDialog
 
     def _build_selected_targets(self) -> List[Dict[str, Any]]:
         selected_servers = table.get_selected_server_data(self.tree, self.filtered_servers)
         descriptors: List[Dict[str, Any]] = []
         for server in selected_servers:
-            ip_address = server.get("ip_address")
-            if not ip_address:
-                continue
-            descriptors.append({
-                "ip_address": ip_address,
-                "auth_method": server.get("auth_method", ""),
-                "shares": self._parse_accessible_shares(server.get("accessible_shares_list")),
-                "data": server
-            })
+            target = self._server_data_to_target(server)
+            if target:
+                descriptors.append(target)
         return descriptors
+
+    def _server_data_to_target(self, server_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        ip_address = server_data.get("ip_address")
+        if not ip_address:
+            return None
+        return {
+            "ip_address": ip_address,
+            "auth_method": server_data.get("auth_method", ""),
+            "shares": self._parse_accessible_shares(server_data.get("accessible_shares_list")),
+            "data": server_data
+        }
 
     @staticmethod
     def _parse_accessible_shares(raw_value: Optional[Any]) -> List[str]:
@@ -1004,6 +1031,14 @@ class ServerListWindow:
             return ""
         cleaned = name.split(" (")[0]
         return cleaned.strip().strip("\\/").strip()
+
+    def _get_config_path(self) -> Optional[str]:
+        config_path = None
+        if self.settings_manager:
+            config_path = self.settings_manager.get_setting('backend.config_path', None)
+            if not config_path and hasattr(self.settings_manager, "get_smbseek_config_path"):
+                config_path = self.settings_manager.get_smbseek_config_path()
+        return config_path
 
     def _start_batch_job(self, job_type: str, targets: List[Dict[str, Any]], options: Dict[str, Any]) -> None:
         if not targets:

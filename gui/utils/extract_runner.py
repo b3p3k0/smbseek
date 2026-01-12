@@ -17,9 +17,10 @@ from threading import Event
 from shared.quarantine import log_quarantine_event
 
 try:  # pragma: no cover - runtime dependency
-    from impacket.smbconnection import SMBConnection
+    from impacket.smbconnection import SMBConnection, SessionError
 except ImportError:  # pragma: no cover - handled upstream
     SMBConnection = None
+    SessionError = Exception
 
 DEFAULT_CLIENT_NAME = "xsmbseek-extract"
 
@@ -132,7 +133,7 @@ def run_extract(
             continue
 
         try:
-            for file_info in _walk_files(conn, share, max_depth):
+            for file_info in _walk_files(conn, share, max_depth, summary):
                 _check_cancel(cancel_event)
                 if _time_exceeded(start_time, max_seconds):
                     summary["timed_out"] = True
@@ -181,7 +182,38 @@ def run_extract(
                     def _writer(data: bytes) -> None:
                         outfile.write(data)
 
-                    conn.getFile(share, smb_path, _writer)
+                    try:
+                        conn.getFile(share, smb_path, _writer)
+                    except Exception as exc:
+                        if _is_access_denied(exc):
+                            summary["totals"]["files_skipped"] += 1
+                            summary["skipped"].append({
+                                "share": share,
+                                "path": rel_display,
+                                "reason": "access_denied",
+                                "size": file_size
+                            })
+                            summary["errors"].append({
+                                "share": share,
+                                "path": rel_display,
+                                "message": f"Access denied downloading file: {exc}"
+                            })
+                            # Remove partially written file if any
+                            try:
+                                dest_path.unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                            continue
+                        summary["errors"].append({
+                            "share": share,
+                            "path": rel_display,
+                            "message": f"Download error: {exc}"
+                        })
+                        try:
+                            dest_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                        continue
 
                 total_files += 1
                 total_bytes += file_size
@@ -263,13 +295,27 @@ def _walk_files(
     conn: SMBConnection,
     share: str,
     max_depth: int,
+    summary: Dict[str, Any],
 ) -> Iterable[Dict[str, Any]]:
     """Yield file metadata dictionaries for the share up to max_depth."""
     stack: List[Tuple[str, int]] = [("", 0)]
 
     while stack:
         current_path, depth = stack.pop()
-        for entry in _list_directory(conn, share, current_path or ""):
+        try:
+            entries = _list_directory(conn, share, current_path or "")
+        except Exception as exc:
+            reason = "access_denied" if _is_access_denied(exc) else "list_error"
+            summary["errors"].append({
+                "share": share,
+                "path": current_path or "\\",
+                "message": f"List failed: {exc}",
+                "reason": reason
+            })
+            # Skip this branch but keep processing others
+            continue
+
+        for entry in entries:
             name = entry["name"]
             rel_path = f"{current_path}\\{name}" if current_path else name
 
@@ -356,3 +402,17 @@ def _time_exceeded(start: float, max_seconds: int) -> bool:
 
 def _utcnow() -> str:
     return _dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+def _is_access_denied(exc: Exception) -> bool:
+    """
+    Return True if the exception represents an SMB access-denied condition.
+    """
+    try:
+        code = getattr(exc, "getErrorCode", lambda: None)()
+        if isinstance(code, int) and code in (0xC0000022, 0xC00000A2):
+            return True
+    except Exception:
+        pass
+    text = str(exc).upper()
+    return "STATUS_ACCESS_DENIED" in text or "ACCESS_DENIED" in text

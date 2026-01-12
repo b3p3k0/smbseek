@@ -28,7 +28,8 @@ from shared.quarantine import create_quarantine_dir
 
 
 def show_server_detail_popup(parent_window, server_data, theme, settings_manager=None,
-                             probe_status_callback=None, indicator_patterns: Optional[Sequence[probe_patterns.IndicatorPattern]] = None):
+                             probe_status_callback=None, indicator_patterns: Optional[Sequence[probe_patterns.IndicatorPattern]] = None,
+                             probe_callback=None, extract_callback=None, browse_callback=None):
     """
     Show server detail popup window.
 
@@ -36,6 +37,7 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
         parent_window: Parent window for transient behavior
         server_data: Server dictionary with all fields
         theme: Theme object for styling
+        probe_callback/extract_callback/browse_callback: Optional external launchers to ensure consistent workflows.
     """
     # Create popup window
     detail_window = tk.Toplevel(parent_window)
@@ -100,7 +102,7 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     probe_button = tk.Button(
         button_frame,
         text="Probe",
-        command=lambda: _open_probe_dialog(
+        command=(lambda: probe_callback(server_data)) if probe_callback else lambda: _open_probe_dialog(
             detail_window,
             server_data,
             text_widget,
@@ -118,7 +120,7 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     extract_button = tk.Button(
         button_frame,
         text="Extract",
-        command=lambda: _open_extract_dialog(
+        command=(lambda: extract_callback(server_data)) if extract_callback else lambda: _open_extract_dialog(
             detail_window,
             server_data,
             status_var,
@@ -201,7 +203,7 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     browse_button = tk.Button(
         button_frame,
         text="Browse (read-only)",
-        command=_open_browse_window
+        command=(lambda: browse_callback(server_data)) if browse_callback else _open_browse_window
     )
     theme.apply_to_widget(browse_button, "button_secondary")
     browse_button.pack(side=tk.LEFT, padx=(0, 10))
