@@ -186,6 +186,10 @@ class FileBrowserWindow:
         self._start_list_thread(self.current_path)
 
     def _on_item_double_click(self, _event=None) -> None:
+        # Ignore double-clicks while a directory listing is in-flight to prevent
+        # accidental path appends (e.g., foo\\bar -> foo\\bar\\bar).
+        if self.busy:
+            return
         selection = self.tree.selection()
         if not selection:
             return
@@ -306,9 +310,11 @@ class FileBrowserWindow:
         return limits or None
 
     def _start_list_thread(self, path: str) -> None:
+        # Mark busy before the worker thread starts to block re-entrant navigation.
+        self._set_busy(True)
+
         def worker():
             try:
-                self._set_busy(True)
                 self._ensure_connected()
                 result = self.navigator.list_dir(path)
                 self.window.after(0, self._populate_entries, result, path)
