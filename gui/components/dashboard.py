@@ -1105,21 +1105,14 @@ class DashboardWidget:
     def _get_servers_with_successful_auth(self) -> list:
         """Query database for servers with successful authentication."""
         try:
-            # Query the database for servers where authentication succeeded
-            # This should match the logic used in Server List Browser
             if not self.db_reader:
                 return []
 
-            servers = self.db_reader.get_all_servers()
+            # Use enhanced server list view; grab a generous page to cover recent scan
+            servers, _ = self.db_reader.get_server_list(limit=5000, offset=0, country_filter=None, recent_scan_only=True)
 
-            # Filter for servers with successful authentication
-            # A server has successful auth if it has at least one accessible share
-            successful = []
-            for server in servers:
-                if server.get('accessible_shares_count', 0) > 0:
-                    successful.append(server)
-
-            return successful
+            # Filter for servers with at least one accessible share
+            return [s for s in servers if (s.get("accessible_shares") or 0) > 0]
 
         except Exception as e:
             print(f"Error querying servers with successful auth: {e}")
@@ -1208,8 +1201,8 @@ class DashboardWidget:
             }
 
         ip_address = server.get("ip_address")
-        shares = server.get("accessible_shares", "").split(",") if server.get("accessible_shares") else []
-        shares = [s.strip() for s in shares if s.strip()]
+        raw_shares = server.get("accessible_shares_list") or server.get("accessible_shares") or ""
+        shares = [s.strip() for s in str(raw_shares).split(",") if s.strip()]
 
         # Derive credentials from auth method
         auth_method = server.get("auth_method", "")
@@ -1229,7 +1222,25 @@ class DashboardWidget:
                 cancel_event=cancel_event,
                 allow_empty=True
             )
+            # Persist probe snapshot to disk and DB (align with server list workflow)
             probe_cache.save_probe_result(ip_address, result)
+            snapshot_path = None
+            try:
+                if hasattr(probe_cache, "get_probe_result_path"):
+                    snapshot_path = probe_cache.get_probe_result_path(ip_address)
+            except Exception:
+                snapshot_path = None
+
+            try:
+                if self.db_reader:
+                    self.db_reader.upsert_probe_cache(
+                        ip_address,
+                        status="clean",  # indicator analysis not run here; default to clean
+                        indicator_matches=0,
+                        snapshot_path=snapshot_path
+                    )
+            except Exception:
+                pass
 
             return {
                 "ip_address": ip_address,
@@ -1326,8 +1337,8 @@ class DashboardWidget:
             }
 
         ip_address = server.get("ip_address")
-        shares = server.get("accessible_shares", "").split(",") if server.get("accessible_shares") else []
-        shares = [s.strip() for s in shares if s.strip()]
+        raw_shares = server.get("accessible_shares_list") or server.get("accessible_shares") or ""
+        shares = [s.strip() for s in str(raw_shares).split(",") if s.strip()]
 
         if not shares:
             return {
