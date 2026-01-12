@@ -334,7 +334,7 @@ class ServerListWindow:
         self.context_menu.add_command(label="🔍 Probe Selected", command=self._on_probe_selected)
         self.context_menu.add_command(label="📦 Extract Selected", command=self._on_extract_selected)
         self.context_menu.add_command(label="🔓 Pry Selected", command=self._on_pry_selected)
-        self.context_menu.add_command(label="🗂️ File Browser (read-only)", command=self._on_file_browser_selected)
+        self.context_menu.add_command(label="🗂️ Browse Selected", command=self._on_file_browser_selected)
         self._update_context_menu_state()
 
     def _bind_context_menu_events(self, tree: ttk.Treeview) -> None:
@@ -424,7 +424,7 @@ class ServerListWindow:
 
         self.browser_button = tk.Button(
             button_container,
-            text="🗂️ Browse (read-only)",
+            text="🗂️ Browse Selected",
             command=self._on_file_browser_selected,
             state=tk.DISABLED
         )

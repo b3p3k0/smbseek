@@ -184,7 +184,7 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
 
     browse_button = tk.Button(
         button_frame,
-        text="Browse (read-only)",
+        text="Browse Selected",
         command=lambda: _invoke_callback_or_warn(browse_callback, server_data, detail_window, "Browse")
     )
     theme.apply_to_widget(browse_button, "button_secondary")
