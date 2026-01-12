@@ -102,17 +102,7 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     probe_button = tk.Button(
         button_frame,
         text="Probe",
-        command=(lambda: probe_callback(server_data)) if probe_callback else lambda: _open_probe_dialog(
-            detail_window,
-            server_data,
-            text_widget,
-            status_var,
-            probe_state,
-            settings_manager,
-            theme,
-            probe_button,
-            probe_status_callback
-        )
+        command=lambda: _invoke_callback_or_warn(probe_callback, server_data, detail_window, "Probe")
     )
     theme.apply_to_widget(probe_button, "button_secondary")
     probe_button.pack(side=tk.LEFT, padx=(0, 10))
@@ -120,15 +110,7 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     extract_button = tk.Button(
         button_frame,
         text="Extract",
-        command=(lambda: extract_callback(server_data)) if extract_callback else lambda: _open_extract_dialog(
-            detail_window,
-            server_data,
-            status_var,
-            extract_state,
-            settings_manager,
-            theme,
-            extract_button
-        )
+        command=lambda: _invoke_callback_or_warn(extract_callback, server_data, detail_window, "Extract")
     )
     theme.apply_to_widget(extract_button, "button_secondary")
     extract_button.pack(side=tk.LEFT, padx=(0, 10))
@@ -203,7 +185,7 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     browse_button = tk.Button(
         button_frame,
         text="Browse (read-only)",
-        command=(lambda: browse_callback(server_data)) if browse_callback else _open_browse_window
+        command=lambda: _invoke_callback_or_warn(browse_callback, server_data, detail_window, "Browse")
     )
     theme.apply_to_widget(browse_button, "button_secondary")
     browse_button.pack(side=tk.LEFT, padx=(0, 10))
@@ -225,6 +207,21 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     ensure_dialog_focus(detail_window, parent_window)
 
 
+def _invoke_callback_or_warn(cb, server_data: Dict[str, Any], parent_window: tk.Toplevel, action_label: str) -> None:
+    """
+    Invoke provided callback with server_data; warn if callback is missing.
+
+    Ensures detail popups always route actions through shared workflows
+    (batch pop-out dialogs) instead of legacy in-dialog handlers.
+    """
+    if callable(cb):
+        cb(server_data)
+    else:
+        messagebox.showwarning(
+            f"{action_label} Unavailable",
+            f"{action_label} workflow is not available in this view.",
+            parent=parent_window
+        )
 
 
 def _format_server_details(server: Dict[str, Any], probe_section: Optional[str] = None) -> str:
