@@ -185,7 +185,7 @@ class SMBNavigator:
 
         return ListResult(entries=entries, truncated=truncated, warning=warning)
 
-    def download_file(self, remote_path: str, dest_dir: Path) -> DownloadResult:
+    def download_file(self, remote_path: str, dest_dir: Path, preserve_structure: bool = False) -> DownloadResult:
         conn = self._require_conn()
         share = self._require_share()
 
@@ -193,8 +193,14 @@ class SMBNavigator:
         self._enforce_limits(norm_path)
 
         dest_dir.mkdir(parents=True, exist_ok=True)
-        filename = Path(norm_path).name
-        dest_path = dest_dir / filename
+        if preserve_structure:
+            rel_parts = _safe_parts(norm_path.lstrip("\\"))
+            dest_path = dest_dir.joinpath(*rel_parts)
+        else:
+            filename = Path(norm_path).name
+            dest_path = dest_dir / filename
+
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
         if dest_path.exists():
             raise FileExistsError(f"Destination already exists: {dest_path}")
 
@@ -260,6 +266,15 @@ class SMBNavigator:
             raise ValueError(f"Path depth {depth} exceeds max_depth {self.max_depth}")
         if len(path) > self.max_path_length:
             raise ValueError(f"Path length {len(path)} exceeds max_path_length {self.max_path_length}")
+
+
+def _safe_parts(rel_path: str) -> List[str]:
+    parts: List[str] = []
+    for segment in rel_path.replace("\\", "/").split("/"):
+        if not segment or segment in (".", ".."):
+            continue
+        parts.append(segment)
+    return parts
 
 
 __all__ = ["SMBNavigator", "Entry", "ListResult", "DownloadResult"]

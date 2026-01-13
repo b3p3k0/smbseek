@@ -349,7 +349,7 @@ class FileBrowserWindow:
                 for remote_path in files_to_download:
                     self.window.after(0, lambda rp=remote_path, c=completed, t=total: self._set_status(f"Downloading {rp} ({c+1}/{t})"))
                     try:
-                        result = self.navigator.download_file(remote_path, dest_dir)
+                        result = self.navigator.download_file(remote_path, dest_dir, preserve_structure=True)
                         try:
                             host_dir = Path(dest_dir).parent.parent  # host/date/share
                             log_quarantine_event(host_dir, f"downloaded {self.current_share}{remote_path} -> {result.saved_path}")
