@@ -67,15 +67,32 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
     theme.apply_to_widget(favorites_checkbox, "checkbox")
     favorites_checkbox.pack(side=tk.LEFT, padx=(0, 10))
 
-    # Avoid only filter checkbox
-    avoid_checkbox = tk.Checkbutton(
+    exclude_avoid_checkbox = tk.Checkbutton(
         search_frame,
-        text="Avoid only",
-        variable=filter_vars['avoid_only'],
-        command=callbacks['on_avoid_only_changed']
+        text="Exclude avoid",
+        variable=filter_vars['exclude_avoid'],
+        command=callbacks['on_exclude_avoid_changed']
     )
-    theme.apply_to_widget(avoid_checkbox, "checkbox")
-    avoid_checkbox.pack(side=tk.LEFT, padx=(0, 10))
+    theme.apply_to_widget(exclude_avoid_checkbox, "checkbox")
+    exclude_avoid_checkbox.pack(side=tk.LEFT, padx=(0, 10))
+
+    probed_only_checkbox = tk.Checkbutton(
+        search_frame,
+        text="Probed only",
+        variable=filter_vars['probed_only'],
+        command=callbacks['on_probed_only_changed']
+    )
+    theme.apply_to_widget(probed_only_checkbox, "checkbox")
+    probed_only_checkbox.pack(side=tk.LEFT, padx=(0, 10))
+
+    exclude_compromised_checkbox = tk.Checkbutton(
+        search_frame,
+        text="Exclude compromised",
+        variable=filter_vars['exclude_compromised'],
+        command=callbacks['on_exclude_compromised_changed']
+    )
+    theme.apply_to_widget(exclude_compromised_checkbox, "checkbox")
+    exclude_compromised_checkbox.pack(side=tk.LEFT, padx=(0, 10))
 
     # Show all results toggle (if callback provided)
     show_all_button = None
@@ -144,7 +161,9 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
         'date_combo': date_combo,
         'shares_filter_checkbox': shares_filter_checkbox,
         'favorites_checkbox': favorites_checkbox,
-        'avoid_checkbox': avoid_checkbox
+        'exclude_avoid_checkbox': exclude_avoid_checkbox,
+        'probed_only_checkbox': probed_only_checkbox,
+        'exclude_compromised_checkbox': exclude_compromised_checkbox,
     }
 
     if show_all_button:
@@ -271,23 +290,40 @@ def apply_favorites_filter(servers: List[Dict[str, Any]], favorites_only: bool, 
     return [server for server in servers if server.get("ip_address") in favorite_ips]
 
 
-def apply_avoid_filter(servers: List[Dict[str, Any]], avoid_only: bool, settings_manager) -> List[Dict[str, Any]]:
-    """
-    Apply avoid filter to server list.
+def apply_exclude_avoid_filter(servers: List[Dict[str, Any]], exclude_avoid: bool, settings_manager) -> List[Dict[str, Any]]:
+    """Exclude servers marked as avoid."""
+    if not exclude_avoid or not settings_manager:
+        return servers
+    avoid_ips = set(settings_manager.get_avoid_servers())
+    return [server for server in servers if server.get("ip_address") not in avoid_ips]
 
-    Args:
-        servers: List of servers to filter
-        avoid_only: If True, only show servers marked to avoid
-        settings_manager: Settings manager for avoid IPs lookup
 
-    Returns:
-        Filtered list of servers
-    """
-    if not avoid_only or not settings_manager:
+def apply_probed_filter(servers: List[Dict[str, Any]], probed_only: bool) -> List[Dict[str, Any]]:
+    """Keep only servers that have been probed."""
+    if not probed_only:
         return servers
 
-    avoid_ips = settings_manager.get_avoid_servers()
-    return [server for server in servers if server.get("ip_address") in avoid_ips]
+    def _is_probed(server: Dict[str, Any]) -> bool:
+        status = (server.get("probe_status") or "").lower()
+        if status and status not in ("unprobed", "unknown"):
+            return True
+        return bool(server.get("indicator_matches", 0) > 0)
+
+    return [server for server in servers if _is_probed(server)]
+
+
+def apply_exclude_compromised_filter(servers: List[Dict[str, Any]], exclude_compromised: bool) -> List[Dict[str, Any]]:
+    """Drop servers marked as compromised/issue."""
+    if not exclude_compromised:
+        return servers
+
+    def _is_compromised(server: Dict[str, Any]) -> bool:
+        status = (server.get("probe_status") or "").lower()
+        if status == "issue":
+            return True
+        return bool(server.get("indicator_matches", 0) > 0)
+
+    return [server for server in servers if not _is_compromised(server)]
 
 
 def update_mode_display(advanced_filters_frame, is_advanced_mode: bool):

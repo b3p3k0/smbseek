@@ -81,9 +81,11 @@ class ServerListWindow:
         self.ransomware_indicators = []
         self.indicator_patterns = []
 
-        # Favorites and avoid functionality
+        # Favorites / avoid / probe filter toggles
         self.favorites_only = tk.BooleanVar()
-        self.avoid_only = tk.BooleanVar()
+        self.exclude_avoid = tk.BooleanVar()
+        self.probed_only = tk.BooleanVar()
+        self.exclude_compromised = tk.BooleanVar()
 
         # Window and UI components
         self.window = None
@@ -272,7 +274,9 @@ class ServerListWindow:
             'date_filter': self.date_filter,
             'shares_filter': self.shares_filter,
             'favorites_only': self.favorites_only,
-            'avoid_only': self.avoid_only
+            'exclude_avoid': self.exclude_avoid,
+            'probed_only': self.probed_only,
+            'exclude_compromised': self.exclude_compromised
         }
 
         # Prepare callbacks
@@ -281,7 +285,9 @@ class ServerListWindow:
             'on_date_filter_changed': self._apply_filters,
             'on_shares_filter_changed': self._apply_filters,
             'on_favorites_only_changed': self._apply_filters,
-            'on_avoid_only_changed': self._apply_filters,
+            'on_exclude_avoid_changed': self._apply_filters,
+            'on_probed_only_changed': self._apply_filters,
+            'on_exclude_compromised_changed': self._apply_filters,
             'on_clear_search': self._clear_search,
             'on_reset_filters': self._reset_filters
         }
@@ -299,8 +305,8 @@ class ServerListWindow:
         if not self.settings_manager:
             if 'favorites_checkbox' in self.filter_widgets:
                 self.filter_widgets['favorites_checkbox'].configure(state="disabled")
-            if 'avoid_checkbox' in self.filter_widgets:
-                self.filter_widgets['avoid_checkbox'].configure(state="disabled")
+            if 'exclude_avoid_checkbox' in self.filter_widgets:
+                self.filter_widgets['exclude_avoid_checkbox'].configure(state="disabled")
 
         # Pack filter frame (shown/hidden based on mode)
         self._update_mode_display()
@@ -525,9 +531,17 @@ class ServerListWindow:
         if self.favorites_only.get():
             filtered = filters.apply_favorites_filter(filtered, True, self.settings_manager)
 
-        # Apply avoid filter
-        if self.avoid_only.get():
-            filtered = filters.apply_avoid_filter(filtered, True, self.settings_manager)
+        # Apply exclude avoid filter
+        if self.exclude_avoid.get():
+            filtered = filters.apply_exclude_avoid_filter(filtered, True, self.settings_manager)
+
+        # Apply probed-only filter
+        if self.probed_only.get():
+            filtered = filters.apply_probed_filter(filtered, True)
+
+        # Apply exclude compromised filter
+        if self.exclude_compromised.get():
+            filtered = filters.apply_exclude_compromised_filter(filtered, True)
 
         self.filtered_servers = filtered
 
@@ -2070,7 +2084,9 @@ class ServerListWindow:
         self.date_filter.set("All")
         self.shares_filter.set(False)
         self.favorites_only.set(False)
-        self.avoid_only.set(False)
+        self.exclude_avoid.set(False)
+        self.probed_only.set(False)
+        self.exclude_compromised.set(False)
         self._apply_filters()
 
     def _refresh_data(self) -> None:
