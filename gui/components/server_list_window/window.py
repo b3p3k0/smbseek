@@ -268,6 +268,9 @@ class ServerListWindow:
 
     def _create_filter_panel(self) -> None:
         """Create filtering controls panel using filters module."""
+        # Load persisted filter preferences before building UI
+        self._load_filter_preferences()
+
         # Prepare filter variables
         filter_vars = {
             'search_text': self.search_text,
@@ -554,6 +557,7 @@ class ServerListWindow:
         )
 
         self._update_action_buttons_state()
+        self._persist_filter_preferences()
 
     def _load_data(self) -> None:
         """Load server data from database."""
@@ -2088,6 +2092,30 @@ class ServerListWindow:
         self.probed_only.set(False)
         self.exclude_compromised.set(False)
         self._apply_filters()
+
+    def _load_filter_preferences(self) -> None:
+        """Load persisted filter preferences from settings."""
+        if not self.settings_manager:
+            return
+        prefs = self.settings_manager.get_setting('windows.server_list.last_filters', {}) or {}
+        self.favorites_only.set(bool(prefs.get('favorites_only', False)))
+        self.exclude_avoid.set(bool(prefs.get('exclude_avoid', False)))
+        self.probed_only.set(bool(prefs.get('probed_only', False)))
+        self.exclude_compromised.set(bool(prefs.get('exclude_compromised', False)))
+        self.shares_filter.set(bool(prefs.get('shares_filter', self.shares_filter.get())))
+
+    def _persist_filter_preferences(self) -> None:
+        """Persist current filter selections to settings."""
+        if not self.settings_manager:
+            return
+        prefs = {
+            'favorites_only': bool(self.favorites_only.get()),
+            'exclude_avoid': bool(self.exclude_avoid.get()),
+            'probed_only': bool(self.probed_only.get()),
+            'exclude_compromised': bool(self.exclude_compromised.get()),
+            'shares_filter': bool(self.shares_filter.get()),
+        }
+        self.settings_manager.set_setting('windows.server_list.last_filters', prefs)
 
     def _refresh_data(self) -> None:
         """Refresh data from database."""
