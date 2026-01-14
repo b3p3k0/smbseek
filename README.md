@@ -101,7 +101,7 @@ sudo pacman -S tk smbclient python-virtualenv python-pip
 1. **Clone the repository:**
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/b3p3k0/smbseek
 cd smbseek
 ```
 
