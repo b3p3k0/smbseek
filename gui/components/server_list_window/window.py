@@ -926,6 +926,7 @@ class ServerListWindow:
             theme=self.theme,
             settings_manager=self.settings_manager,
             config_path=config_path,
+            config_editor_callback=self._open_config_editor,
             mode="on-demand",
             target_count=len(targets)
         ).show()
@@ -1003,6 +1004,21 @@ class ServerListWindow:
         target = self._server_data_to_target(server_data)
         if target:
             self._launch_browse_workflow(target)
+
+    def _open_config_editor(self, config_path: str) -> None:
+        """Open configuration editor window."""
+        try:
+            from gui.components.config_editor_window import open_config_editor_window
+        except ImportError:
+            try:
+                from components.config_editor_window import open_config_editor_window
+            except Exception as exc:
+                messagebox.showerror("Configuration Editor Error", f"Unable to load config editor: {exc}", parent=self.window)
+                return
+        try:
+            open_config_editor_window(self.window, config_path)
+        except Exception as exc:
+            messagebox.showerror("Configuration Editor Error", f"Failed to open configuration editor:\n{exc}", parent=self.window)
 
     # _prompt_extract_batch_settings removed - replaced by BatchExtractSettingsDialog
 

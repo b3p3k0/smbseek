@@ -700,6 +700,7 @@ def _open_extract_dialog(
         theme=theme,
         settings_manager=settings_manager,
         config_path=config_path,
+        config_editor_callback=(lambda path: _open_config_editor(parent_window, path)),
         mode="on-demand",
         target_count=1
     ).show()
@@ -884,3 +885,19 @@ def _derive_credentials(auth_method: Optional[str]) -> Tuple[str, str]:
     if "guest/guest" in method:
         return "guest", "guest"
     return "guest", ""
+
+
+def _open_config_editor(parent_window: tk.Toplevel, config_path: str) -> None:
+    """Open configuration editor window from details context."""
+    try:
+        from gui.components.config_editor_window import open_config_editor_window
+    except ImportError:
+        try:
+            from components.config_editor_window import open_config_editor_window
+        except Exception as exc:
+            messagebox.showerror("Configuration Editor Error", f"Unable to load config editor: {exc}", parent=parent_window)
+            return
+    try:
+        open_config_editor_window(parent_window, config_path)
+    except Exception as exc:
+        messagebox.showerror("Configuration Editor Error", f"Failed to open configuration editor:\n{exc}", parent=parent_window)

@@ -353,11 +353,21 @@ class BatchExtractSettingsDialog:
             denied_text.insert("1.0", "No restrictions")
         denied_text.config(state="disabled")
 
-        # Close button
-        close_button = tk.Button(main_frame, text="Close", command=table_dialog.destroy)
+        # Action buttons
+        btn_frame = tk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=10)
+
+        if self.config_editor_callback and self.config_path:
+            edit_btn = tk.Button(btn_frame, text="⚙ Edit Configuration",
+                                 command=lambda: self.config_editor_callback(str(self.config_path)))
+            if self.theme:
+                self.theme.apply_to_widget(edit_btn, "button_secondary")
+            edit_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+        close_button = tk.Button(btn_frame, text="Close", command=table_dialog.destroy)
         if self.theme:
             self.theme.apply_to_widget(close_button, "button_primary")
-        close_button.pack(pady=10)
+        close_button.pack(side=tk.RIGHT)
 
     def _open_config_editor(self):
         """Open configuration editor."""
