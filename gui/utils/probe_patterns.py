@@ -31,7 +31,6 @@ def load_ransomware_indicators(config_path: Optional[str]) -> List[str]:
     if not indicators and config_path:
         try:
             config_data = json.loads(Path(config_path).read_text(encoding="utf-8"))
-            # Honor external file path if present
             path = (config_data.get("security", {}) or {}).get("ransomware_indicators_path")
             if path:
                 try:
@@ -41,8 +40,6 @@ def load_ransomware_indicators(config_path: Optional[str]) -> List[str]:
                         indicators = parsed
                 except Exception:
                     pass
-            if not indicators:
-                indicators = config_data.get("security", {}).get("ransomware_indicators", []) or []
         except Exception:
             indicators = []
 
