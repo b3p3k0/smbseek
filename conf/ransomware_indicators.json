@@ -1,7 +1,11 @@
-[
+[ 
   "!want_to_cry.txt",
-  "*.want_to_cry",
+  ".want_to_cry",
+  "RECOVERY.txt",
   "0XXX_DECRYPTION_README.TXT",
+  "*.0xxx",
+  "filesrec.dat",
+  "Readme (Restore).lnk",
   "HOW_TO_DECRYPT_FILES.txt",
   "DECRYPT_INSTRUCTIONS.txt",
   "_DECRYPT_INFO_.html",
