@@ -112,17 +112,10 @@ class SMBSeekConfig:
                 "download_chunk_mb": 4,
                 "quarantine_root": "~/.smbseek/quarantine"
             },
-            "security": {
-                "ransomware_indicators": [
-                    "!want_to_cry.txt",
-                    "0XXX_DECRYPTION_README.TXT",
-                    "HOW_TO_DECRYPT_FILES.txt",
-                    "DECRYPT_INSTRUCTIONS.txt",
-                    "_DECRYPT_INFO_.txt",
-                    "README_FOR_DECRYPT.txt"
-                ],
-                "exclusion_file": "conf/exclusion_list.txt"
-            },
+                "security": {
+                    "ransomware_indicators_path": "conf/ransomware_indicators.json",
+                    "exclusion_file": "conf/exclusion_list.txt"
+                },
             "database": {
                 "path": "smbseek.db",
                 "backup_enabled": True,
@@ -241,8 +234,34 @@ class SMBSeekConfig:
         return self.get("security", "exclusion_file", "conf/exclusion_list.txt")
     
     def get_ransomware_indicators(self) -> list:
-        """Get list of ransomware indicator patterns."""
-        return self.get("security", "ransomware_indicators", [])
+        """
+        Get ransomware indicator patterns.
+
+        Order of precedence:
+        1) External file at security.ransomware_indicators_path (if present)
+        2) Legacy inline list (security.ransomware_indicators) for backward compatibility
+        3) Empty list if neither is available
+        """
+        # Preferred: external file
+        path = self.get("security", "ransomware_indicators_path", "")
+        if path:
+            from pathlib import Path
+            try:
+                data = Path(path).expanduser().read_text(encoding="utf-8")
+                parsed = json.loads(data)
+                if isinstance(parsed, list):
+                    return [s for s in parsed if isinstance(s, str) and s.strip()]
+            except FileNotFoundError:
+                print("⚠ Ransomware patterns not found; pull the latest from the repo.")
+            except Exception:
+                print("⚠ Failed to load ransomware patterns file; falling back to defaults.")
+
+        # Legacy inline fallback
+        inline = self.get("security", "ransomware_indicators", [])
+        if inline:
+            return inline
+
+        return []
     
     def get_connection_timeout(self) -> int:
         """Get SMB connection timeout."""

@@ -44,6 +44,7 @@
     "ransomware_indicators": [
       "!want_to_cry.txt",
       "*.want_to_cry",
+      "RECOVERY.txt",
       "0XXX_DECRYPTION_README.TXT",
       "*.0xxx",
       "filesrec.dat",

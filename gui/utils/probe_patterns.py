@@ -19,11 +19,11 @@ def load_ransomware_indicators(config_path: Optional[str]) -> List[str]:
     """Return ransomware indicator filenames from SMBSeek config (with defaults)."""
     indicators: List[str] = []
 
-    # Preferred path: use SMBSeekConfig to merge user config with defaults
+    # Preferred path: use SMBSeekConfig to honor external indicator file + legacy fallback
     if SMBSeekConfig:
         try:
             cfg = SMBSeekConfig(config_path)
-            indicators = cfg.get("security", "ransomware_indicators", []) or []
+            indicators = cfg.get_ransomware_indicators() or []
         except Exception:
             indicators = []
 
@@ -31,7 +31,18 @@ def load_ransomware_indicators(config_path: Optional[str]) -> List[str]:
     if not indicators and config_path:
         try:
             config_data = json.loads(Path(config_path).read_text(encoding="utf-8"))
-            indicators = config_data.get("security", {}).get("ransomware_indicators", []) or []
+            # Honor external file path if present
+            path = (config_data.get("security", {}) or {}).get("ransomware_indicators_path")
+            if path:
+                try:
+                    data = Path(path).expanduser().read_text(encoding="utf-8")
+                    parsed = json.loads(data)
+                    if isinstance(parsed, list):
+                        indicators = parsed
+                except Exception:
+                    pass
+            if not indicators:
+                indicators = config_data.get("security", {}).get("ransomware_indicators", []) or []
         except Exception:
             indicators = []
 
