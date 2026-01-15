@@ -258,6 +258,7 @@ class FileBrowserWindow:
         self.navigator.cancel()
         self._disconnect()
         self.window.destroy()
+        self.window = None
 
     # --- Thread wrappers ----------------------------------------------
 
@@ -317,12 +318,12 @@ class FileBrowserWindow:
             try:
                 self._ensure_connected()
                 result = self.navigator.list_dir(path)
-                self.window.after(0, self._populate_entries, result, path)
+                self._safe_after(0, lambda: self._populate_entries(result, path))
             except Exception as e:
-                self.window.after(0, lambda err=e: self._set_status(f"Error: {err}"))
-                self.window.after(0, lambda err=e: messagebox.showerror("Browse error", str(err), parent=self.window))
+                self._safe_after(0, lambda err=e: self._set_status(f"Error: {err}"))
+                self._safe_after(0, lambda err=e: messagebox.showerror("Browse error", str(err), parent=self.window) if self._window_alive() else None)
             finally:
-                self.window.after(0, lambda: self._set_busy(False))
+                self._safe_after(0, lambda: self._set_busy(False))
 
         self.list_thread = threading.Thread(target=worker, daemon=True)
         self.list_thread.start()
@@ -347,7 +348,7 @@ class FileBrowserWindow:
                 errors: List[Tuple[str, str]] = []
 
                 for remote_path in files_to_download:
-                    self.window.after(0, lambda rp=remote_path, c=completed, t=total: self._set_status(f"Downloading {rp} ({c+1}/{t})"))
+                    self._safe_after(0, lambda rp=remote_path, c=completed, t=total: self._set_status(f"Downloading {rp} ({c+1}/{t})"))
                     try:
                         result = self.navigator.download_file(remote_path, dest_dir, preserve_structure=True)
                         try:
@@ -364,18 +365,18 @@ class FileBrowserWindow:
                 total_errors = len(errors) + len(expand_errors)
                 if total_errors:
                     summary_msg += f" ({total_errors} failed)"
-                self.window.after(0, lambda: self._set_status(summary_msg))
+                self._safe_after(0, lambda: self._set_status(summary_msg))
                 if total_errors:
                     combined = errors + expand_errors
                     err_text = "\n".join(f"{p}: {err}" for p, err in combined[:5])
-                    self.window.after(0, lambda: messagebox.showwarning("Download issues", err_text, parent=self.window))
+                    self._safe_after(0, lambda: messagebox.showwarning("Download issues", err_text, parent=self.window) if self._window_alive() else None)
                 else:
-                    self.window.after(0, lambda: messagebox.showinfo("Download complete", summary_msg, parent=self.window))
+                    self._safe_after(0, lambda: messagebox.showinfo("Download complete", summary_msg, parent=self.window) if self._window_alive() else None)
             except Exception as e:
-                self.window.after(0, lambda err=e: self._set_status(f"Download failed: {err}"))
-                self.window.after(0, lambda err=e: messagebox.showerror("Download failed", str(err), parent=self.window))
+                self._safe_after(0, lambda err=e: self._set_status(f"Download failed: {err}"))
+                self._safe_after(0, lambda err=e: messagebox.showerror("Download failed", str(err), parent=self.window) if self._window_alive() else None)
             finally:
-                self.window.after(0, lambda: self._set_busy(False))
+                self._safe_after(0, lambda: self._set_busy(False))
 
         self.download_thread = threading.Thread(target=worker, daemon=True)
         self.download_thread.start()
@@ -482,11 +483,24 @@ class FileBrowserWindow:
         self.busy = busy
         state = tk.DISABLED if busy else tk.NORMAL
         for btn in (self.btn_up, self.btn_refresh, self.btn_download):
-            btn.configure(state=state)
-        self.btn_cancel.configure(state=tk.NORMAL if busy else tk.DISABLED)
+            if btn and btn.winfo_exists():
+                btn.configure(state=state)
+        if self.btn_cancel and self.btn_cancel.winfo_exists():
+            self.btn_cancel.configure(state=tk.NORMAL if busy else tk.DISABLED)
 
     def _set_status(self, text: str) -> None:
         self.status_var.set(text)
+
+    def _window_alive(self) -> bool:
+        return bool(self.window and self.window.winfo_exists())
+
+    def _safe_after(self, delay_ms: int, callback) -> None:
+        if not self._window_alive():
+            return
+        try:
+            self.window.after(delay_ms, callback)
+        except Exception:
+            pass
 
     # --- Path helpers --------------------------------------------------
 
