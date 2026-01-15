@@ -178,12 +178,17 @@ def _probe_share(
     conn = _connect(ip_address, timeout_seconds)
     try:
         conn.login(username, password)
-        directories = _list_entries(conn, share_name, pattern="*")
+        root_entries = _list_entries(conn, share_name, pattern="*")
         dir_entries = [
-            entry for entry in directories
+            entry for entry in root_entries
             if entry["is_directory"] and entry["name"] not in (".", "..")
         ]
+        root_files = [
+            entry for entry in root_entries
+            if (not entry["is_directory"]) and entry["name"] not in (".", "..")
+        ]
         selected_dirs = dir_entries[:max_directories]
+        root_files_selected = root_files[:max_files]
 
         directory_payload = []
         for dir_entry in selected_dirs:
@@ -203,6 +208,8 @@ def _probe_share(
 
         return {
             "share": share_name,
+            "root_files": [f["name"] for f in root_files_selected],
+            "root_files_truncated": len(root_files) > max_files,
             "directories": directory_payload,
             "directories_truncated": len(dir_entries) > max_directories
         }

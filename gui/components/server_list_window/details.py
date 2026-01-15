@@ -325,9 +325,16 @@ def _format_probe_section(probe_result: Optional[Dict[str, Any]]) -> str:
         for share in shares:
             share_name = share.get("share", "Unknown Share")
             lines.append(f"   Share: {share_name}")
+            root_files = share.get("root_files", [])
+            if root_files:
+                for file_name in root_files[:10]:
+                    lines.append(f"      • {file_name}")
+                if share.get("root_files_truncated"):
+                    lines.append("      … additional root files not shown")
             directories = share.get("directories", [])
             if not directories:
-                lines.append("      (no directories returned)")
+                if not root_files:
+                    lines.append("      (no directories returned)")
             for directory in directories:
                 dir_name = directory.get("name", "")
                 lines.append(f"      📁 {dir_name}/")

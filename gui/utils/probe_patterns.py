@@ -113,6 +113,10 @@ def _iter_snapshot_paths(snapshot: Dict[str, Any]) -> Iterable[Tuple[str, str]]:
         share_name = share.get("share") or "share"
         share_path = f"//{ip}/{share_name}"
         yield ("share", share_path)
+        for file_name in share.get("root_files") or []:
+            if not file_name:
+                continue
+            yield ("file", f"{share_path}/{file_name}")
         directories = share.get("directories") or []
         for directory in directories:
             dir_name = directory.get("name")
