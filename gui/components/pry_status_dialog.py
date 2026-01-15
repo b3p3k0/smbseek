@@ -19,14 +19,17 @@ class BatchStatusDialog:
         title: str,
         fields: Dict[str, str],
         on_cancel: Callable[[], None],
+        total: Optional[int] = None,
     ):
         self.parent = parent
         self.theme = theme
         self.on_cancel = on_cancel
+        self.total = total
 
         self.window = tk.Toplevel(parent)
         self.window.title(title)
         self.window.transient(parent)
+        self.window.resizable(False, False)
 
         if self.theme:
             self.theme.apply_to_widget(self.window, "main_window")
@@ -34,7 +37,8 @@ class BatchStatusDialog:
         # Dynamic fields
         self.field_vars = {k: tk.StringVar(value=v or "-") for k, v in fields.items()}
         self.status_var = tk.StringVar(value="Running")
-        self.progress_var = tk.StringVar(value="0/?")
+        total_display = total if total and total > 0 else "?"
+        self.progress_var = tk.StringVar(value=f"0/{total_display}")
         self.last_event_var = tk.StringVar(value="Starting…")
 
         self._cancel_button: Optional[tk.Button] = None
@@ -69,7 +73,7 @@ class BatchStatusDialog:
         event_frame = tk.Frame(main)
         event_frame.pack(fill=tk.X, pady=(8, 4))
         tk.Label(event_frame, text="Last event", anchor="w").pack(side=tk.TOP, anchor="w")
-        ttk.Label(event_frame, textvariable=self.last_event_var, wraplength=420, justify="left").pack(
+        ttk.Label(event_frame, textvariable=self.last_event_var, wraplength=420, justify="left", width=70).pack(
             side=tk.TOP, anchor="w", fill=tk.X, expand=True
         )
 
@@ -112,15 +116,16 @@ class BatchStatusDialog:
         self.window = None
 
     def update_progress(self, done: int, total: Optional[int], message: Optional[str] = None) -> None:
-        total_display = total if total and total > 0 else "?"
+        total_val = total if total and total > 0 else self.total
+        total_display = total_val if total_val and total_val > 0 else "?"
         self.progress_var.set(f"{done}/{total_display}")
         if message:
-            self.last_event_var.set(message)
+            self.last_event_var.set(_truncate_message(message))
 
     def mark_finished(self, status: str, notes: str) -> None:
         self.status_var.set(status.title())
         if notes:
-            self.last_event_var.set(notes)
+            self.last_event_var.set(_truncate_message(notes))
         if self._cancel_button:
             self._cancel_button.configure(state=tk.DISABLED)
         if self._hide_button:
@@ -130,6 +135,15 @@ class BatchStatusDialog:
         if not self.window:
             return False
         return bool(self.window.state() != "withdrawn")
+
+
+def _truncate_message(msg: str, max_len: int = 200) -> str:
+    if not msg:
+        return msg
+    msg = msg.strip()
+    if len(msg) <= max_len:
+        return msg
+    return msg[: max_len - 1] + "…"
 
 
 __all__ = ["BatchStatusDialog"]

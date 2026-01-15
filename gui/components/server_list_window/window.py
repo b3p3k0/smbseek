@@ -1132,6 +1132,7 @@ class ServerListWindow:
                     "Wordlist": Path(options.get("wordlist_path", "")).name if options.get("wordlist_path") else "-",
                 },
                 cancel_event,
+                total=len(targets),
             )
             job_record["dialog"] = dialog
         elif job_type == "probe":
@@ -1144,6 +1145,7 @@ class ServerListWindow:
                     "Max files/dir": str(options.get("limits", {}).get("max_files", "")),
                 },
                 cancel_event,
+                total=len(targets),
             )
             job_record["dialog"] = dialog
         elif job_type == "extract":
@@ -1156,6 +1158,7 @@ class ServerListWindow:
                     "Max size MB": str(options.get("max_total_size_mb", "")),
                 },
                 cancel_event,
+                total=len(targets),
             )
             job_record["dialog"] = dialog
 
@@ -1612,14 +1615,15 @@ class ServerListWindow:
                     self.batch_status_dialog = dlg
                     break
 
-    def _init_batch_status_dialog(self, job_type: str, fields: Dict[str, str], cancel_event: threading.Event) -> BatchStatusDialog:
+    def _init_batch_status_dialog(self, job_type: str, fields: Dict[str, str], cancel_event: threading.Event, total: Optional[int] = None) -> BatchStatusDialog:
         """Create a fresh batch status dialog for the active run."""
         dialog = BatchStatusDialog(
             parent=self.window,
             theme=self.theme,
             title=f"{job_type.title()} Status",
             fields=fields,
-            on_cancel=lambda: cancel_event.set()
+            on_cancel=lambda: cancel_event.set(),
+            total=total
         )
         self.batch_status_dialog = dialog  # keep latest for quick reopen
         self._set_pry_status_button_visible(True)
