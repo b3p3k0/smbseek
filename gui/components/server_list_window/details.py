@@ -179,7 +179,8 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
             auth_method=server_data.get("auth_method", ""),
             config_path=config_path,
             db_reader=None,
-            theme=theme
+            theme=theme,
+            settings_manager=settings_manager
         )
 
     browse_button = tk.Button(

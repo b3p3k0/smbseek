@@ -115,6 +115,9 @@ class SettingsManager:
                 'max_files_per_target': 10,
                 'batch_max_workers': 2
             },
+            'file_browser': {
+                'folder_limits': {}
+            },
             'templates': {
                 'last_used': None
             },

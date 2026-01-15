@@ -60,6 +60,7 @@ class FileBrowserWindow:
         config_path: Optional[str],
         db_reader: Optional[DatabaseReader] = None,
         theme=None,
+        settings_manager=None,
         share_credentials: Optional[Dict[str, Dict[str, str]]] = None,
     ) -> None:
         self.parent = parent
@@ -69,6 +70,7 @@ class FileBrowserWindow:
         self.db_reader = db_reader
         self.theme = theme
         self.config = _load_file_browser_config(config_path)
+        self.settings_manager = settings_manager
         self.share_credentials = share_credentials or {}
 
         creds = detail_helpers._derive_credentials(self.auth_method)
@@ -268,7 +270,7 @@ class FileBrowserWindow:
         dlg.transient(self.window)
         dlg.grab_set()
 
-        defaults = self.folder_defaults or {}
+        defaults = self._load_folder_limit_defaults()
         max_depth_var = tk.IntVar(value=int(defaults.get("max_depth", 5)))
         max_files_var = tk.IntVar(value=int(defaults.get("max_files", 200)))
         max_total_mb_var = tk.IntVar(value=int(defaults.get("max_total_mb", 500)))
@@ -296,6 +298,7 @@ class FileBrowserWindow:
             except Exception:
                 messagebox.showerror("Invalid input", "Please enter numeric limits.", parent=dlg)
                 return
+            self._persist_folder_limit_defaults(limits)
             dlg.destroy()
 
         def on_cancel():
@@ -499,6 +502,29 @@ class FileBrowserWindow:
             return
         try:
             self.window.after(delay_ms, callback)
+        except Exception:
+            pass
+
+    def _load_folder_limit_defaults(self) -> Dict[str, int]:
+        """
+        Load folder download limits, preferring user settings over config defaults.
+        """
+        defaults = self.folder_defaults or {}
+        if self.settings_manager:
+            try:
+                saved = self.settings_manager.get_setting('file_browser.folder_limits', {}) or {}
+                # Merge saved over defaults
+                defaults = {**defaults, **saved}
+            except Exception:
+                pass
+        return defaults
+
+    def _persist_folder_limit_defaults(self, limits: Dict[str, int]) -> None:
+        """Persist folder download limits to settings."""
+        if not self.settings_manager:
+            return
+        try:
+            self.settings_manager.set_setting('file_browser.folder_limits', limits)
         except Exception:
             pass
 

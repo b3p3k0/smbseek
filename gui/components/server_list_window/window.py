@@ -987,6 +987,7 @@ class ServerListWindow:
             config_path=config_path,
             db_reader=self.db_reader,
             theme=self.theme,
+            settings_manager=self.settings_manager,
             share_credentials=share_creds,
         )
 
