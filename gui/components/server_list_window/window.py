@@ -2144,10 +2144,10 @@ class ServerListWindow:
 
     def _close_window(self) -> None:
         """Close the server list window."""
-        if self._is_batch_active():
-            self._stop_all_jobs()
-        self._destroy_batch_status_dialog()
-        self.window.destroy()
+        # Do not stop active jobs or destroy child dialogs; simply hide this window
+        # so background tasks and pop-outs can continue running.
+        if self.window and self.window.winfo_exists():
+            self.window.withdraw()
 
     # Public API methods for external compatibility
     def apply_recent_discoveries_filter(self) -> None:
