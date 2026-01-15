@@ -569,8 +569,6 @@ class SMBSeekWorkflowDatabase:
             delete_query = "DELETE FROM share_access WHERE server_id = ?"
             try:
                 self.db_manager.execute_query(delete_query, (server_id,))
-                if hasattr(self, '_verbose') and self._verbose:
-                    print(f"Cleared existing share data for {ip_address} before inserting new results")
             except Exception as e:
                 error_msg = f"⚠ Warning: Failed to clear existing shares for {ip_address}: {e}"
                 if hasattr(self, '_verbose') and self._verbose:
@@ -602,8 +600,7 @@ class SMBSeekWorkflowDatabase:
                             print(error_msg)
                         continue
             
-            if hasattr(self, '_verbose') and self._verbose:
-                print(f"Stored {stored_shares} share records for {ip_address} in session {session_id}")
+            # Previously logged stored share count here when verbose; suppressed to reduce noise.
             
             return True
             
