@@ -99,22 +99,6 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
         "running": False
     }
 
-    probe_button = tk.Button(
-        button_frame,
-        text="Probe",
-        command=lambda: _invoke_callback_or_warn(probe_callback, server_data, detail_window, "Probe")
-    )
-    theme.apply_to_widget(probe_button, "button_secondary")
-    probe_button.pack(side=tk.LEFT, padx=(0, 10))
-
-    extract_button = tk.Button(
-        button_frame,
-        text="Extract",
-        command=lambda: _invoke_callback_or_warn(extract_callback, server_data, detail_window, "Extract")
-    )
-    theme.apply_to_widget(extract_button, "button_secondary")
-    extract_button.pack(side=tk.LEFT, padx=(0, 10))
-
     # Notes editor
     notes_frame = tk.Frame(detail_window)
     notes_frame.pack(fill=tk.X, padx=10, pady=(5, 5))
@@ -182,14 +166,6 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
             theme=theme,
             settings_manager=settings_manager
         )
-
-    browse_button = tk.Button(
-        button_frame,
-        text="Browse Selected",
-        command=lambda: _invoke_callback_or_warn(browse_callback, server_data, detail_window, "Browse")
-    )
-    theme.apply_to_widget(browse_button, "button_secondary")
-    browse_button.pack(side=tk.LEFT, padx=(0, 10))
 
     # Close button
     close_button = tk.Button(
