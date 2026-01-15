@@ -488,7 +488,7 @@ This software is provided for educational and authorized defensive security purp
 
 ### Attribution
 
-- **Pry password audit logic** inspired by [mmcbrute](https://github.com/giMini/mmcbrute) (BSD-3-Clause)
+- **Pry password audit logic** derived from [mmcbrute](https://github.com/giMini/mmcbrute) (BSD-3-Clause)
 - **Default wordlists** from [SecLists](https://github.com/danielmiessler/SecLists) (MIT)
 
 See individual license files in `licenses/` directory:
