@@ -106,6 +106,10 @@ class ServerListWindow:
         self.date_filter = tk.StringVar(value="All")
         self.shares_filter = tk.BooleanVar(value=True)  # Default checked to hide zero-share servers
 
+        # Country filter state
+        self.country_listbox = None
+        self.country_code_list = []
+
         # UI components
         self.count_label = None
         self.selection_label = None
@@ -294,6 +298,7 @@ class ServerListWindow:
             'on_exclude_avoid_changed': self._apply_filters,
             'on_probed_only_changed': self._apply_filters,
             'on_exclude_compromised_changed': self._apply_filters,
+            'on_country_filter_changed': self._apply_filters,
             'on_clear_search': self._clear_search,
             'on_reset_filters': self._reset_filters
         }
@@ -313,6 +318,14 @@ class ServerListWindow:
                 self.filter_widgets['favorites_checkbox'].configure(state="disabled")
             if 'exclude_avoid_checkbox' in self.filter_widgets:
                 self.filter_widgets['exclude_avoid_checkbox'].configure(state="disabled")
+
+        # Extract country listbox reference and populate it
+        if 'country_listbox' in self.filter_widgets:
+            self.country_listbox = self.filter_widgets['country_listbox']
+            # Populate country filter with codes from database
+            self._populate_country_filter()
+            # Restore saved country filter selections from settings
+            self._restore_country_filter_selections()
 
         # Pack filter frame (shown/hidden based on mode)
         self._update_mode_display()
@@ -536,6 +549,11 @@ class ServerListWindow:
         if search_term:
             filtered = filters.apply_search_filter(filtered, search_term)
 
+        # Apply country filter
+        selected_codes = self._get_selected_country_codes()
+        if selected_codes:
+            filtered = filters.apply_country_filter(filtered, selected_codes)
+
         # Apply date filter
         date_filter_value = self.date_filter.get()
         if date_filter_value and date_filter_value != "All":
@@ -615,6 +633,11 @@ class ServerListWindow:
 
             # Reset sort state for fresh dataset
             self._reset_sort_state()
+
+            # Repopulate country filter with fresh data
+            # This handles new scans or deletions that change available countries
+            # Note: _populate_country_filter preserves current selections
+            self._populate_country_filter()
 
             # Apply initial filters and display data
             self._apply_filters()
@@ -2264,6 +2287,86 @@ class ServerListWindow:
         self.search_text.set("")
         self._apply_filters()
 
+    def _populate_country_filter(self) -> None:
+        """
+        Populate country filter listbox with distinct country codes from database.
+
+        Note: Sorting is done by country code BEFORE adding display text "(count)",
+        ensuring alphabetical ordering by code, not by the full display string.
+        """
+        if not self.country_listbox:
+            return
+
+        # Save current selections before repopulating (for data refresh scenario)
+        saved_selections = self._get_selected_country_codes() if hasattr(self, 'country_code_list') else []
+
+        # Clear existing items
+        self.country_listbox.delete(0, tk.END)
+        self.country_code_list = []  # Reset mapping
+
+        if not self.db_reader:
+            return
+
+        # Get country breakdown (returns dict of code -> count)
+        country_breakdown = self.db_reader.get_country_breakdown()
+
+        if not country_breakdown:
+            return  # Empty database
+
+        # Sort alphabetically by country code (BEFORE adding display text)
+        sorted_countries = sorted(country_breakdown.items())
+
+        # Populate listbox with "CODE (count)" format
+        for code, count in sorted_countries:
+            display_text = f"{code} ({count})"
+            self.country_listbox.insert(tk.END, display_text)
+            self.country_code_list.append(code)  # Store code separately for filter logic
+
+        # Restore selections after repopulation (handles data refresh)
+        if saved_selections:
+            for i, code in enumerate(self.country_code_list):
+                if code in saved_selections:
+                    self.country_listbox.selection_set(i)
+
+    def _restore_country_filter_selections(self) -> None:
+        """
+        Restore country filter selections from persisted preferences.
+
+        Must be called AFTER _populate_country_filter() so the listbox has items.
+        Silently skips any saved codes that no longer exist in the database.
+        """
+        if not self.settings_manager or not self.country_listbox:
+            return
+
+        if not hasattr(self, 'country_code_list') or not self.country_code_list:
+            return  # List not yet populated
+
+        prefs = self.settings_manager.get_setting('windows.server_list.last_filters', {}) or {}
+        saved_codes = prefs.get('country_codes', [])
+
+        if not saved_codes:
+            return  # Nothing to restore
+
+        # Restore selections (silently skip missing codes)
+        for i, code in enumerate(self.country_code_list):
+            if code in saved_codes:
+                self.country_listbox.selection_set(i)
+
+    def _get_selected_country_codes(self) -> List[str]:
+        """
+        Get list of selected country codes from listbox.
+
+        Returns empty list if listbox not yet populated (safe for early _apply_filters calls).
+        """
+        if not self.country_listbox or not hasattr(self, 'country_code_list'):
+            return []  # Not yet populated, no filter applied
+
+        if not self.country_code_list:
+            return []  # Empty list, no filter applied
+
+        selected_indices = self.country_listbox.curselection()
+        return [self.country_code_list[idx] for idx in selected_indices]
+
     def _toggle_show_all_results(self) -> None:
         """Toggle between showing recent results and all results."""
         if self.date_filter.get() == "Since Last Scan":
@@ -2289,6 +2392,11 @@ class ServerListWindow:
         self.exclude_avoid.set(False)
         self.probed_only.set(False)
         self.exclude_compromised.set(False)
+
+        # Clear country filter selection
+        if self.country_listbox:
+            self.country_listbox.selection_clear(0, tk.END)
+
         self._apply_filters()
 
     def _load_filter_preferences(self) -> None:
@@ -2312,6 +2420,7 @@ class ServerListWindow:
             'probed_only': bool(self.probed_only.get()),
             'exclude_compromised': bool(self.exclude_compromised.get()),
             'shares_filter': bool(self.shares_filter.get()),
+            'country_codes': self._get_selected_country_codes(),
         }
         self.settings_manager.set_setting('windows.server_list.last_filters', prefs)
 

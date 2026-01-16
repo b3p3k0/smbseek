@@ -145,6 +145,42 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
     date_combo.pack()
     date_combo.bind("<<ComboboxSelected>>", lambda e: callbacks['on_date_filter_changed']())
 
+    # Country filter
+    country_frame = tk.Frame(advanced_filters_frame)
+    theme.apply_to_widget(country_frame, "card")
+    country_frame.pack(side=tk.LEFT, padx=10, pady=5)
+
+    country_label = theme.create_styled_label(
+        country_frame,
+        "Countries (2-letter):",
+        "small"
+    )
+    country_label.pack()
+
+    # Create scrollbar and listbox container
+    country_list_container = tk.Frame(country_frame)
+    country_list_container.pack()
+
+    country_scrollbar = tk.Scrollbar(country_list_container)
+    country_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    country_listbox = tk.Listbox(
+        country_list_container,
+        height=4,
+        width=15,
+        selectmode=tk.MULTIPLE,
+        exportselection=False,  # Preserve selection when focus changes
+        yscrollcommand=country_scrollbar.set
+    )
+    country_listbox.pack(side=tk.LEFT)
+    country_scrollbar.config(command=country_listbox.yview)
+
+    # Bind to callback
+    country_listbox.bind('<<ListboxSelect>>', lambda e: callbacks['on_country_filter_changed']())
+
+    # Apply theme
+    theme.apply_to_widget(country_listbox, "listbox")
+
     # Reset filters button
     reset_button = tk.Button(
         advanced_filters_frame,
@@ -164,6 +200,7 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
         'exclude_avoid_checkbox': exclude_avoid_checkbox,
         'probed_only_checkbox': probed_only_checkbox,
         'exclude_compromised_checkbox': exclude_compromised_checkbox,
+        'country_listbox': country_listbox,
     }
 
     if show_all_button:
@@ -324,6 +361,28 @@ def apply_exclude_compromised_filter(servers: List[Dict[str, Any]], exclude_comp
         return bool(server.get("indicator_matches", 0) > 0)
 
     return [server for server in servers if not _is_compromised(server)]
+
+
+def apply_country_filter(servers: List[Dict[str, Any]], selected_codes: List[str]) -> List[Dict[str, Any]]:
+    """
+    Filter servers by selected country codes.
+
+    Args:
+        servers: List of server dictionaries
+        selected_codes: List of selected 2-letter country codes (e.g., ["US", "GB"])
+
+    Returns:
+        Filtered list of servers matching selected countries
+    """
+    if not selected_codes:
+        return servers  # No selection = no filter
+
+    # Case-insensitive matching
+    selected_codes_upper = [code.upper() for code in selected_codes]
+    return [
+        server for server in servers
+        if server.get("country_code", "").upper() in selected_codes_upper
+    ]
 
 
 def update_mode_display(advanced_filters_frame, is_advanced_mode: bool):
