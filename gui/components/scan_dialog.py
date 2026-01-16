@@ -98,7 +98,7 @@ class ScanDialog:
         self.country_entry = None
         self.custom_filters_var = tk.StringVar()
         self.custom_filters_entry = None
-        self.query_preview_label = None
+        self.extension_count_label = None
         self.template_var = tk.StringVar()
         self.template_dropdown = None
         self._template_label_to_slug: Dict[str, str] = {}
@@ -155,7 +155,7 @@ class ScanDialog:
         """Create the scan configuration dialog."""
         self.dialog = tk.Toplevel(self.parent)
         self.dialog.title("Start New Scan")
-        width, height = 1265, 1185
+        width, height = 1300, 1185
         self.dialog.geometry(f"{width}x{height}")
         self.dialog.resizable(True, True)
         
@@ -200,7 +200,6 @@ class ScanDialog:
         # Build UI inside scrollable area
         self._create_header()
         self._create_scan_options()
-        self._create_query_preview_section()
         self._create_config_section()
         self._create_button_panel()
         
@@ -1093,13 +1092,13 @@ class ScanDialog:
             denied_text = f"{denied_count} denied"
 
         # Extension count label
-        ext_label = self.theme.create_styled_label(
+        self.extension_count_label = self.theme.create_styled_label(
             container,
             f"Extensions: {allowed_text}, {denied_text}",
             "small",
             fg=self.theme.colors["text_secondary"]
         )
-        ext_label.pack(anchor="w", padx=15, pady=(5, 0))
+        self.extension_count_label.pack(anchor="w", padx=15, pady=(5, 0))
 
         # Button frame for side-by-side buttons
         button_frame = tk.Frame(container)
@@ -1115,16 +1114,6 @@ class ScanDialog:
         )
         self.theme.apply_to_widget(view_button, "button_secondary")
         view_button.pack(side=tk.LEFT, padx=(0, 5))
-
-        # Edit Configuration button
-        config_button = tk.Button(
-            button_frame,
-            text="⚙ Edit Configuration",
-            command=self._open_config_editor,
-            font=self.theme.fonts["small"]
-        )
-        self.theme.apply_to_widget(config_button, "button_secondary")
-        config_button.pack(side=tk.LEFT)
 
     def _create_concurrency_options(self, parent_frame: tk.Frame) -> None:
         """Create backend concurrency controls."""
@@ -1386,83 +1375,6 @@ class ScanDialog:
         self.theme.apply_to_widget(edit_config_button, "button_secondary")
         edit_config_button.pack(side=tk.LEFT)
 
-    def _create_query_preview_section(self) -> None:
-        """Create query preview section showing final assembled Shodan query."""
-        preview_frame = tk.Frame(self.content_frame)
-        self.theme.apply_to_widget(preview_frame, "card")
-        preview_frame.pack(fill=tk.X, padx=20, pady=(0, 5))
-
-        preview_title = self.theme.create_styled_label(
-            preview_frame,
-            "Query Preview",
-            "heading"
-        )
-        preview_title.pack(anchor="w", padx=15, pady=(10, 5))
-
-        preview_content = tk.Frame(preview_frame, relief=tk.SUNKEN, borderwidth=1)
-        self.theme.apply_to_widget(preview_content, "card")
-        preview_content.pack(fill=tk.X, padx=15, pady=(0, 10))
-
-        self.query_preview_label = tk.Label(
-            preview_content,
-            text="(Final Shodan query will appear here)",
-            font=self.theme.fonts["small"],
-            fg=self.theme.colors["text_secondary"],
-            justify="left",
-            anchor="w",
-            wraplength=1200,
-            padx=8,
-            pady=8
-        )
-        self.query_preview_label.pack(fill=tk.X)
-
-    def _update_query_preview(self, *args) -> None:
-        """Update query preview when any query-affecting field changes."""
-        if not self.query_preview_label:
-            return
-
-        try:
-            preview_query = self._build_preview_query()
-            self.query_preview_label.configure(
-                text=preview_query,
-                fg=self.theme.colors["text_primary"]
-            )
-        except Exception:
-            self.query_preview_label.configure(
-                text="(Unable to generate preview)",
-                fg=self.theme.colors["text_secondary"]
-            )
-
-    def _build_preview_query(self) -> str:
-        """Build preview of final Shodan query (simulates backend logic)."""
-        # Base query components (hardcoded - matches discover.py defaults)
-        base_query = 'smb authentication: disabled'
-        product_filter = 'product:"Samba"'
-        query_parts = [base_query, product_filter]
-
-        # Custom filters (appended verbatim)
-        custom_filters = self.custom_filters_var.get().strip()
-        if custom_filters:
-            query_parts.append(custom_filters)
-
-        # Country filter
-        country_input = self.country_var.get().strip()
-        countries, _ = self._get_all_selected_countries(country_input)
-
-        if countries:
-            if len(countries) == 1:
-                query_parts.append(f'country:{countries[0]}')
-            else:
-                country_codes = ','.join(sorted(countries))
-                query_parts.append(f'country:{country_codes}')
-
-        # Sample exclusions (simplified for preview)
-        query_parts.append('-org:"Google"')
-        query_parts.append('-org:"Amazon"')
-        query_parts.append('-"DSL"')
-
-        return ' '.join(query_parts)
-
     def _create_button_panel(self) -> None:
         """Create dialog button panel."""
         button_frame = tk.Frame(self.dialog)
@@ -1501,16 +1413,6 @@ class ScanDialog:
         
         # Country input validation
         self.country_var.trace_add("write", self._validate_country_input)
-
-        # Query preview updates
-        self.custom_filters_var.trace_add("write", self._update_query_preview)
-        self.country_var.trace_add("write", self._update_query_preview)
-        self.africa_var.trace_add("write", self._update_query_preview)
-        self.asia_var.trace_add("write", self._update_query_preview)
-        self.europe_var.trace_add("write", self._update_query_preview)
-        self.north_america_var.trace_add("write", self._update_query_preview)
-        self.oceania_var.trace_add("write", self._update_query_preview)
-        self.south_america_var.trace_add("write", self._update_query_preview)
 
         # Advanced options validation
         self.max_results_var.trace_add("write", self._validate_max_results)
@@ -1680,78 +1582,30 @@ class ScanDialog:
         """Show modal dialog with extension filter table."""
         filters = self._load_extension_filters()
 
-        # Create modal dialog
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Extension Filters")
-        dialog.geometry("600x400")
-        dialog.transient(self.root)
-        dialog.grab_set()
-        self.theme.apply_to_widget(dialog, "window")
+        # Reuse the ExtensionEditorDialog from batch_extract_dialog
+        try:
+            from batch_extract_dialog import ExtensionEditorDialog
+        except ImportError:
+            from .batch_extract_dialog import ExtensionEditorDialog
 
-        # Main container
-        main_frame = tk.Frame(dialog)
-        self.theme.apply_to_widget(main_frame, "card")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # Two-column layout (Allowed | Denied)
-        columns_frame = tk.Frame(main_frame)
-        self.theme.apply_to_widget(columns_frame, "card")
-        columns_frame.pack(fill=tk.BOTH, expand=True)
-
-        # Allowed column
-        allowed_frame = tk.Frame(columns_frame)
-        self.theme.apply_to_widget(allowed_frame, "card")
-        allowed_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
-
-        allowed_label = self.theme.create_styled_label(
-            allowed_frame,
-            "Allowed Extensions",
-            "medium"
+        editor = ExtensionEditorDialog(
+            parent=self.dialog,
+            theme=self.theme,
+            config_path=Path(self.config_path),
+            initial_included=filters["included_extensions"],
+            initial_excluded=filters["excluded_extensions"]
         )
-        allowed_label.pack(anchor="w", pady=5)
 
-        allowed_text = tk.Text(allowed_frame, height=15, width=25)
-        self.theme.apply_to_widget(allowed_text, "text")
-        allowed_text.pack(fill=tk.BOTH, expand=True)
+        result = editor.show()
 
-        allowed_list = filters["included_extensions"]
-        if allowed_list:
-            allowed_text.insert("1.0", "\n".join(allowed_list))
-        else:
-            allowed_text.insert("1.0", "None configured")
-        allowed_text.config(state="disabled")
-
-        # Denied column
-        denied_frame = tk.Frame(columns_frame)
-        self.theme.apply_to_widget(denied_frame, "card")
-        denied_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
-
-        denied_label = self.theme.create_styled_label(
-            denied_frame,
-            "Denied Extensions",
-            "medium"
-        )
-        denied_label.pack(anchor="w", pady=5)
-
-        denied_text = tk.Text(denied_frame, height=15, width=25)
-        self.theme.apply_to_widget(denied_text, "text")
-        denied_text.pack(fill=tk.BOTH, expand=True)
-
-        denied_list = filters["excluded_extensions"]
-        if denied_list:
-            denied_text.insert("1.0", "\n".join(denied_list))
-        else:
-            denied_text.insert("1.0", "No restrictions")
-        denied_text.config(state="disabled")
-
-        # Close button
-        close_button = tk.Button(
-            main_frame,
-            text="Close",
-            command=dialog.destroy
-        )
-        self.theme.apply_to_widget(close_button, "button_primary")
-        close_button.pack(pady=10)
+        # If user saved changes, update the summary label
+        if result is not None and self.extension_count_label:
+            included, excluded = result
+            allowed_count = len(included)
+            denied_count = len(excluded)
+            allowed_text = "None configured" if allowed_count == 0 else f"{allowed_count} allowed"
+            denied_text = "No restrictions" if denied_count == 0 else f"{denied_count} denied"
+            self.extension_count_label.config(text=f"Extensions: {allowed_text}, {denied_text}")
 
     def _open_config_editor(self) -> None:
         """Open configuration editor."""
@@ -2010,8 +1864,7 @@ class ScanDialog:
                 # Fall back to defaults if settings loading fails
                 pass
 
-        # Initial preview render
-        self._update_query_preview()
+        # (Query preview removed)
 
     def _persist_quick_settings(self) -> None:
         """

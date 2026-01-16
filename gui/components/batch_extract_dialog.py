@@ -320,13 +320,6 @@ class BatchExtractSettingsDialog:
             self.theme.apply_to_widget(view_button, "button_secondary")
         view_button.pack(side=tk.LEFT, padx=(0, 5))
 
-        # Edit Configuration button (only if callback provided)
-        if self.config_editor_callback:
-            config_button = tk.Button(button_frame, text="⚙ Edit Configuration", command=self._open_config_editor)
-            if self.theme:
-                self.theme.apply_to_widget(config_button, "button_secondary")
-            config_button.pack(side=tk.LEFT)
-
         row += 1
 
         # Add separator
@@ -633,7 +626,7 @@ class ExtensionEditorDialog:
         """
         self.window = tk.Toplevel(self.parent)
         self.window.title("Extension Filter Editor")
-        self.window.geometry("700x500")
+        self.window.geometry("730x620")
         self.window.transient(self.parent)
         self.window.grab_set()
 

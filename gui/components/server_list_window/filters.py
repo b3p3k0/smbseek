@@ -109,57 +109,52 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
     advanced_filters_frame = tk.Frame(filter_frame)
     theme.apply_to_widget(advanced_filters_frame, "card")
 
-    # Accessible shares filter (checkbox) - simplified filtering
-    shares_filter_frame = tk.Frame(advanced_filters_frame)
-    theme.apply_to_widget(shares_filter_frame, "card")
-    shares_filter_frame.pack(side=tk.LEFT, padx=10, pady=5)
+    # Two-column layout plus reset on the right
+    left_column = tk.Frame(advanced_filters_frame)
+    theme.apply_to_widget(left_column, "card")
+    left_column.pack(side=tk.LEFT, padx=10, pady=5)
 
+    right_column = tk.Frame(advanced_filters_frame)
+    theme.apply_to_widget(right_column, "card")
+    right_column.pack(side=tk.LEFT, padx=10, pady=5)
+
+    # Accessible shares filter (stacked above date)
     shares_filter_checkbox = tk.Checkbutton(
-        shares_filter_frame,
+        left_column,
         text="Show only servers with accessible shares > 0",
         variable=filter_vars['shares_filter'],
         command=callbacks['on_shares_filter_changed']
     )
-    shares_filter_checkbox.pack()
-
-    # Date filter
-    date_frame = tk.Frame(advanced_filters_frame)
-    theme.apply_to_widget(date_frame, "card")
-    date_frame.pack(side=tk.LEFT, padx=10, pady=5)
+    shares_filter_checkbox.pack(anchor="w", pady=(0, 2))
 
     date_label = theme.create_styled_label(
-        date_frame,
+        left_column,
         "Discovery Date:",
         "small"
     )
-    date_label.pack()
+    date_label.pack(anchor="w")
 
     date_combo = ttk.Combobox(
-        date_frame,
+        left_column,
         textvariable=filter_vars['date_filter'],
         values=["All", "Since Last Scan", "Last 24 Hours", "Last 7 Days", "Last 30 Days"],
         width=15,
         state="readonly"
     )
     date_combo.set("All")
-    date_combo.pack()
+    date_combo.pack(anchor="w")
     date_combo.bind("<<ComboboxSelected>>", lambda e: callbacks['on_date_filter_changed']())
 
-    # Country filter
-    country_frame = tk.Frame(advanced_filters_frame)
-    theme.apply_to_widget(country_frame, "card")
-    country_frame.pack(side=tk.LEFT, padx=10, pady=5)
-
+    # Country filter in second column
     country_label = theme.create_styled_label(
-        country_frame,
+        right_column,
         "Countries (2-letter):",
         "small"
     )
-    country_label.pack()
+    country_label.pack(anchor="w")
 
-    # Create scrollbar and listbox container
-    country_list_container = tk.Frame(country_frame)
-    country_list_container.pack()
+    country_list_container = tk.Frame(right_column)
+    country_list_container.pack(anchor="w")
 
     country_scrollbar = tk.Scrollbar(country_list_container)
     country_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -175,13 +170,10 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
     country_listbox.pack(side=tk.LEFT)
     country_scrollbar.config(command=country_listbox.yview)
 
-    # Bind to callback
     country_listbox.bind('<<ListboxSelect>>', lambda e: callbacks['on_country_filter_changed']())
-
-    # Apply theme
     theme.apply_to_widget(country_listbox, "listbox")
 
-    # Reset filters button
+    # Reset filters button aligned right
     reset_button = tk.Button(
         advanced_filters_frame,
         text="Reset Filters",

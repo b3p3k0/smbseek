@@ -432,13 +432,22 @@ class ServerListWindow:
         button_container.pack(side=tk.RIGHT)
 
         # Batch/quick action buttons
+        self.details_button = tk.Button(
+            button_container,
+            text="📋 View Details",
+            command=self._view_server_details
+        )
+        self.theme.apply_to_widget(self.details_button, "button_secondary")
+        self.details_button.pack(side=tk.LEFT, padx=(0, 5))
+
         self.probe_button = tk.Button(
             button_container,
             text="🔍 Probe Selected",
             command=self._on_probe_selected,
             state=tk.DISABLED
         )
-        self.theme.apply_to_widget(self.probe_button, "button_primary")
+        # Use secondary styling to match the rest of the group (avoid blue highlight)
+        self.theme.apply_to_widget(self.probe_button, "button_secondary")
         self.probe_button.pack(side=tk.LEFT, padx=(0, 5))
 
         self.extract_button = tk.Button(
@@ -459,15 +468,6 @@ class ServerListWindow:
         self.theme.apply_to_widget(self.browser_button, "button_secondary")
         self.browser_button.pack(side=tk.LEFT, padx=(0, 15))
 
-        self.delete_button = tk.Button(
-            button_container,
-            text="🗑️ Delete Selected",
-            command=self._on_delete_selected,
-            state=tk.DISABLED
-        )
-        self.theme.apply_to_widget(self.delete_button, "button_secondary")
-        self.delete_button.pack(side=tk.LEFT, padx=(0, 15))
-
         self.pry_button = tk.Button(
             button_container,
             text="🔓 Pry Selected",
@@ -476,6 +476,16 @@ class ServerListWindow:
         )
         self.theme.apply_to_widget(self.pry_button, "button_secondary")
         self.pry_button.pack(side=tk.LEFT, padx=(0, 15))
+
+        self.delete_button = tk.Button(
+            button_container,
+            text="🗑️ Delete Selected",
+            command=self._on_delete_selected,
+            state=tk.DISABLED
+        )
+        # Force a red theme to signal destructive action
+        self.theme.apply_to_widget(self.delete_button, "button_danger")
+        self.delete_button.pack(side=tk.LEFT, padx=(0, 15))
 
         self.stop_button = tk.Button(
             button_container,
@@ -492,33 +502,6 @@ class ServerListWindow:
             "activeforeground": self.stop_button.cget("activeforeground"),
             "text": self.stop_button.cget("text")
         }
-
-        # Server details button
-        self.details_button = tk.Button(
-            button_container,
-            text="📋 View Details",
-            command=self._view_server_details
-        )
-        self.theme.apply_to_widget(self.details_button, "button_secondary")
-        self.details_button.pack(side=tk.LEFT, padx=(0, 5))
-
-        # Export selected button
-        self.export_selected_button = tk.Button(
-            button_container,
-            text="📤 Export Selected",
-            command=self._export_selected_servers
-        )
-        self.theme.apply_to_widget(self.export_selected_button, "button_secondary")
-        self.export_selected_button.pack(side=tk.LEFT, padx=(0, 5))
-
-        # Export all button
-        self.export_all_button = tk.Button(
-            button_container,
-            text="📊 Export All",
-            command=self._export_all_servers
-        )
-        self.theme.apply_to_widget(self.export_all_button, "button_primary")
-        self.export_all_button.pack(side=tk.LEFT)
 
         self._update_action_buttons_state()
 
@@ -1989,14 +1972,6 @@ class ServerListWindow:
         detail_state = tk.NORMAL if has_selection else tk.DISABLED
         if self.details_button:
             self.details_button.configure(state=detail_state)
-
-        export_selected_state = tk.NORMAL if has_selection else tk.DISABLED
-        if self.export_selected_button:
-            self.export_selected_button.configure(state=export_selected_state)
-
-        export_all_state = tk.NORMAL
-        if self.export_all_button:
-            self.export_all_button.configure(state=export_all_state)
 
         self._set_pry_status_button_visible(bool(batch_active or self.batch_status_dialog))
 
