@@ -2147,7 +2147,32 @@ class ServerListWindow:
         # Do not stop active jobs or destroy child dialogs; simply hide this window
         # so background tasks and pop-outs can continue running.
         if self.window and self.window.winfo_exists():
+            # Release modal grab before hiding to prevent blocking parent window
+            try:
+                self.window.grab_release()
+            except tk.TclError:
+                pass  # Already released or widget destroyed
             self.window.withdraw()
+
+    def restore_and_focus(self) -> None:
+        """Restore hidden window and set focus. Called when reopening existing window."""
+        if self.window and self.window.winfo_exists():
+            # Release any stuck grab first
+            try:
+                self.window.grab_release()
+            except tk.TclError:
+                pass  # Already released or widget destroyed
+
+            # Show and focus
+            self.window.deiconify()
+            self.window.lift()
+            self.window.focus_force()
+
+            # Re-apply modal grab
+            try:
+                self.window.grab_set()
+            except tk.TclError:
+                pass  # Widget destroyed or parent unavailable
 
     # Public API methods for external compatibility
     def apply_recent_discoveries_filter(self) -> None:
@@ -2192,7 +2217,7 @@ class ServerListWindow:
 
 # Module compatibility function
 def open_server_list_window(parent: tk.Widget, db_reader: DatabaseReader,
-                           window_data: Dict[str, Any] = None, settings_manager = None) -> None:
+                           window_data: Dict[str, Any] = None, settings_manager = None) -> 'ServerListWindow':
     """
     Open server list browser window.
 
@@ -2201,5 +2226,8 @@ def open_server_list_window(parent: tk.Widget, db_reader: DatabaseReader,
         db_reader: Database reader instance
         window_data: Optional data for window initialization
         settings_manager: Optional settings manager for favorites functionality
+
+    Returns:
+        ServerListWindow instance for tracking and reuse
     """
-    ServerListWindow(parent, db_reader, window_data, settings_manager)
+    return ServerListWindow(parent, db_reader, window_data, settings_manager)

@@ -404,8 +404,16 @@ class SMBSeekGUI:
         """
         try:
             if window_type == "server_list":
-                # Open server list browser window
-                open_server_list_window(self.root, self.db_reader, data, self.settings_manager)
+                # Check if server list window already exists
+                existing_window = self.drill_down_windows.get('server_list')
+
+                if existing_window and existing_window.window.winfo_exists():
+                    # Reuse existing window: restore and focus
+                    existing_window.restore_and_focus()
+                else:
+                    # Create new window and track it
+                    window = open_server_list_window(self.root, self.db_reader, data, self.settings_manager)
+                    self.drill_down_windows['server_list'] = window
             elif window_type == "config_editor":
                 # Open configuration editor window
                 config_path = self.config_path or "../backend/conf/config.json"
