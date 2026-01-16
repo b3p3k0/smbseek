@@ -1007,8 +1007,23 @@ class DashboardWidget:
                         self._show_scan_results(results)
 
                         # Check if post-scan batch operations should run
-                        if self.current_scan_options and results.get("status") == "success":
+                        # Extract status indicators for clearer logic
+                        status = results.get("status", "")
+                        success = results.get("success", False)
+
+                        # Run batch ops if scan finished and wasn't cancelled
+                        # Permissive approach: check success flag OR status in completed/success/failed
+                        # This allows batch operations to run even if scan had some failures
+                        is_finished = status not in {"cancelled"} and (
+                            success or status in {"completed", "success", "failed"}
+                        )
+
+                        if self.current_scan_options and is_finished:
                             self._run_post_scan_batch_operations(self.current_scan_options, results)
+                        elif not self.current_scan_options:
+                            print("Bulk operations skipped: no scan options stored")
+                        elif not is_finished:
+                            print(f"Bulk operations skipped: status '{status}' (success={success})")
 
                         try:
                             self.parent.after(5000, self._reset_scan_status)
@@ -1059,7 +1074,16 @@ class DashboardWidget:
             pass
 
     def _run_post_scan_batch_operations(self, scan_options: Dict[str, Any], scan_results: Dict[str, Any]) -> None:
-        """Run bulk probe/extract operations after successful scan completion."""
+        """Run bulk probe/extract operations after scan completion.
+
+        Called when:
+        - Scan completes (not cancelled)
+        - Scan has success=True OR status in ('completed', 'success', 'failed')
+        - current_scan_options is set
+        - At least one bulk operation (probe/extract) is enabled
+
+        Will show info dialog if no accessible servers are found.
+        """
         try:
             # Check if any bulk operations are enabled
             bulk_probe_enabled = scan_options.get('bulk_probe_enabled', False)
