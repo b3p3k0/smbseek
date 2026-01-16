@@ -2013,6 +2013,39 @@ class ScanDialog:
         # Initial preview render
         self._update_query_preview()
 
+    def _persist_quick_settings(self) -> None:
+        """
+        Best-effort persistence for worker counts and security mode so they survive
+        app restarts even when the user cancels instead of starting a scan.
+        """
+        if self._settings_manager is None:
+            return
+
+        def _coerce_int(value: str, minimum: int, maximum: int) -> Optional[int]:
+            try:
+                num = int(str(value).strip())
+                if num < minimum or num > maximum:
+                    return None
+                return num
+            except Exception:
+                return None
+
+        try:
+            discovery_val = _coerce_int(self.discovery_concurrency_var.get(), 1, self._concurrency_upper_limit)
+            access_val = _coerce_int(self.access_concurrency_var.get(), 1, self._concurrency_upper_limit)
+            if discovery_val is not None:
+                self._settings_manager.set_setting('scan_dialog.discovery_max_concurrency', discovery_val)
+            if access_val is not None:
+                self._settings_manager.set_setting('scan_dialog.access_max_concurrency', access_val)
+
+            security_mode = (self.security_mode_var.get() or "cautious").strip().lower()
+            if security_mode not in {"cautious", "legacy"}:
+                security_mode = "cautious"
+            self._settings_manager.set_setting('scan_dialog.security_mode', security_mode)
+        except Exception:
+            # Persistence is best-effort; ignore failures here
+            pass
+
     def _start_scan(self) -> None:
         """Validate inputs and start the scan with configured parameters."""
         country_input = self.country_var.get().strip()
@@ -2093,6 +2126,8 @@ class ScanDialog:
     
     def _cancel_scan(self) -> None:
         """Cancel scan and close dialog."""
+        # Persist user tweaks even if they don't start a scan
+        self._persist_quick_settings()
         self.result = "cancel"
         self.dialog.destroy()
     
