@@ -118,6 +118,9 @@ class ServerListWindow:
         self.pry_button = None
         self.browser_button = None
         self.stop_button = None
+        self.delete_button = None
+        self._delete_menu_index = None  # Store context menu index
+        self._delete_in_progress = False  # Flag to prevent concurrent deletes
         self.table_overlay = None
         self.table_overlay_label = None
         self.pry_status_button = None
@@ -344,6 +347,9 @@ class ServerListWindow:
         self.context_menu.add_command(label="📦 Extract Selected", command=self._on_extract_selected)
         self.context_menu.add_command(label="🔓 Pry Selected", command=self._on_pry_selected)
         self.context_menu.add_command(label="🗂️ Browse Selected", command=self._on_file_browser_selected)
+        # Store index before adding Delete item (context menu currently has 4 items: 0-3)
+        self._delete_menu_index = 4  # Will be the 5th item (index 4)
+        self.context_menu.add_command(label="🗑️ Delete Selected", command=self._on_delete_selected)
         self._update_context_menu_state()
 
     def _bind_context_menu_events(self, tree: ttk.Treeview) -> None:
@@ -439,6 +445,15 @@ class ServerListWindow:
         )
         self.theme.apply_to_widget(self.browser_button, "button_secondary")
         self.browser_button.pack(side=tk.LEFT, padx=(0, 15))
+
+        self.delete_button = tk.Button(
+            button_container,
+            text="🗑️ Delete Selected",
+            command=self._on_delete_selected,
+            state=tk.DISABLED
+        )
+        self.theme.apply_to_widget(self.delete_button, "button_secondary")
+        self.delete_button.pack(side=tk.LEFT, padx=(0, 15))
 
         self.pry_button = tk.Button(
             button_container,
@@ -821,6 +836,157 @@ class ServerListWindow:
             return
 
         self._launch_browse_workflow(targets[0])
+
+    def _on_delete_selected(self) -> None:
+        """Handle delete selected servers action."""
+        self._hide_context_menu()
+
+        # Validate selection exists
+        targets = self._build_selected_targets()
+        if not targets:
+            messagebox.showwarning("No Selection", "Please select servers to delete.", parent=self.window)
+            return
+
+        # Check if delete already in progress
+        if getattr(self, '_delete_in_progress', False):
+            messagebox.showinfo("Delete In Progress", "A delete operation is already running.", parent=self.window)
+            return
+
+        # Check if batch jobs are active
+        if self._is_batch_active():
+            messagebox.showinfo(
+                "Batch Active",
+                "Cannot delete servers while a batch operation is running. "
+                "Please wait for the batch to complete or stop it first.",
+                parent=self.window
+            )
+            return
+
+        # Build target IP list (deduplicate)
+        target_ips = list(set(target.get("ip_address") for target in targets if target.get("ip_address")))
+
+        if not target_ips:
+            messagebox.showwarning("No Valid IPs", "No valid IP addresses found in selection.", parent=self.window)
+            return
+
+        # Check for favorites in selection
+        favorite_ips = [target.get("ip_address") for target in targets if target.get("favorite")]
+
+        # Show confirmation dialog
+        if favorite_ips:
+            # Favorites present - show explicit warning
+            favorite_list = "\n".join(f"• {ip}" for ip in favorite_ips)
+            message = (
+                f"You are about to delete {len(target_ips)} servers including "
+                f"{len(favorite_ips)} favorite(s):\n\n{favorite_list}\n\n"
+                f"This action cannot be undone. Continue?"
+            )
+            title = "Delete Favorite Servers?"
+        else:
+            # No favorites - brief confirmation
+            message = f"Delete {len(target_ips)} selected servers? This action cannot be undone."
+            title = "Delete Servers?"
+
+        confirmed = messagebox.askyesno(title, message, parent=self.window)
+        if not confirmed:
+            return
+
+        # Start background delete operation
+        self._delete_in_progress = True
+        self._set_status(f"Deleting {len(target_ips)} servers...")
+        self._update_action_buttons_state()
+
+        # Create executor and submit delete task
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="delete-servers")
+        future = executor.submit(self._run_delete_operation, target_ips)
+        future.add_done_callback(lambda f: self.window.after(0, self._on_delete_complete, f))
+
+    def _run_delete_operation(self, target_ips: List[str]) -> Dict[str, Any]:
+        """Background thread worker for delete operation."""
+        try:
+            # Call database delete
+            results = self.db_reader.bulk_delete_servers(target_ips)
+
+            # If successful, clear probe cache for deleted IPs only
+            if results.get("deleted_ips"):
+                for ip in results["deleted_ips"]:
+                    try:
+                        probe_cache.clear_probe_result(ip)
+                    except Exception:
+                        pass  # Non-critical, continue
+
+            return results
+
+        except Exception as e:
+            # Return error in results dict
+            return {
+                "deleted_count": 0,
+                "deleted_ips": [],
+                "error": str(e)
+            }
+
+    def _on_delete_complete(self, future) -> None:
+        """Handle delete completion on UI thread."""
+        try:
+            results = future.result()
+
+            deleted_count = results.get("deleted_count", 0)
+            error = results.get("error")
+
+            # Show results messagebox with partial success handling
+            if deleted_count > 0 and error is None:
+                # Full success
+                messagebox.showinfo(
+                    "Delete Complete",
+                    f"Deleted {deleted_count} servers successfully.",
+                    parent=self.window
+                )
+            elif deleted_count > 0 and error is not None:
+                # Partial success
+                messagebox.showwarning(
+                    "Partial Delete",
+                    f"Deleted {deleted_count} servers, but errors occurred:\n\n{error}",
+                    parent=self.window
+                )
+            elif deleted_count == 0 and error is not None:
+                # Full failure
+                messagebox.showerror(
+                    "Delete Failed",
+                    f"Failed to delete servers:\n\n{error}",
+                    parent=self.window
+                )
+            else:
+                # No-op (shouldn't happen)
+                messagebox.showinfo(
+                    "Delete Complete",
+                    "No servers were deleted.",
+                    parent=self.window
+                )
+
+            # If any servers were deleted, refresh table
+            if deleted_count > 0:
+                self.db_reader.clear_cache()
+                self._apply_filters(force=True)
+
+            # Clear selection BEFORE re-enabling buttons
+            if self.tree:
+                self.tree.selection_remove(self.tree.selection())
+
+            # Re-enable UI
+            self._delete_in_progress = False
+            self._update_action_buttons_state()
+            self._set_status("Idle")
+
+        except Exception as e:
+            # Handle worker thread exceptions
+            messagebox.showerror(
+                "Delete Error",
+                f"An error occurred during delete:\n\n{str(e)}",
+                parent=self.window
+            )
+            self._delete_in_progress = False
+            self._update_action_buttons_state()
+            self._set_status("Idle")
 
     def _prompt_probe_batch_settings(self, target_count: int) -> Optional[Dict[str, Any]]:
         config = details._load_probe_config(self.settings_manager)
@@ -1787,6 +1953,12 @@ class ServerListWindow:
         if self.browser_button:
             self.browser_button.configure(state=tk.NORMAL if has_selection else tk.DISABLED)
 
+        # Delete - disabled if no selection, batch active, or delete in progress
+        if self.delete_button:
+            delete_allowed = has_selection and not batch_active and not getattr(self, '_delete_in_progress', False)
+            delete_state = tk.NORMAL if delete_allowed else tk.DISABLED
+            self.delete_button.configure(state=delete_state)
+
         if self.stop_button:
             self.stop_button.configure(state=tk.NORMAL if batch_active else tk.DISABLED)
             self._update_stop_button_style(batch_active)
@@ -1851,6 +2023,11 @@ class ServerListWindow:
         self.context_menu.entryconfig(1, state=extract_state)
         self.context_menu.entryconfig(2, state=probe_state)
         self.context_menu.entryconfig(3, state=browser_state)
+        # Delete (use stored index, not hardcoded)
+        if self._delete_menu_index is not None:
+            delete_allowed = has_selection and not batch_active and not getattr(self, '_delete_in_progress', False)
+            delete_state = tk.NORMAL if delete_allowed else tk.DISABLED
+            self.context_menu.entryconfig(self._delete_menu_index, state=delete_state)
 
     def _show_context_menu(self, event) -> str:
         if not self.tree or not self.context_menu:

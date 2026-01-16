@@ -974,7 +974,88 @@ class DatabaseReader:
             )
             conn.commit()
         self.clear_cache()
-    
+
+    def bulk_delete_servers(self, ip_addresses: List[str]) -> Dict[str, Any]:
+        """
+        Bulk delete servers and cascade to related tables.
+
+        Args:
+            ip_addresses: List of IP addresses to delete
+
+        Returns:
+            Dict with:
+            - 'deleted_count': Number of servers actually deleted (from rowcount)
+            - 'deleted_ips': List of IPs successfully deleted (for probe cache cleanup)
+            - 'error': Error message if operation failed (None on success)
+        """
+        if not ip_addresses:
+            return {"deleted_count": 0, "deleted_ips": [], "error": None}
+
+        try:
+            # Deduplicate IPs
+            unique_ips = list(set(ip_addresses))
+
+            total_deleted_count = 0
+            all_deleted_ips = []
+
+            # Process in batches of 500 (SQLite limit: 999 parameters)
+            batch_size = 500
+            for i in range(0, len(unique_ips), batch_size):
+                batch = unique_ips[i:i + batch_size]
+
+                with self._get_connection() as conn:
+                    cur = conn.cursor()
+
+                    # Query existing IPs to find which ones actually exist
+                    placeholders = ','.join('?' * len(batch))
+                    query = f"SELECT id, ip_address FROM smb_servers WHERE ip_address IN ({placeholders})"
+                    cur.execute(query, batch)
+                    found_servers = cur.fetchall()
+
+                    if not found_servers:
+                        # Nothing to delete in this batch
+                        continue
+
+                    found_ips = [row["ip_address"] for row in found_servers]
+
+                    # Delete failure_logs explicitly (no CASCADE on this table)
+                    failure_placeholders = ','.join('?' * len(found_ips))
+                    delete_failures_query = f"DELETE FROM failure_logs WHERE ip_address IN ({failure_placeholders})"
+                    cur.execute(delete_failures_query, found_ips)
+
+                    # Delete servers (CASCADE handles related tables)
+                    delete_servers_query = f"DELETE FROM smb_servers WHERE ip_address IN ({failure_placeholders})"
+                    cur.execute(delete_servers_query, found_ips)
+
+                    # Check rowcount to verify actual deletes
+                    batch_deleted_count = cur.rowcount
+
+                    if batch_deleted_count > 0:
+                        # Commit transaction (commits both failure_logs and smb_servers deletes)
+                        conn.commit()
+
+                        # Track deleted IPs and count
+                        all_deleted_ips.extend(found_ips)
+                        total_deleted_count += batch_deleted_count
+
+            # Invalidate cache after successful deletes
+            if total_deleted_count > 0:
+                self.clear_cache()
+
+            return {
+                "deleted_count": total_deleted_count,
+                "deleted_ips": all_deleted_ips,
+                "error": None
+            }
+
+        except Exception as e:
+            # Return error in result dict
+            return {
+                "deleted_count": 0,
+                "deleted_ips": [],
+                "error": str(e)
+            }
+
     def _get_mock_data(self) -> Dict[str, Any]:
         """Get mock data for testing."""
         return {
