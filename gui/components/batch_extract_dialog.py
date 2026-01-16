@@ -626,7 +626,7 @@ class ExtensionEditorDialog:
         """
         self.window = tk.Toplevel(self.parent)
         self.window.title("Extension Filter Editor")
-        self.window.geometry("730x620")
+        self.window.geometry("815x690")
         self.window.transient(self.parent)
         self.window.grab_set()
 
