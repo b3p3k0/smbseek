@@ -97,6 +97,21 @@ class BatchExtractSettingsDialog:
             except Exception:
                 pass
 
+        # Load extension mode
+        defaults["extension_mode"] = "allow_only"  # Default
+        if self.settings:
+            try:
+                defaults["extension_mode"] = str(self.settings.get_setting(
+                    'extract.extension_mode',
+                    defaults['extension_mode']
+                ))
+            except Exception:
+                pass
+
+        # Validate mode (fallback to allow_only if invalid)
+        if defaults["extension_mode"] not in ("download_all", "allow_only", "deny_only"):
+            defaults["extension_mode"] = "allow_only"
+
         # Load from config file for additional settings
         if self.config_path and self.config_path.exists():
             try:
@@ -115,6 +130,9 @@ class BatchExtractSettingsDialog:
         self.max_total_var = tk.IntVar(value=defaults['max_total'])
         self.max_time_var = tk.IntVar(value=defaults['max_time'])
         self.max_files_var = tk.IntVar(value=defaults['max_files'])
+
+        # Create mode variable
+        self.extension_mode_var = tk.StringVar(value=defaults['extension_mode'])
 
         # Store for on-demand mode return value
         self.max_directory_depth = defaults["max_directory_depth"]
@@ -236,10 +254,60 @@ class BatchExtractSettingsDialog:
         else:
             denied_text = f"{denied_count} denied"
 
-        # Extension count label (store reference for updates)
-        label_text = f"Extensions: {allowed_text}, {denied_text}"
-        self.extension_count_label = tk.Label(parent, text=label_text, justify="left")
-        self.extension_count_label.grid(row=row, column=0, columnspan=2, sticky="w", pady=5)
+        # Extension mode selector frame
+        mode_frame = tk.Frame(parent)
+        mode_frame.grid(row=row, column=0, columnspan=2, sticky="w", pady=(0, 10))
+
+        # Heading label
+        mode_heading = tk.Label(mode_frame, text="Extensions", font=("TkDefaultFont", 9, "bold"))
+        mode_heading.grid(row=0, column=0, sticky="w", pady=(0, 5))
+
+        # Radio buttons
+        radio_all = tk.Radiobutton(
+            mode_frame,
+            text="Download all files",
+            variable=self.extension_mode_var,
+            value="download_all"
+        )
+        radio_all.grid(row=1, column=0, sticky="w", padx=(10, 0))
+
+        radio_allow = tk.Radiobutton(
+            mode_frame,
+            text="Download only allowed extensions (Allow list)",
+            variable=self.extension_mode_var,
+            value="allow_only"
+        )
+        radio_allow.grid(row=2, column=0, sticky="w", padx=(10, 0))
+
+        radio_deny = tk.Radiobutton(
+            mode_frame,
+            text="Download all except excluded extensions (Deny list)",
+            variable=self.extension_mode_var,
+            value="deny_only"
+        )
+        radio_deny.grid(row=3, column=0, sticky="w", padx=(10, 0))
+
+        # Apply theme styling to heading only
+        if self.theme:
+            self.theme.apply_to_widget(mode_heading, "label")
+
+        row += 1
+
+        # Backend status note (italic, small font)
+        status_note = tk.Label(
+            parent,
+            text="Note: Filtering mode will apply once backend update ships; "
+                 "current releases still use allow/deny lists together.",
+            font=("TkDefaultFont", 8, "italic"),
+            fg="gray"
+        )
+        status_note.grid(row=row, column=0, columnspan=2, sticky="w", padx=(10, 0), pady=(0, 10))
+        row += 1
+
+        # Summary counts label (moved below radio buttons and note)
+        count_text = f"Included: {allowed_count} allowed    Excluded: {denied_count} denied"
+        self.extension_count_label = tk.Label(parent, text=count_text, justify="left")
+        self.extension_count_label.grid(row=row, column=0, columnspan=2, sticky="w", pady=(5, 5))
         row += 1
 
         # Button frame for side-by-side buttons
@@ -286,6 +354,54 @@ class BatchExtractSettingsDialog:
 
         return defaults
 
+    def _validate_extension_mode(self, mode: str, filters: Dict[str, List[str]]) -> bool:
+        """
+        Validate extension mode against current filter configuration.
+        Shows warning dialog if configuration may produce unexpected results.
+
+        NOTE: These warnings are "future-ready" - they describe behavior once
+        the extract runner is updated to honor extension_mode. Until then,
+        the runner uses its current logic (deny-first, then allow).
+
+        Args:
+            mode: Selected extension mode
+            filters: Current extension filter configuration
+
+        Returns:
+            True to proceed, False if user cancelled after warning
+        """
+        included_count = len(filters["included_extensions"])
+        excluded_count = len(filters["excluded_extensions"])
+
+        # Check for empty allow list in allow_only mode
+        if mode == "allow_only" and included_count == 0:
+            # Use askokcancel which returns True/False
+            result = messagebox.askokcancel(
+                "Empty Allow List",
+                "No allowed extensions configured.\n\n"
+                "Note: Extension mode filtering is pending backend implementation. "
+                "Current behavior will continue until extract runner is updated.\n\n"
+                "Click OK to save anyway, or Cancel to review settings.",
+                parent=self.dialog,
+                icon=messagebox.WARNING
+            )
+            return result  # True = OK, False = Cancel
+
+        # Check for empty deny list in deny_only mode
+        if mode == "deny_only" and excluded_count == 0:
+            result = messagebox.askokcancel(
+                "Empty Deny List",
+                "No excluded extensions configured.\n\n"
+                "Note: Extension mode filtering is pending backend implementation. "
+                "Current behavior will continue until extract runner is updated.\n\n"
+                "Click OK to save anyway, or Cancel to review settings.",
+                parent=self.dialog,
+                icon=messagebox.WARNING
+            )
+            return result  # True = OK, False = Cancel
+
+        return True
+
     def _show_extension_table(self):
         """Launch extension editor dialog."""
         # Load current filters
@@ -306,19 +422,10 @@ class BatchExtractSettingsDialog:
         if result is not None:
             included, excluded = result
 
-            # Build count display text
-            if len(included) == 0:
-                allowed_text = "None configured"
-            else:
-                allowed_text = f"{len(included)} allowed"
-
-            if len(excluded) == 0:
-                denied_text = "No restrictions"
-            else:
-                denied_text = f"{len(excluded)} denied"
-
-            # Update summary count
-            count_text = f"Extensions: {allowed_text}, {denied_text}"
+            # Update summary count with new format
+            allowed_count = len(included)
+            denied_count = len(excluded)
+            count_text = f"Included: {allowed_count} allowed    Excluded: {denied_count} denied"
             self.extension_count_label.config(text=count_text)
 
     def _open_config_editor(self):
@@ -402,6 +509,7 @@ class BatchExtractSettingsDialog:
                 self.settings.set_setting('extract.max_total_size_mb', values['max_total'])
                 self.settings.set_setting('extract.max_time_seconds', values['max_time'])
                 self.settings.set_setting('extract.max_files_per_target', values['max_files'])
+                self.settings.set_setting('extract.extension_mode', self.extension_mode_var.get())
             except Exception:
                 pass
 
@@ -410,6 +518,11 @@ class BatchExtractSettingsDialog:
         values = self._validate_inputs()
         if values is None:
             return
+
+        # Validate extension mode
+        filters = self._load_extension_filters()
+        if not self._validate_extension_mode(self.extension_mode_var.get(), filters):
+            return  # User cancelled after warning
 
         self._save_settings(values)
 
@@ -420,7 +533,8 @@ class BatchExtractSettingsDialog:
             "max_file": values["max_file"],
             "max_total": values["max_total"],
             "max_time": values["max_time"],
-            "max_files": values["max_files"]
+            "max_files": values["max_files"],
+            "extension_mode": self.extension_mode_var.get()
         }
         self.dialog.destroy()
 
@@ -440,10 +554,14 @@ class BatchExtractSettingsDialog:
         if values is None:
             return
 
-        self._save_settings(values)
-
-        # Load extension filters for on-demand return value
+        # Load extension filters for validation and return value
         filters = self._load_extension_filters()
+
+        # Validate extension mode
+        if not self._validate_extension_mode(self.extension_mode_var.get(), filters):
+            return  # User cancelled after warning
+
+        self._save_settings(values)
 
         self.result = {
             "worker_count": values["workers"],
@@ -456,7 +574,8 @@ class BatchExtractSettingsDialog:
             "download_delay_seconds": self.download_delay_seconds,
             "included_extensions": filters["included_extensions"],
             "excluded_extensions": filters["excluded_extensions"],
-            "connection_timeout": self.connection_timeout
+            "connection_timeout": self.connection_timeout,
+            "extension_mode": self.extension_mode_var.get()
         }
         self.dialog.destroy()
 

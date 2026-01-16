@@ -113,7 +113,8 @@ class SettingsManager:
                 'max_total_size_mb': 200,
                 'max_time_seconds': 300,
                 'max_files_per_target': 10,
-                'batch_max_workers': 2
+                'batch_max_workers': 2,
+                'extension_mode': 'allow_only'
             },
             'file_browser': {
                 'folder_limits': {}
