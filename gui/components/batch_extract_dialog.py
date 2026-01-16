@@ -11,7 +11,7 @@ consistent extension filter display across both workflows.
 """
 
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -236,18 +236,18 @@ class BatchExtractSettingsDialog:
         else:
             denied_text = f"{denied_count} denied"
 
-        # Extension count label
+        # Extension count label (store reference for updates)
         label_text = f"Extensions: {allowed_text}, {denied_text}"
-        ext_label = tk.Label(parent, text=label_text, justify="left")
-        ext_label.grid(row=row, column=0, columnspan=2, sticky="w", pady=5)
+        self.extension_count_label = tk.Label(parent, text=label_text, justify="left")
+        self.extension_count_label.grid(row=row, column=0, columnspan=2, sticky="w", pady=5)
         row += 1
 
         # Button frame for side-by-side buttons
         button_frame = tk.Frame(parent)
         button_frame.grid(row=row, column=0, columnspan=2, sticky="w", pady=5)
 
-        # View Filters button
-        view_button = tk.Button(button_frame, text="View Filters", command=self._show_extension_table)
+        # Edit Filters button
+        view_button = tk.Button(button_frame, text="Edit Filters", command=self._show_extension_table)
         if self.theme:
             self.theme.apply_to_widget(view_button, "button_secondary")
         view_button.pack(side=tk.LEFT, padx=(0, 5))
@@ -287,87 +287,39 @@ class BatchExtractSettingsDialog:
         return defaults
 
     def _show_extension_table(self):
-        """Show modal dialog with extension filter table."""
+        """Launch extension editor dialog."""
+        # Load current filters
         filters = self._load_extension_filters()
 
-        # Create modal dialog
-        table_dialog = tk.Toplevel(self.dialog)
-        table_dialog.title("Extension Filters")
-        table_dialog.geometry("600x400")
-        table_dialog.transient(self.dialog)
-        table_dialog.grab_set()
-        if self.theme:
-            self.theme.apply_to_widget(table_dialog, "window")
+        # Launch editor dialog
+        editor = ExtensionEditorDialog(
+            parent=self.dialog,
+            theme=self.theme,
+            config_path=self.config_path,
+            initial_included=filters["included_extensions"],
+            initial_excluded=filters["excluded_extensions"]
+        )
 
-        # Main container
-        main_frame = tk.Frame(table_dialog)
-        if self.theme:
-            self.theme.apply_to_widget(main_frame, "card")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        result = editor.show()
 
-        # Two-column layout (Allowed | Denied)
-        columns_frame = tk.Frame(main_frame)
-        if self.theme:
-            self.theme.apply_to_widget(columns_frame, "card")
-        columns_frame.pack(fill=tk.BOTH, expand=True)
+        # If user saved changes, update the summary label
+        if result is not None:
+            included, excluded = result
 
-        # Allowed column
-        allowed_frame = tk.Frame(columns_frame)
-        if self.theme:
-            self.theme.apply_to_widget(allowed_frame, "card")
-        allowed_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
+            # Build count display text
+            if len(included) == 0:
+                allowed_text = "None configured"
+            else:
+                allowed_text = f"{len(included)} allowed"
 
-        allowed_label = tk.Label(allowed_frame, text="Allowed Extensions")
-        allowed_label.pack(anchor="w", pady=5)
+            if len(excluded) == 0:
+                denied_text = "No restrictions"
+            else:
+                denied_text = f"{len(excluded)} denied"
 
-        allowed_text = tk.Text(allowed_frame, height=15, width=25)
-        if self.theme:
-            self.theme.apply_to_widget(allowed_text, "text")
-        allowed_text.pack(fill=tk.BOTH, expand=True)
-
-        allowed_list = filters["included_extensions"]
-        if allowed_list:
-            allowed_text.insert("1.0", "\n".join(allowed_list))
-        else:
-            allowed_text.insert("1.0", "None configured")
-        allowed_text.config(state="disabled")
-
-        # Denied column
-        denied_frame = tk.Frame(columns_frame)
-        if self.theme:
-            self.theme.apply_to_widget(denied_frame, "card")
-        denied_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
-
-        denied_label = tk.Label(denied_frame, text="Denied Extensions")
-        denied_label.pack(anchor="w", pady=5)
-
-        denied_text = tk.Text(denied_frame, height=15, width=25)
-        if self.theme:
-            self.theme.apply_to_widget(denied_text, "text")
-        denied_text.pack(fill=tk.BOTH, expand=True)
-
-        denied_list = filters["excluded_extensions"]
-        if denied_list:
-            denied_text.insert("1.0", "\n".join(denied_list))
-        else:
-            denied_text.insert("1.0", "No restrictions")
-        denied_text.config(state="disabled")
-
-        # Action buttons
-        btn_frame = tk.Frame(main_frame)
-        btn_frame.pack(fill=tk.X, pady=10)
-
-        if self.config_editor_callback and self.config_path:
-            edit_btn = tk.Button(btn_frame, text="⚙ Edit Configuration",
-                                 command=lambda: self.config_editor_callback(str(self.config_path)))
-            if self.theme:
-                self.theme.apply_to_widget(edit_btn, "button_secondary")
-            edit_btn.pack(side=tk.LEFT, padx=(0, 8))
-
-        close_button = tk.Button(btn_frame, text="Close", command=table_dialog.destroy)
-        if self.theme:
-            self.theme.apply_to_widget(close_button, "button_primary")
-        close_button.pack(side=tk.RIGHT)
+            # Update summary count
+            count_text = f"Extensions: {allowed_text}, {denied_text}"
+            self.extension_count_label.config(text=count_text)
 
     def _open_config_editor(self):
         """Open configuration editor."""
@@ -512,3 +464,532 @@ class BatchExtractSettingsDialog:
         """Handle Cancel button (on-demand mode)."""
         self.result = None
         self.dialog.destroy()
+
+
+class ExtensionEditorDialog:
+    """
+    Modal dialog for editing extension filters with list-based UI.
+
+    Provides two-pane interface for managing included and excluded extensions
+    with validation, sorting, and persistence to config.json.
+    """
+
+    def __init__(
+        self,
+        parent: tk.Toplevel,
+        theme,
+        config_path: Path,
+        initial_included: List[str],
+        initial_excluded: List[str]
+    ):
+        """
+        Initialize extension editor dialog.
+
+        Args:
+            parent: Parent window
+            theme: Theme object for styling
+            config_path: Path to config.json
+            initial_included: Initial included extensions list
+            initial_excluded: Initial excluded extensions list
+        """
+        self.parent = parent
+        self.theme = theme
+        self.config_path = config_path
+        self.included_extensions = list(initial_included)
+        self.excluded_extensions = list(initial_excluded)
+        self.window: Optional[tk.Toplevel] = None
+        self.result: Optional[tuple] = None
+
+        # UI widgets (initialized in show())
+        self.included_listbox: Optional[tk.Listbox] = None
+        self.excluded_listbox: Optional[tk.Listbox] = None
+        self.extension_count_label: Optional[tk.Label] = None
+
+    def show(self) -> Optional[tuple]:
+        """
+        Display dialog and return result.
+
+        Returns:
+            Tuple of (included_list, excluded_list) or None if cancelled
+        """
+        self.window = tk.Toplevel(self.parent)
+        self.window.title("Extension Filter Editor")
+        self.window.geometry("700x500")
+        self.window.transient(self.parent)
+        self.window.grab_set()
+
+        if self.theme:
+            self.theme.apply_to_widget(self.window, "main_window")
+
+        # Main container
+        main_frame = tk.Frame(self.window)
+        main_frame.pack(padx=20, pady=20, fill=tk.BOTH, expand=True)
+
+        # Create two-column layout
+        self._create_list_columns(main_frame)
+
+        # Create control buttons
+        self._create_control_buttons(main_frame)
+
+        # Create bottom buttons
+        self._create_bottom_buttons(main_frame)
+
+        # Handle window close
+        self.window.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+        # Ensure dialog appears on top and gains focus
+        ensure_dialog_focus(self.window, self.parent)
+
+        self.parent.wait_window(self.window)
+        return self.result
+
+    def _create_list_columns(self, parent: tk.Frame):
+        """Create two-column layout with listboxes."""
+        # Container for both columns
+        columns_frame = tk.Frame(parent)
+        columns_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        # Left column - Included Extensions
+        left_frame = tk.Frame(columns_frame)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+
+        included_label = tk.Label(left_frame, text="Included Extensions", font=("TkDefaultFont", 10, "bold"))
+        included_label.pack(anchor="w", pady=(0, 5))
+
+        # Listbox with scrollbar
+        included_scroll_frame = tk.Frame(left_frame)
+        included_scroll_frame.pack(fill=tk.BOTH, expand=True)
+
+        included_scrollbar = tk.Scrollbar(included_scroll_frame)
+        included_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.included_listbox = tk.Listbox(
+            included_scroll_frame,
+            height=20,
+            yscrollcommand=included_scrollbar.set,
+            selectmode=tk.SINGLE
+        )
+        self.included_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        included_scrollbar.config(command=self.included_listbox.yview)
+
+        if self.theme:
+            self.theme.apply_to_widget(self.included_listbox, "listbox")
+
+        # Right column - Excluded Extensions
+        right_frame = tk.Frame(columns_frame)
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
+
+        excluded_label = tk.Label(right_frame, text="Excluded Extensions", font=("TkDefaultFont", 10, "bold"))
+        excluded_label.pack(anchor="w", pady=(0, 5))
+
+        # Listbox with scrollbar
+        excluded_scroll_frame = tk.Frame(right_frame)
+        excluded_scroll_frame.pack(fill=tk.BOTH, expand=True)
+
+        excluded_scrollbar = tk.Scrollbar(excluded_scroll_frame)
+        excluded_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.excluded_listbox = tk.Listbox(
+            excluded_scroll_frame,
+            height=20,
+            yscrollcommand=excluded_scrollbar.set,
+            selectmode=tk.SINGLE
+        )
+        self.excluded_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        excluded_scrollbar.config(command=self.excluded_listbox.yview)
+
+        if self.theme:
+            self.theme.apply_to_widget(self.excluded_listbox, "listbox")
+
+        # Populate and sort lists
+        self._sort_list(self.included_listbox, self.included_extensions)
+        self._sort_list(self.excluded_listbox, self.excluded_extensions)
+
+    def _create_control_buttons(self, parent: tk.Frame):
+        """Create control buttons for list operations."""
+        control_frame = tk.Frame(parent)
+        control_frame.pack(fill=tk.X, pady=10)
+
+        # Left side buttons (Add, Edit, Remove)
+        left_buttons = tk.Frame(control_frame)
+        left_buttons.pack(side=tk.LEFT)
+
+        add_btn = tk.Button(left_buttons, text="Add", command=self._on_add, width=10)
+        edit_btn = tk.Button(left_buttons, text="Edit", command=self._on_edit, width=10)
+        remove_btn = tk.Button(left_buttons, text="Remove", command=self._on_remove, width=10)
+
+        for btn in (add_btn, edit_btn, remove_btn):
+            if self.theme:
+                self.theme.apply_to_widget(btn, "button_secondary")
+            btn.pack(side=tk.LEFT, padx=5)
+
+        # Right side buttons (Move operations)
+        right_buttons = tk.Frame(control_frame)
+        right_buttons.pack(side=tk.RIGHT)
+
+        move_to_excluded_btn = tk.Button(
+            right_buttons,
+            text="→ Move to Excluded",
+            command=self._on_move_to_excluded,
+            width=18
+        )
+        move_to_included_btn = tk.Button(
+            right_buttons,
+            text="← Move to Included",
+            command=self._on_move_to_included,
+            width=18
+        )
+
+        for btn in (move_to_excluded_btn, move_to_included_btn):
+            if self.theme:
+                self.theme.apply_to_widget(btn, "button_secondary")
+            btn.pack(side=tk.LEFT, padx=5)
+
+    def _create_bottom_buttons(self, parent: tk.Frame):
+        """Create bottom action buttons."""
+        button_frame = tk.Frame(parent)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+
+        # Left side - Reset button
+        reset_btn = tk.Button(
+            button_frame,
+            text="Reset to Defaults",
+            command=self._on_reset,
+            width=15
+        )
+        if self.theme:
+            self.theme.apply_to_widget(reset_btn, "button_secondary")
+        reset_btn.pack(side=tk.LEFT)
+
+        # Right side - Save and Cancel buttons
+        cancel_btn = tk.Button(button_frame, text="Cancel", command=self._on_cancel, width=10)
+        save_btn = tk.Button(button_frame, text="Save", command=self._on_save, width=10)
+
+        for btn in (cancel_btn, save_btn):
+            if self.theme:
+                self.theme.apply_to_widget(btn, "button_primary")
+
+        save_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        cancel_btn.pack(side=tk.RIGHT)
+
+    def _validate_extension(
+        self,
+        ext: str,
+        source_list: List[str],
+        other_list: List[str]
+    ) -> tuple:
+        """
+        Validate extension format and uniqueness.
+
+        Args:
+            ext: Extension to validate
+            source_list: Current list being edited
+            other_list: The opposite list (to check cross-list conflicts)
+
+        Returns:
+            Tuple of (is_valid, normalized_ext, error_message)
+        """
+        # 1. Strip whitespace
+        ext = ext.strip()
+
+        # 2. Check not empty
+        if not ext:
+            return (False, "", "Extension cannot be empty")
+
+        # 3. Enforce leading dot
+        if not ext.startswith("."):
+            ext = "." + ext
+
+        # 4. Convert to lowercase
+        ext = ext.lower()
+
+        # 5. Check for invalid characters (allow only alphanumeric + dot)
+        if not all(c.isalnum() or c == "." for c in ext):
+            return (False, "", "Extension can only contain letters, numbers, and dots")
+
+        # 6. Check uniqueness in source list (case-insensitive)
+        if any(e.lower() == ext for e in source_list):
+            return (False, "", f"Extension '{ext}' already exists in this list")
+
+        # 7. Check uniqueness in other list (case-insensitive)
+        if any(e.lower() == ext for e in other_list):
+            return (False, "", f"Extension '{ext}' exists in the other list")
+
+        return (True, ext, "")
+
+    def _sort_list(self, listbox: tk.Listbox, extensions: List[str]) -> List[str]:
+        """
+        Sort extensions alphabetically (case-insensitive) and update listbox.
+
+        Args:
+            listbox: Tkinter Listbox widget
+            extensions: List of extension strings
+
+        Returns:
+            Sorted list
+        """
+        sorted_exts = sorted(extensions, key=str.lower)
+
+        # Update the passed list in-place
+        extensions.clear()
+        extensions.extend(sorted_exts)
+
+        # Update listbox
+        listbox.delete(0, tk.END)
+        for ext in sorted_exts:
+            listbox.insert(tk.END, ext)
+
+        return sorted_exts
+
+    def _get_active_list(self) -> tuple:
+        """
+        Determine which listbox has focus and return (active_listbox, active_list, other_list).
+
+        Returns:
+            Tuple of (active_listbox, active_extensions, other_extensions)
+        """
+        # Check which widget has focus
+        focused = self.window.focus_get()
+
+        if focused == self.included_listbox:
+            return (self.included_listbox, self.included_extensions, self.excluded_extensions)
+        elif focused == self.excluded_listbox:
+            return (self.excluded_listbox, self.excluded_extensions, self.included_extensions)
+        else:
+            # Default to included if no focus
+            return (self.included_listbox, self.included_extensions, self.excluded_extensions)
+
+    def _load_extension_filters(self) -> Dict[str, List[str]]:
+        """Load extension filters from config.json."""
+        defaults = {
+            "included_extensions": [],
+            "excluded_extensions": []
+        }
+
+        if self.config_path and self.config_path.exists():
+            try:
+                config_data = json.loads(self.config_path.read_text(encoding="utf-8"))
+                file_cfg = config_data.get("file_collection", {})
+                defaults["included_extensions"] = file_cfg.get("included_extensions", [])
+                defaults["excluded_extensions"] = file_cfg.get("excluded_extensions", [])
+            except Exception:
+                pass  # Use defaults on any error
+
+        return defaults
+
+    def _on_add(self):
+        """Prompt for new extension and add to active list."""
+        active_listbox, active_list, other_list = self._get_active_list()
+
+        # Prompt user
+        ext = simpledialog.askstring(
+            "Add Extension",
+            "Enter file extension (e.g., .txt or txt):",
+            parent=self.window
+        )
+
+        if ext is None:  # User cancelled
+            return
+
+        # Validate
+        is_valid, normalized_ext, error = self._validate_extension(ext, active_list, other_list)
+
+        if not is_valid:
+            messagebox.showerror("Invalid Extension", error, parent=self.window)
+            return
+
+        # Add and sort
+        active_list.append(normalized_ext)
+        self._sort_list(active_listbox, active_list)
+
+        # Select the newly added item
+        idx = active_list.index(normalized_ext)
+        active_listbox.selection_clear(0, tk.END)
+        active_listbox.selection_set(idx)
+        active_listbox.see(idx)
+
+    def _on_edit(self):
+        """Edit selected extension in active list."""
+        active_listbox, active_list, other_list = self._get_active_list()
+
+        # Get selection
+        selection = active_listbox.curselection()
+        if not selection:
+            messagebox.showinfo("No Selection", "Please select an extension to edit", parent=self.window)
+            return
+
+        idx = selection[0]
+        current_ext = active_list[idx]
+
+        # Prompt user
+        new_ext = simpledialog.askstring(
+            "Edit Extension",
+            "Edit file extension:",
+            initialvalue=current_ext,
+            parent=self.window
+        )
+
+        if new_ext is None:  # User cancelled
+            return
+
+        # Create list without current item for validation
+        temp_list = active_list[:idx] + active_list[idx+1:]
+
+        # Validate
+        is_valid, normalized_ext, error = self._validate_extension(new_ext, temp_list, other_list)
+
+        if not is_valid:
+            messagebox.showerror("Invalid Extension", error, parent=self.window)
+            return
+
+        # Update and sort
+        active_list[idx] = normalized_ext
+        self._sort_list(active_listbox, active_list)
+
+        # Re-select the item at its new position
+        new_idx = active_list.index(normalized_ext)
+        active_listbox.selection_clear(0, tk.END)
+        active_listbox.selection_set(new_idx)
+        active_listbox.see(new_idx)
+
+    def _on_remove(self):
+        """Remove selected extension from active list."""
+        active_listbox, active_list, other_list = self._get_active_list()
+
+        # Get selection
+        selection = active_listbox.curselection()
+        if not selection:
+            messagebox.showinfo("No Selection", "Please select an extension to remove", parent=self.window)
+            return
+
+        idx = selection[0]
+        ext = active_list[idx]
+
+        # Confirm removal
+        if not messagebox.askyesno(
+            "Confirm Removal",
+            f"Remove extension '{ext}'?",
+            parent=self.window
+        ):
+            return
+
+        # Remove
+        active_list.pop(idx)
+        active_listbox.delete(idx)
+
+        # Select next item if available
+        if active_listbox.size() > 0:
+            new_idx = min(idx, active_listbox.size() - 1)
+            active_listbox.selection_set(new_idx)
+            active_listbox.see(new_idx)
+
+    def _on_move_to_excluded(self):
+        """Move selected extension from included to excluded."""
+        selection = self.included_listbox.curselection()
+        if not selection:
+            messagebox.showinfo("No Selection", "Please select an extension to move", parent=self.window)
+            return
+
+        idx = selection[0]
+        ext = self.included_extensions[idx]
+
+        # Move
+        self.included_extensions.pop(idx)
+        self.excluded_extensions.append(ext)
+
+        # Sort both lists
+        self._sort_list(self.included_listbox, self.included_extensions)
+        self._sort_list(self.excluded_listbox, self.excluded_extensions)
+
+        # Select the moved item in excluded list
+        new_idx = self.excluded_extensions.index(ext)
+        self.excluded_listbox.selection_clear(0, tk.END)
+        self.excluded_listbox.selection_set(new_idx)
+        self.excluded_listbox.see(new_idx)
+        self.excluded_listbox.focus_set()
+
+    def _on_move_to_included(self):
+        """Move selected extension from excluded to included."""
+        selection = self.excluded_listbox.curselection()
+        if not selection:
+            messagebox.showinfo("No Selection", "Please select an extension to move", parent=self.window)
+            return
+
+        idx = selection[0]
+        ext = self.excluded_extensions[idx]
+
+        # Move
+        self.excluded_extensions.pop(idx)
+        self.included_extensions.append(ext)
+
+        # Sort both lists
+        self._sort_list(self.included_listbox, self.included_extensions)
+        self._sort_list(self.excluded_listbox, self.excluded_extensions)
+
+        # Select the moved item in included list
+        new_idx = self.included_extensions.index(ext)
+        self.included_listbox.selection_clear(0, tk.END)
+        self.included_listbox.selection_set(new_idx)
+        self.included_listbox.see(new_idx)
+        self.included_listbox.focus_set()
+
+    def _on_reset(self):
+        """Reset to default extensions from config."""
+        if not messagebox.askyesno(
+            "Reset to Defaults",
+            "This will reset all extensions to the defaults from config.json. Continue?",
+            parent=self.window
+        ):
+            return
+
+        # Reload from config
+        filters = self._load_extension_filters()
+        self.included_extensions = list(filters["included_extensions"])
+        self.excluded_extensions = list(filters["excluded_extensions"])
+
+        # Update both listboxes
+        self._sort_list(self.included_listbox, self.included_extensions)
+        self._sort_list(self.excluded_listbox, self.excluded_extensions)
+
+    def _on_save(self):
+        """Save changes to config.json and close."""
+        if not self.config_path or not self.config_path.exists():
+            messagebox.showerror(
+                "Configuration Error",
+                "Cannot find config.json. Please check your configuration path.",
+                parent=self.window
+            )
+            return
+
+        try:
+            # Load current config
+            config_data = json.loads(self.config_path.read_text(encoding="utf-8"))
+
+            # Update file_collection section
+            if "file_collection" not in config_data:
+                config_data["file_collection"] = {}
+
+            config_data["file_collection"]["included_extensions"] = self.included_extensions
+            config_data["file_collection"]["excluded_extensions"] = self.excluded_extensions
+
+            # Write back to file
+            self.config_path.write_text(
+                json.dumps(config_data, indent=2, ensure_ascii=False),
+                encoding="utf-8"
+            )
+
+            # Set result and close
+            self.result = (self.included_extensions, self.excluded_extensions)
+            self.window.destroy()
+
+        except Exception as e:
+            messagebox.showerror(
+                "Save Failed",
+                f"Failed to save configuration: {str(e)}",
+                parent=self.window
+            )
+
+    def _on_cancel(self):
+        """Close without saving."""
+        self.result = None
+        self.window.destroy()
