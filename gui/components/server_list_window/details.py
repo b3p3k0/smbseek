@@ -87,7 +87,6 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     # Button frame for Explore and Close buttons
     button_frame = tk.Frame(detail_window)
     theme.apply_to_widget(button_frame, "main_window")
-    button_frame.pack(pady=(0, 10))
 
     probe_state = {
         "running": False,
@@ -126,6 +125,9 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     notes_btn_frame = tk.Frame(detail_window)
     notes_btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
     tk.Button(notes_btn_frame, text="Save Notes", command=save_notes).pack(side=tk.RIGHT)
+
+    # Pack button frame after notes section
+    button_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
 
     def _open_browse_window() -> None:
         def _clean_share_name(name: str) -> str:
@@ -174,7 +176,7 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
         command=detail_window.destroy
     )
     theme.apply_to_widget(close_button, "button_primary")
-    close_button.pack(side=tk.LEFT)
+    close_button.pack(side=tk.RIGHT)
 
     # Ensure window is fully rendered before setting grab
     detail_window.update_idletasks()
