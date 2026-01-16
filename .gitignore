@@ -1,6 +1,11 @@
 # This doc
 .gitignore
 
+#internal docs
+docs/release/
+docs/dev/
+docs/archive/
+
 # OS / Editor junk
 .DS_Store
 Thumbs.db
