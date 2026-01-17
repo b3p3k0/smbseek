@@ -548,7 +548,7 @@ class AccessOperation:
         if nt_status_match and nt_status_match.group(1) == 'NT_STATUS_LOGON_FAILURE':
             combined_lower = combined_output.lower()
             if 'tree connect failed' in combined_lower:
-                friendly_msg = 'Authentication failed for this share (NT_STATUS_LOGON_FAILURE)'
+                friendly_msg = 'Authentication failed for this share'
                 return (friendly_msg, None)
 
         if nt_status_match:
@@ -560,12 +560,12 @@ class AccessOperation:
                                'NT_STATUS_HOST_UNREACHABLE', 'NT_STATUS_NETWORK_UNREACHABLE'):
                 ip_match = re.search(r"Connection to\s+([^\s)]+)", combined_output)
                 target = ip_match.group(1) if ip_match else "target host"
-                friendly_msg = f"{hint} while reaching {target} ({status_code})"
+                friendly_msg = f"{hint} while reaching {target}"
                 return (friendly_msg, None)
 
             # Special-case: missing share should be concise and friendly
             if status_code == 'NT_STATUS_BAD_NETWORK_NAME':
-                friendly_msg = "Share not found on server (NT_STATUS_BAD_NETWORK_NAME)"
+                friendly_msg = "Share not found on server"
                 return (friendly_msg, None)
 
             # Find context around the status code (up to 80 chars before/after)
