@@ -126,6 +126,9 @@ class ScanDialog:
         self.rate_limit_delay_var = tk.StringVar()
         self.share_access_delay_var = tk.StringVar()
 
+        # Verbose toggle for backend logging
+        self.verbose_var = tk.BooleanVar(value=False)
+
         # Security mode toggle (default cautious)
         self.security_mode_var = tk.StringVar(value="cautious")
         self._security_mode_previous = "cautious"
@@ -384,6 +387,7 @@ class ScanDialog:
         self._create_rate_limit_options(left_column)
 
         # Right column: execution controls
+        self._create_verbose_option(right_column)
         self._create_security_mode_option(right_column)
         self._create_bulk_probe_option(right_column)
         self._create_bulk_extract_option(right_column)
@@ -579,6 +583,7 @@ class ScanDialog:
             "rate_limit_delay": self.rate_limit_delay_var.get(),
             "share_access_delay": self.share_access_delay_var.get(),
             "api_key_override": self.api_key_var.get(),
+            "verbose": self.verbose_var.get(),
             "rce_enabled": self.rce_enabled_var.get(),
             "bulk_probe_enabled": self.bulk_probe_enabled_var.get(),
             "bulk_extract_enabled": self.bulk_extract_enabled_var.get()
@@ -625,6 +630,7 @@ class ScanDialog:
                 var.set(str(value))
 
         self.api_key_var.set(state.get("api_key_override", ""))
+        self.verbose_var.set(bool(state.get("verbose", False)))
 
         # RCE analysis setting (with backward compatibility)
         self.rce_enabled_var.set(bool(state.get("rce_enabled", False)))
@@ -949,6 +955,24 @@ class ScanDialog:
         )
         self.theme.apply_to_widget(self.rescan_failed_checkbox, "checkbox")
         self.rescan_failed_checkbox.pack(anchor="w", padx=5)
+
+    def _create_verbose_option(self, parent_frame: tk.Frame) -> None:
+        """Create verbose mode toggle at top of right column."""
+        container = tk.Frame(parent_frame)
+        self.theme.apply_to_widget(container, "card")
+        container.pack(fill=tk.X, padx=15, pady=(0, 10))
+
+        heading = self._create_accent_heading(container, "📣 Verbose Mode")
+        heading.pack(fill=tk.X)
+
+        checkbox = tk.Checkbutton(
+            container,
+            text="Send backend verbose output",
+            variable=self.verbose_var,
+            font=self.theme.fonts["small"]
+        )
+        self.theme.apply_to_widget(checkbox, "checkbox")
+        checkbox.pack(anchor="w", padx=12, pady=(6, 4))
 
     def _create_security_mode_option(self, parent_frame: tk.Frame) -> None:
         """Create security mode toggle."""
@@ -1722,6 +1746,7 @@ class ScanDialog:
         security_mode = (self.security_mode_var.get() or "cautious").strip().lower()
         if security_mode not in {"cautious", "legacy"}:
             security_mode = "cautious"
+        verbose_enabled = bool(self.verbose_var.get())
 
         # Handle API key (empty string means None)
         api_key = self.api_key_var.get().strip()
@@ -1775,6 +1800,7 @@ class ScanDialog:
                 self._settings_manager.set_setting('scan_dialog.rate_limit_delay', rate_limit_delay)
                 self._settings_manager.set_setting('scan_dialog.share_access_delay', share_access_delay)
                 self._settings_manager.set_setting('scan_dialog.security_mode', security_mode)
+                self._settings_manager.set_setting('scan_dialog.verbose', verbose_enabled)
                 self._settings_manager.set_setting('scan_dialog.rce_enabled', self.rce_enabled_var.get())
                 self._settings_manager.set_setting('scan_dialog.bulk_probe_enabled', self.bulk_probe_enabled_var.get())
                 self._settings_manager.set_setting('scan_dialog.bulk_extract_enabled', self.bulk_extract_enabled_var.get())
@@ -1803,6 +1829,7 @@ class ScanDialog:
             'rate_limit_delay': rate_limit_delay,
             'share_access_delay': share_access_delay,
             'security_mode': security_mode,
+            'verbose': verbose_enabled,
             'rce_enabled': self.rce_enabled_var.get(),
             'bulk_probe_enabled': self.bulk_probe_enabled_var.get(),
             'bulk_extract_enabled': self.bulk_extract_enabled_var.get()
@@ -1828,6 +1855,7 @@ class ScanDialog:
                 rate_limit_delay = self._settings_manager.get_setting('scan_dialog.rate_limit_delay', None)
                 share_access_delay = self._settings_manager.get_setting('scan_dialog.share_access_delay', None)
                 security_mode = self._settings_manager.get_setting('scan_dialog.security_mode', 'cautious')
+                verbose_enabled = bool(self._settings_manager.get_setting('scan_dialog.verbose', False))
 
                 # Set UI variables
                 self.max_results_var.set(max_results)
@@ -1848,6 +1876,7 @@ class ScanDialog:
                     self.share_access_delay_var.set(str(share_access_delay))
                 if security_mode in ("cautious", "legacy"):
                     self.security_mode_var.set(security_mode)
+                self.verbose_var.set(verbose_enabled)
 
                 # Load RCE analysis setting
                 rce_enabled = bool(self._settings_manager.get_setting('scan_dialog.rce_enabled', False))
@@ -1909,6 +1938,7 @@ class ScanDialog:
             if security_mode not in {"cautious", "legacy"}:
                 security_mode = "cautious"
             self._settings_manager.set_setting('scan_dialog.security_mode', security_mode)
+            self._settings_manager.set_setting('scan_dialog.verbose', bool(self.verbose_var.get()))
         except Exception:
             # Persistence is best-effort; ignore failures here
             pass

@@ -90,7 +90,8 @@ class SettingsManager:
                 'rate_limit_delay': 1,
                 'share_access_delay': 1,
                 'remember_api_key': False,
-                'rce_enabled': False
+                'rce_enabled': False,
+                'verbose': False
             },
             'probe': {
                 'max_directories_per_share': 3,

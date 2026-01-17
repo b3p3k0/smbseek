@@ -380,6 +380,8 @@ class ScanManager:
         if security_mode == 'legacy':
             cli_args.append('--legacy')
 
+        verbose_flag = bool(scan_options.get('verbose', False))
+
         # Recent hours filtering is now handled through config overrides
         # in the _execute_scan method via _temporary_config_override
         # (lines 324-327). CLI --recent flag removed for SMBSeek 3.x compatibility.
@@ -396,7 +398,8 @@ class ScanManager:
             progress_callback=self._handle_backend_progress,
             log_callback=self._handle_backend_log_line,
             additional_args=cli_args,
-            filters=custom_filters
+            filters=custom_filters,
+            verbose=verbose_flag
         )
 
     def _handle_backend_log_line(self, line: str) -> None:

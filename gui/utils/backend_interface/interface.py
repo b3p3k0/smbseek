@@ -342,7 +342,8 @@ class BackendInterface:
     def run_scan(self, countries: List[str], progress_callback: Optional[Callable] = None,
                  log_callback: Optional[Callable[[str], None]] = None,
                  use_recent_filtering: bool = True, recent_days: Optional[int] = None,
-                 additional_args: List[str] = None, filters: str = None) -> Dict:
+                 additional_args: List[str] = None, filters: str = None,
+                 verbose: bool = True) -> Dict:
         """
         Execute complete SMBSeek scan workflow.
 
@@ -353,6 +354,7 @@ class BackendInterface:
             recent_days: Days for recent filtering (None uses config default)
             additional_args: Additional CLI arguments to pass to the scan command
             filters: Custom Shodan filters string to append to query (raw syntax)
+            verbose: Whether to pass --verbose to backend CLI
 
         Returns:
             Dictionary with scan results and statistics
@@ -364,8 +366,10 @@ class BackendInterface:
         if self.mock_mode:
             return mock_operations.mock_scan_operation(countries, progress_callback)
 
-        # Build base command with verbose flag
-        cmd = self._build_cli_command("--verbose")  # For detailed progress parsing
+        # Build base command and add verbose flag when requested
+        cmd = self._build_cli_command()
+        if verbose:
+            cmd.append("--verbose")  # For detailed progress parsing
 
         # Only append --country when countries list is truthy per SMBSeek 3.0 requirements
         if countries:
