@@ -138,11 +138,15 @@ class ServerListWindow:
         self.filter_template_var = tk.StringVar()
         self._filter_template_label_to_slug: Dict[str, str] = {}
         self._selected_filter_template_slug: Optional[str] = None
-        self.filter_template_store = TemplateStore(
-            settings_manager=None,
-            base_dir=Path.home() / ".smbseek" / "filter_templates",
-            seed_dir=None
-        )
+        try:
+            self.filter_template_store = TemplateStore(
+                settings_manager=None,
+                base_dir=Path.home() / ".smbseek" / "filter_templates",
+                seed_dir=None
+            )
+        except Exception as exc:
+            print(f"Warning: filter template store unavailable: {exc}")
+            self.filter_template_store = None
 
         # Date filtering state
         self.filter_recent = self.window_data.get("filter_recent", False)
@@ -2440,7 +2444,7 @@ class ServerListWindow:
 
     def _refresh_filter_templates(self, select_slug: Optional[str] = None) -> None:
         """Refresh filter template dropdown values."""
-        if 'filter_template_dropdown' not in self.filter_widgets:
+        if 'filter_template_dropdown' not in self.filter_widgets or not self.filter_template_store:
             return
 
         dropdown = self.filter_widgets['filter_template_dropdown']
@@ -2504,6 +2508,9 @@ class ServerListWindow:
 
     def _on_filter_template_selected(self) -> None:
         """Handle selection from filter template dropdown."""
+        if not self.filter_template_store:
+            messagebox.showwarning("Filter Template", "Filter template storage is unavailable.", parent=self.window)
+            return
         label = self.filter_template_var.get()
         if label == self.FILTER_TEMPLATE_PLACEHOLDER:
             self._selected_filter_template_slug = None
@@ -2514,7 +2521,7 @@ class ServerListWindow:
         if not slug:
             return
 
-        template = self.filter_template_store.load_template(slug)
+        template = self.filter_template_store.load_template(slug) if self.filter_template_store else None
         if not template:
             messagebox.showwarning("Filter Template", "Template could not be loaded.", parent=self.window)
             return
@@ -2543,7 +2550,7 @@ class ServerListWindow:
             return
 
         slug = TemplateStore.slugify(name)
-        existing = self.filter_template_store.load_template(slug)
+        existing = self.filter_template_store.load_template(slug) if self.filter_template_store else None
         if existing:
             overwrite = messagebox.askyesno(
                 "Overwrite Template",
@@ -2554,6 +2561,14 @@ class ServerListWindow:
                 return
 
         form_state = self._capture_filter_state()
+        if not self.filter_template_store:
+            messagebox.showerror(
+                "Filter Template",
+                "Filter templates are unavailable (storage not initialized).",
+                parent=self.window
+            )
+            return
+
         template = self.filter_template_store.save_template(name, form_state)
         self._set_last_filter_template_slug(template.slug)
         self._refresh_filter_templates(select_slug=template.slug)
