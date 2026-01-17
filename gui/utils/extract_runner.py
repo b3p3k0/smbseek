@@ -369,9 +369,11 @@ def _should_download_file(
     total_bytes: int,
 ) -> Tuple[bool, Optional[str]]:
     ext = Path(rel_path).suffix.lower()
+    # Deny list always takes precedence (even for extensionless files)
     if denied_set and ext in denied_set:
         return False, "denied_extension"
-    if allowed_set and ext not in allowed_set:
+    # Allow extensionless files even when an allow-list is present
+    if allowed_set and ext and ext not in allowed_set:
         return False, "not_included_extension"
     if max_file_bytes > 0 and file_size > max_file_bytes:
         return False, "file_too_large"
