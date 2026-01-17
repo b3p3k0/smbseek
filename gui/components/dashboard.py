@@ -87,6 +87,8 @@ class DashboardWidget:
         self.scan_manager = get_scan_manager()
         self.config_path = config_path
         self.settings_manager = SettingsManager()
+        self.ransomware_indicators: List[str] = []
+        self.indicator_patterns = []
 
         # UI components
         self.main_frame = None
@@ -147,6 +149,9 @@ class DashboardWidget:
         self.config_editor_callback = None
         self.size_enforcement_callback = None
         
+        # Load indicator patterns for post-scan probes
+        self._load_indicator_patterns()
+
         self._build_dashboard()
         
         # Initial data load
@@ -1156,6 +1161,19 @@ class DashboardWidget:
             print(f"Error querying servers with successful auth: {e}")
             return []
 
+    def _load_indicator_patterns(self) -> None:
+        """Load ransomware indicator patterns from SMBSeek config."""
+        config_path = self.config_path
+        if not config_path and self.settings_manager:
+            config_path = self.settings_manager.get_setting('backend.config_path', None)
+            if not config_path:
+                try:
+                    config_path = self.settings_manager.get_smbseek_config_path()
+                except Exception:
+                    config_path = None
+        self.ransomware_indicators = probe_patterns.load_ransomware_indicators(config_path)
+        self.indicator_patterns = probe_patterns.compile_indicator_patterns(self.ransomware_indicators)
+
     def _run_background_fetch(self, title: str, message: str, fetch_fn: Callable[[], Any]) -> tuple[Any, Optional[str]]:
         """
         Run a blocking fetch function off the UI thread while showing a small modal.
@@ -1342,12 +1360,16 @@ class DashboardWidget:
             except Exception:
                 snapshot_path = None
 
+            # Attach ransomware indicator analysis (mirror server list behavior)
+            analysis = probe_patterns.attach_indicator_analysis(result, self.indicator_patterns)
+            issue_detected = bool(analysis.get("is_suspicious"))
+
             try:
                 if self.db_reader:
                     self.db_reader.upsert_probe_cache(
                         ip_address,
-                        status="clean",  # indicator analysis not run here; default to clean
-                        indicator_matches=0,
+                        status="issue" if issue_detected else "clean",
+                        indicator_matches=len(analysis.get("matches", [])),
                         snapshot_path=snapshot_path
                     )
             except Exception:
@@ -1357,7 +1379,7 @@ class DashboardWidget:
                 "ip_address": ip_address,
                 "action": "probe",
                 "status": "success",
-                "notes": f"Probed {len(shares)} share(s)"
+                "notes": self._build_probe_notes(len(shares), enable_rce, issue_detected, analysis)
             }
         except Exception as e:
             status = "cancelled" if "cancel" in str(e).lower() else "failed"
@@ -1367,6 +1389,24 @@ class DashboardWidget:
                 "status": status,
                 "notes": str(e)
             }
+
+    def _build_probe_notes(self, share_count: int, enable_rce: bool, issue_detected: bool, analysis: Dict[str, Any]) -> str:
+        notes: List[str] = []
+        if share_count:
+            notes.append(f"{share_count} share(s)")
+        else:
+            notes.append("No accessible shares")
+
+        if enable_rce:
+            rce_status = analysis.get("rce_status") if isinstance(analysis, dict) else None
+            if rce_status:
+                notes.append(f"RCE: {rce_status}")
+
+        if issue_detected:
+            match_count = len(analysis.get("matches", [])) if isinstance(analysis, dict) else 0
+            notes.append(f"Indicators detected ({match_count})" if match_count else "Indicators detected")
+
+        return ", ".join(notes) if notes else "Probed"
 
     def _execute_batch_extract(self, servers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Execute bulk extract operation on servers."""
