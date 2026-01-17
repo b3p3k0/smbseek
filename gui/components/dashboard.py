@@ -22,7 +22,7 @@ import os
 import queue
 from collections import deque
 import re
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 # Add utils to path for imports
@@ -1092,8 +1092,22 @@ class DashboardWidget:
             if not (bulk_probe_enabled or bulk_extract_enabled):
                 return  # No bulk operations requested
 
-            # Query database for servers with successful authentication
-            successful_servers = self._get_servers_with_successful_auth()
+            # Query database for servers with successful authentication (keep UI responsive)
+            def _fetch_servers():
+                return self._get_servers_with_successful_auth()
+
+            successful_servers, fetch_error = self._run_background_fetch(
+                title="Preparing Bulk Operations",
+                message="Gathering servers with successful authentication...",
+                fetch_fn=_fetch_servers
+            )
+
+            if fetch_error:
+                messagebox.showerror(
+                    "Bulk Operations Error",
+                    f"Failed to gather servers for bulk operations:\n{fetch_error}"
+                )
+                return
 
             if not successful_servers:
                 # Show info message only if bulk operations were enabled
@@ -1142,6 +1156,47 @@ class DashboardWidget:
             print(f"Error querying servers with successful auth: {e}")
             return []
 
+    def _run_background_fetch(self, title: str, message: str, fetch_fn: Callable[[], Any]) -> tuple[Any, Optional[str]]:
+        """
+        Run a blocking fetch function off the UI thread while showing a small modal.
+
+        Returns:
+            (result, error_message_or_None)
+        """
+        result_container = {"result": None, "error": None, "done": False}
+
+        dialog = tk.Toplevel(self.parent)
+        dialog.title(title)
+        dialog.geometry("380x140")
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        self.theme.apply_to_widget(dialog, "main_window")
+
+        label = tk.Label(dialog, text=message)
+        label.pack(pady=(20, 10))
+
+        progress = ttk.Progressbar(dialog, mode="indeterminate", length=260)
+        progress.pack(pady=(0, 10))
+        progress.start(10)
+
+        dialog.update_idletasks()
+
+        def worker():
+            try:
+                result_container["result"] = fetch_fn()
+            except Exception as exc:  # pragma: no cover - best-effort guard
+                result_container["error"] = str(exc)
+            finally:
+                result_container["done"] = True
+                try:
+                    dialog.after(0, dialog.destroy)
+                except Exception:
+                    pass
+
+        threading.Thread(target=worker, daemon=True).start()
+        self.parent.wait_window(dialog)
+        return result_container["result"], result_container["error"]
+
     def _execute_batch_probe(self, servers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Execute bulk probe operation on servers."""
         # Load probe settings
@@ -1152,65 +1207,97 @@ class DashboardWidget:
         timeout_seconds = int(self.settings_manager.get_setting('probe.share_timeout_seconds', 10))
         enable_rce = bool(self.settings_manager.get_setting('scan_dialog.rce_enabled', False))
 
-        results = []
+        results: List[Dict[str, Any]] = []
         cancel_event = threading.Event()
 
-        # Create progress dialog
+        # Create progress dialog quickly, then hand work to background thread
         progress_dialog = tk.Toplevel(self.parent)
         progress_dialog.title("Bulk Probe Progress")
-        progress_dialog.geometry("400x150")
+        progress_dialog.geometry("420x170")
         progress_dialog.transient(self.parent)
         progress_dialog.grab_set()
         self.theme.apply_to_widget(progress_dialog, "main_window")
 
         progress_label = tk.Label(progress_dialog, text=f"Probing 0/{len(servers)} servers...")
-        progress_label.pack(pady=20)
+        progress_label.pack(pady=(18, 8))
 
-        progress_bar = ttk.Progressbar(progress_dialog, length=300, mode='determinate', maximum=len(servers))
-        progress_bar.pack(pady=10)
+        progress_bar = ttk.Progressbar(progress_dialog, length=320, mode='determinate', maximum=len(servers))
+        progress_bar.pack(pady=(0, 10))
 
         cancel_button = tk.Button(progress_dialog, text="Cancel", command=lambda: cancel_event.set())
-        cancel_button.pack(pady=10)
+        cancel_button.pack(pady=(0, 10))
 
-        completed = [0]  # Use list to allow modification in nested function
+        # Ensure initial paint before heavy work
+        progress_dialog.update_idletasks()
 
-        def update_progress(completed_count):
-            completed[0] = completed_count
-            progress_label.config(text=f"Probing {completed_count}/{len(servers)} servers...")
-            progress_bar['value'] = completed_count
-            progress_dialog.update()
+        # Shared state for UI updates from worker
+        state = {
+            "completed": 0,
+            "total": len(servers),
+            "results": results,
+            "done": False,
+            "error": None
+        }
 
-        # Run probe operations with ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="probe-batch") as executor:
-            futures = []
-            for server in servers:
-                future = executor.submit(
-                    self._probe_single_server,
-                    server,
-                    max_dirs,
-                    max_files,
-                    timeout_seconds,
-                    enable_rce,
-                    cancel_event
-                )
-                futures.append((server, future))
+        def ui_tick():
+            """Periodic UI refresher to keep dialog responsive."""
+            try:
+                progress_label.config(text=f"Probing {state['completed']}/{state['total']} servers...")
+                progress_bar['value'] = state['completed']
+                progress_dialog.update_idletasks()
+            except tk.TclError:
+                return  # Dialog closed
 
-            for server, future in futures:
-                if cancel_event.is_set():
-                    break
+            if not state["done"]:
+                progress_dialog.after(150, ui_tick)
+
+        def worker():
+            """Run probes off the UI thread and report completion order."""
+            try:
+                with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="probe-batch") as executor:
+                    future_to_server = {
+                        executor.submit(
+                            self._probe_single_server,
+                            server,
+                            max_dirs,
+                            max_files,
+                            timeout_seconds,
+                            enable_rce,
+                            cancel_event
+                        ): server for server in servers
+                    }
+
+                    # Consume futures as they complete to avoid head-of-line blocking
+                    for future in as_completed(future_to_server):
+                        server = future_to_server[future]
+                        if cancel_event.is_set():
+                            break
+                        try:
+                            result = future.result(timeout=timeout_seconds + 10)
+                        except Exception as e:
+                            result = {
+                                "ip_address": server.get("ip_address"),
+                                "action": "probe",
+                                "status": "failed",
+                                "notes": str(e)
+                            }
+                        results.append(result)
+                        state["completed"] = len(results)
+            except Exception as exc:
+                state["error"] = str(exc)
+            finally:
+                state["done"] = True
                 try:
-                    result = future.result(timeout=timeout_seconds + 10)
-                    results.append(result)
-                except Exception as e:
-                    results.append({
-                        "ip_address": server.get("ip_address"),
-                        "action": "probe",
-                        "status": "failed",
-                        "notes": str(e)
-                    })
-                update_progress(len(results))
+                    progress_dialog.after(0, progress_dialog.destroy)
+                except Exception:
+                    pass
 
-        progress_dialog.destroy()
+        # Start background worker and UI tick
+        threading.Thread(target=worker, daemon=True).start()
+        progress_dialog.after(150, ui_tick)
+
+        # Block until dialog destroyed (worker sets done then destroys dialog)
+        self.parent.wait_window(progress_dialog)
         return results
 
     def _probe_single_server(self, server: Dict[str, Any], max_dirs: int, max_files: int,
