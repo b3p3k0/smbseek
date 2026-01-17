@@ -493,9 +493,23 @@ class ScanDialog:
             self._apply_template_by_slug(slug)
             self.delete_template_button.configure(state=tk.NORMAL)
 
+    def _get_selected_template_name(self) -> Optional[str]:
+        """Return the display name of the currently selected template, if any."""
+        label = self.template_var.get()
+        if label == self.TEMPLATE_PLACEHOLDER_TEXT:
+            return None
+        return label.strip() if label else None
+
     def _prompt_save_template(self) -> None:
         """Ask for template name and persist current form state."""
-        name = simpledialog.askstring("Save Template", "Template name:", parent=self.dialog)
+        initial_name = self._get_selected_template_name()
+
+        name = simpledialog.askstring(
+            "Save Template",
+            "Template name:",
+            parent=self.dialog,
+            initialvalue=initial_name or ""
+        )
         if not name:
             return
         name = name.strip()

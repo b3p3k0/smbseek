@@ -413,8 +413,7 @@ class AccessOperation:
                     elif True:  # verbose check handled by output methods
                         self.output.print_if_verbose(f"Skipped non-disk share: {share_name} ({share_type})")
         
-        if True:  # verbose check handled by output methods
-            self.output.info(f"Parsed {len(shares)} valid shares from smbclient output")
+        self.output.print_if_verbose(f"Parsed {len(shares)} valid shares from smbclient output")
         
         return shares
     
@@ -512,8 +511,14 @@ class AccessOperation:
             tuple: (friendly_message, raw_combined_context)
         """
         # Combine and trim stdout/stderr
-        stderr_trimmed = result.stderr.strip() if result.stderr else ""
-        stdout_trimmed = result.stdout.strip() if result.stdout else ""
+        def _clean(stream: Optional[str]) -> str:
+            if not stream:
+                return ""
+            # Strip whitespace and trailing tildes some smbclient builds append
+            return stream.strip().rstrip("~").strip()
+
+        stderr_trimmed = _clean(result.stderr)
+        stdout_trimmed = _clean(result.stdout)
 
         # Combine both streams with separator when both exist
         if stderr_trimmed and stdout_trimmed:
@@ -539,9 +544,21 @@ class AccessOperation:
                 friendly_msg = 'Access denied - share does not allow anonymous/guest browsing (NT_STATUS_ACCESS_DENIED)'
                 return (friendly_msg, None)
 
+        # Friendly formatting for logon failures that spam tree connect failed
+        if nt_status_match and nt_status_match.group(1) == 'NT_STATUS_LOGON_FAILURE':
+            combined_lower = combined_output.lower()
+            if 'tree connect failed' in combined_lower:
+                friendly_msg = 'Authentication failed for this share (NT_STATUS_LOGON_FAILURE)'
+                return (friendly_msg, None)
+
         if nt_status_match:
             status_code = nt_status_match.group(1)
             hint = self.SMB_STATUS_HINTS.get(status_code, "SMB protocol error")
+
+            # Special-case: missing share should be concise and friendly
+            if status_code == 'NT_STATUS_BAD_NETWORK_NAME':
+                friendly_msg = "Share not found on server (NT_STATUS_BAD_NETWORK_NAME)"
+                return (friendly_msg, None)
 
             # Find context around the status code (up to 80 chars before/after)
             start_pos = max(0, nt_status_match.start() - 80)
@@ -553,7 +570,10 @@ class AccessOperation:
                 context = context[:157] + "..."
 
             friendly_msg = f"{hint} ({status_code}) - {context}"
-            return (friendly_msg, combined_output)
+
+            # Avoid duplicating context in caller; only return raw context if it adds value
+            raw_ctx = combined_output if combined_output != friendly_msg else None
+            return (friendly_msg, raw_ctx)
         else:
             # No NT_STATUS found, provide generic error with trimmed output
             trimmed_output = combined_output[:160] + "..." if len(combined_output) > 160 else combined_output
