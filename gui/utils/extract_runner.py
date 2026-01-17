@@ -356,7 +356,18 @@ def _list_directory(
 
 
 def _normalize_extensions(values: Sequence[str]) -> set:
-    return {value.strip().lower() for value in values if isinstance(value, str) and value.strip()}
+    normalized = set()
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        cleaned = value.strip().lower()
+        if not cleaned:
+            continue
+        if cleaned in ("<no extension>", "no extension", "no-extension"):
+            normalized.add("")  # Represent extensionless files
+            continue
+        normalized.add(cleaned)
+    return normalized
 
 
 def _should_download_file(

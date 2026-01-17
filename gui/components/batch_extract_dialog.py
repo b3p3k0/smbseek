@@ -23,6 +23,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 
 from dialog_helpers import ensure_dialog_focus
 
+# Special display token for extensionless files
+NO_EXTENSION_TOKEN = "<no extension>"
+
 
 class BatchExtractSettingsDialog:
     """
@@ -340,12 +343,37 @@ class BatchExtractSettingsDialog:
             try:
                 config_data = json.loads(self.config_path.read_text(encoding="utf-8"))
                 file_cfg = config_data.get("file_collection", {})
-                defaults["included_extensions"] = file_cfg.get("included_extensions", [])
-                defaults["excluded_extensions"] = file_cfg.get("excluded_extensions", [])
+                defaults["included_extensions"] = self._normalize_loaded_extensions(file_cfg.get("included_extensions", []))
+                defaults["excluded_extensions"] = self._normalize_loaded_extensions(file_cfg.get("excluded_extensions", []))
             except Exception:
                 pass  # Use defaults on any error
 
+        # Ensure we always have the no-extension token available
+        included_lower = [e.lower() for e in defaults["included_extensions"]]
+        excluded_lower = [e.lower() for e in defaults["excluded_extensions"]]
+        if NO_EXTENSION_TOKEN not in included_lower and NO_EXTENSION_TOKEN not in excluded_lower:
+            defaults["included_extensions"].insert(0, NO_EXTENSION_TOKEN)
+
         return defaults
+
+    @staticmethod
+    def _normalize_loaded_extensions(values: List[Any]) -> List[str]:
+        """Clean extensions loaded from config (dedupe, lowercase, map blanks to token)."""
+        cleaned: List[str] = []
+        seen = set()
+        for value in values or []:
+            if not isinstance(value, str):
+                continue
+            normalized = value.strip()
+            if not normalized:
+                normalized = NO_EXTENSION_TOKEN
+            normalized = normalized.lower()
+            key = normalized
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(normalized)
+        return cleaned
 
     def _validate_extension_mode(self, mode: str, filters: Dict[str, List[str]]) -> bool:
         """
@@ -612,6 +640,9 @@ class ExtensionEditorDialog:
         self.window: Optional[tk.Toplevel] = None
         self.result: Optional[tuple] = None
 
+        # Ensure the no-extension token is present (default in included list)
+        self._ensure_no_extension_token()
+
         # UI widgets (initialized in show())
         self.included_listbox: Optional[tk.Listbox] = None
         self.excluded_listbox: Optional[tk.Listbox] = None
@@ -804,6 +835,16 @@ class ExtensionEditorDialog:
         # 1. Strip whitespace
         ext = ext.strip()
 
+        # Special case: no-extension token
+        if ext.lower() in (NO_EXTENSION_TOKEN, NO_EXTENSION_TOKEN.strip("<>"), "no extension"):
+            token = NO_EXTENSION_TOKEN
+            # Check uniqueness across lists
+            if any(e.lower() == token for e in source_list):
+                return (False, "", f"Entry '{token}' already exists in this list")
+            if any(e.lower() == token for e in other_list):
+                return (False, "", f"Entry '{token}' exists in the other list")
+            return (True, token, "")
+
         # 2. Check not empty
         if not ext:
             return (False, "", "Extension cannot be empty")
@@ -840,7 +881,24 @@ class ExtensionEditorDialog:
         Returns:
             Sorted list
         """
-        sorted_exts = sorted(extensions, key=str.lower)
+        # Keep the no-extension token pinned to the top if present
+        has_no_ext = any(ext.lower() == NO_EXTENSION_TOKEN for ext in extensions)
+        # Remove duplicates while preserving case
+        unique_exts = []
+        seen = set()
+        for ext in extensions:
+            key = ext.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_exts.append(ext)
+
+        sorted_exts = sorted(
+            [ext for ext in unique_exts if ext.lower() != NO_EXTENSION_TOKEN],
+            key=str.lower
+        )
+        if has_no_ext:
+            sorted_exts.insert(0, NO_EXTENSION_TOKEN)
 
         # Update the passed list in-place
         extensions.clear()
@@ -870,6 +928,14 @@ class ExtensionEditorDialog:
         else:
             # Default to included if no focus
             return (self.included_listbox, self.included_extensions, self.excluded_extensions)
+
+    def _ensure_no_extension_token(self) -> None:
+        """Guarantee the '<no extension>' token exists in one of the lists (default: included)."""
+        included_lower = [e.lower() for e in self.included_extensions]
+        excluded_lower = [e.lower() for e in self.excluded_extensions]
+        if NO_EXTENSION_TOKEN in included_lower or NO_EXTENSION_TOKEN in excluded_lower:
+            return
+        self.included_extensions.insert(0, NO_EXTENSION_TOKEN)
 
     def _load_extension_filters(self) -> Dict[str, List[str]]:
         """Load extension filters from config.json."""
@@ -1058,6 +1124,7 @@ class ExtensionEditorDialog:
         filters = self._load_extension_filters()
         self.included_extensions = list(filters["included_extensions"])
         self.excluded_extensions = list(filters["excluded_extensions"])
+        self._ensure_no_extension_token()
 
         # Update both listboxes
         self._sort_list(self.included_listbox, self.included_extensions)
