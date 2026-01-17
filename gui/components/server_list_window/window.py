@@ -194,10 +194,7 @@ class ServerListWindow:
         # Apply theme
         self.theme.apply_to_widget(self.window, "main_window")
 
-        # Keep window linked to parent for stacking, but do not grab focus (modeless)
-        if hasattr(self.parent, 'winfo_toplevel'):
-            master_window = self.parent.winfo_toplevel()
-            self.window.transient(master_window)
+        # Modeless window; do not force stacking above dashboard
 
         # Center window
         self._center_window()
