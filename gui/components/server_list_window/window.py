@@ -183,11 +183,10 @@ class ServerListWindow:
         # Apply theme
         self.theme.apply_to_widget(self.window, "main_window")
 
-        # Make window modal (use master window if available)
+        # Keep window linked to parent for stacking, but do not grab focus (modeless)
         if hasattr(self.parent, 'winfo_toplevel'):
             master_window = self.parent.winfo_toplevel()
             self.window.transient(master_window)
-        self.window.grab_set()
 
         # Center window
         self._center_window()
@@ -201,7 +200,7 @@ class ServerListWindow:
         # Bind events
         self._setup_event_handlers()
 
-        # Ensure window appears on top and gains focus (critical for VMs)
+        # Ensure window appears on top and gains focus (without forcing modal grab)
         ensure_dialog_focus(self.window, self.parent)
 
     def _load_indicator_patterns(self) -> None:
