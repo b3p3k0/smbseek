@@ -194,13 +194,26 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
     )
     template_label.pack(anchor="e")
 
+    template_row = tk.Frame(template_frame)
+    template_row.pack(anchor="e", pady=(0, 4), fill=tk.X)
+
     template_dropdown = ttk.Combobox(
-        template_frame,
+        template_row,
         width=25,
         state="readonly"
     )
-    template_dropdown.pack(anchor="e", pady=(0, 4))
+    template_dropdown.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
     template_dropdown.bind("<<ComboboxSelected>>", lambda e: callbacks['on_filter_template_selected']())
+
+    delete_button = tk.Button(
+        template_row,
+        text="Delete",
+        command=callbacks['on_delete_filter_template'],
+        state=tk.DISABLED,
+        width=8
+    )
+    theme.apply_to_widget(delete_button, "button_secondary")
+    delete_button.pack(side=tk.LEFT)
 
     save_button = tk.Button(
         template_frame,
@@ -233,6 +246,7 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
         'mode_button': mode_button,
         'filter_template_dropdown': template_dropdown,
         'filter_template_save_button': save_button,
+        'filter_template_delete_button': delete_button,
     }
 
     if show_all_button:

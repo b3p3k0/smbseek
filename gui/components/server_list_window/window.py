@@ -305,7 +305,8 @@ class ServerListWindow:
             'on_reset_filters': self._reset_filters,
             'on_toggle_mode': self._toggle_mode,
             'on_filter_template_selected': self._on_filter_template_selected,
-            'on_save_filter_template': self._on_save_filter_template
+            'on_save_filter_template': self._on_save_filter_template,
+            'on_delete_filter_template': self._on_delete_filter_template
         }
 
         # Add show all toggle if needed
@@ -2444,12 +2445,21 @@ class ServerListWindow:
 
     def _refresh_filter_templates(self, select_slug: Optional[str] = None) -> None:
         """Refresh filter template dropdown values."""
+        delete_btn = None
+        if 'filter_template_delete_button' in self.filter_widgets:
+            delete_btn = self.filter_widgets['filter_template_delete_button']
+
         if 'filter_template_dropdown' not in self.filter_widgets or not self.filter_template_store:
+            if delete_btn:
+                delete_btn.configure(state=tk.DISABLED)
             return
 
         dropdown = self.filter_widgets['filter_template_dropdown']
         templates = self.filter_template_store.list_templates()
         self._filter_template_label_to_slug = {tpl.name: tpl.slug for tpl in templates}
+
+        if delete_btn:
+            delete_btn.configure(state=tk.NORMAL if templates else tk.DISABLED)
 
         values = [self.FILTER_TEMPLATE_PLACEHOLDER] + [tpl.name for tpl in templates]
         dropdown['values'] = values
@@ -2573,6 +2583,68 @@ class ServerListWindow:
         self._set_last_filter_template_slug(template.slug)
         self._refresh_filter_templates(select_slug=template.slug)
         messagebox.showinfo("Template Saved", f"Template '{name}' saved.", parent=self.window)
+
+    def _on_delete_filter_template(self) -> None:
+        """Delete the currently selected filter template."""
+        if not self.filter_template_store:
+            messagebox.showwarning(
+                "Filter Template",
+                "Filter template storage is unavailable.",
+                parent=self.window
+            )
+            return
+
+        label = self.filter_template_var.get()
+        if not label or label == self.FILTER_TEMPLATE_PLACEHOLDER:
+            messagebox.showinfo(
+                "Delete Filter Template",
+                "Select a template to delete.",
+                parent=self.window
+            )
+            return
+
+        slug = self._filter_template_label_to_slug.get(label)
+        if not slug:
+            messagebox.showinfo(
+                "Delete Filter Template",
+                "Template could not be resolved.",
+                parent=self.window
+            )
+            return
+
+        confirm = messagebox.askyesno(
+            "Delete Filter Template",
+            f"Delete template '{label}'?",
+            parent=self.window
+        )
+        if not confirm:
+            return
+
+        try:
+            deleted = self.filter_template_store.delete_template(slug)
+        except Exception as e:
+            messagebox.showerror(
+                "Delete Filter Template",
+                f"Failed to delete template: {e}",
+                parent=self.window
+            )
+            return
+
+        if not deleted:
+            messagebox.showinfo(
+                "Delete Filter Template",
+                "Template not found.",
+                parent=self.window
+            )
+            return
+
+        if self._get_last_filter_template_slug() == slug:
+            self._set_last_filter_template_slug(None)
+
+        self.filter_template_var.set(self.FILTER_TEMPLATE_PLACEHOLDER)
+        self._selected_filter_template_slug = None
+        self._refresh_filter_templates()
+        messagebox.showinfo("Template Deleted", f"Template '{label}' deleted.", parent=self.window)
 
     def _refresh_data(self) -> None:
         """Refresh data from database."""
