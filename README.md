@@ -62,6 +62,7 @@ cp conf/config.json.example conf/config.json
 - Optional username-as-password testing
 - Lockout-safe defaults (configurable delays and attempt limits)
 - Real-time progress updates
+- This is currently implemented as a novelty; better options probably exist
 
 All operations respect rate limits, enforce cautious SMB settings (SMB2+/signing), and provide clear feedback on what's happening.
 

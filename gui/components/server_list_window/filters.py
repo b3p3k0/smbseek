@@ -94,6 +94,15 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
     theme.apply_to_widget(exclude_compromised_checkbox, "checkbox")
     exclude_compromised_checkbox.pack(side=tk.LEFT, padx=(0, 10))
 
+    # Advanced toggle button aligned to the right of the search row
+    mode_button = tk.Button(
+        search_frame,
+        text="🔧 Advanced",
+        command=callbacks['on_toggle_mode']
+    )
+    theme.apply_to_widget(mode_button, "button_secondary")
+    mode_button.pack(side=tk.RIGHT)
+
     # Show all results toggle (if callback provided)
     show_all_button = None
     if 'on_show_all_toggle' in callbacks:
@@ -173,14 +182,41 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
     country_listbox.bind('<<ListboxSelect>>', lambda e: callbacks['on_country_filter_changed']())
     theme.apply_to_widget(country_listbox, "listbox")
 
-    # Reset filters button aligned right
+    # Template + reset cluster on the right
+    template_frame = tk.Frame(advanced_filters_frame)
+    theme.apply_to_widget(template_frame, "card")
+    template_frame.pack(side=tk.RIGHT, padx=10, pady=5)
+
+    template_label = theme.create_styled_label(
+        template_frame,
+        "Filter Templates:",
+        "small"
+    )
+    template_label.pack(anchor="e")
+
+    template_dropdown = ttk.Combobox(
+        template_frame,
+        width=25,
+        state="readonly"
+    )
+    template_dropdown.pack(anchor="e", pady=(0, 4))
+    template_dropdown.bind("<<ComboboxSelected>>", lambda e: callbacks['on_filter_template_selected']())
+
+    save_button = tk.Button(
+        template_frame,
+        text="Save Filters",
+        command=callbacks['on_save_filter_template']
+    )
+    theme.apply_to_widget(save_button, "button_secondary")
+    save_button.pack(anchor="e", pady=(0, 2))
+
     reset_button = tk.Button(
-        advanced_filters_frame,
+        template_frame,
         text="Reset Filters",
         command=callbacks['on_reset_filters']
     )
     theme.apply_to_widget(reset_button, "button_secondary")
-    reset_button.pack(side=tk.RIGHT, padx=10, pady=5)
+    reset_button.pack(anchor="e")
 
     # Widget references for parent access
     widget_refs = {
@@ -193,6 +229,10 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
         'probed_only_checkbox': probed_only_checkbox,
         'exclude_compromised_checkbox': exclude_compromised_checkbox,
         'country_listbox': country_listbox,
+        'reset_button': reset_button,
+        'mode_button': mode_button,
+        'filter_template_dropdown': template_dropdown,
+        'filter_template_save_button': save_button,
     }
 
     if show_all_button:
