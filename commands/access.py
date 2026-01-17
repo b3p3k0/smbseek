@@ -555,6 +555,14 @@ class AccessOperation:
             status_code = nt_status_match.group(1)
             hint = self.SMB_STATUS_HINTS.get(status_code, "SMB protocol error")
 
+            # Network-level statuses: keep concise, avoid raw context duplication
+            if status_code in ('NT_STATUS_IO_TIMEOUT', 'NT_STATUS_CONNECTION_REFUSED',
+                               'NT_STATUS_HOST_UNREACHABLE', 'NT_STATUS_NETWORK_UNREACHABLE'):
+                ip_match = re.search(r"Connection to\s+([^\s)]+)", combined_output)
+                target = ip_match.group(1) if ip_match else "target host"
+                friendly_msg = f"{hint} while reaching {target} ({status_code})"
+                return (friendly_msg, None)
+
             # Special-case: missing share should be concise and friendly
             if status_code == 'NT_STATUS_BAD_NETWORK_NAME':
                 friendly_msg = "Share not found on server (NT_STATUS_BAD_NETWORK_NAME)"
