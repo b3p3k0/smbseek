@@ -438,7 +438,7 @@ class ServerListWindow:
             command=self._view_server_details
         )
         self.theme.apply_to_widget(self.details_button, "button_secondary")
-        self.details_button.pack(side=tk.LEFT, padx=(0, 5))
+        self.details_button.pack(side=tk.LEFT, padx=(0, 8))
 
         self.probe_button = tk.Button(
             button_container,
@@ -448,7 +448,7 @@ class ServerListWindow:
         )
         # Use secondary styling to match the rest of the group (avoid blue highlight)
         self.theme.apply_to_widget(self.probe_button, "button_secondary")
-        self.probe_button.pack(side=tk.LEFT, padx=(0, 5))
+        self.probe_button.pack(side=tk.LEFT, padx=(0, 8))
 
         self.extract_button = tk.Button(
             button_container,
@@ -457,7 +457,7 @@ class ServerListWindow:
             state=tk.DISABLED
         )
         self.theme.apply_to_widget(self.extract_button, "button_secondary")
-        self.extract_button.pack(side=tk.LEFT, padx=(0, 15))
+        self.extract_button.pack(side=tk.LEFT, padx=(0, 8))
 
         self.browser_button = tk.Button(
             button_container,
@@ -466,7 +466,7 @@ class ServerListWindow:
             state=tk.DISABLED
         )
         self.theme.apply_to_widget(self.browser_button, "button_secondary")
-        self.browser_button.pack(side=tk.LEFT, padx=(0, 15))
+        self.browser_button.pack(side=tk.LEFT, padx=(0, 8))
 
         self.pry_button = tk.Button(
             button_container,
@@ -475,7 +475,7 @@ class ServerListWindow:
             state=tk.DISABLED
         )
         self.theme.apply_to_widget(self.pry_button, "button_secondary")
-        self.pry_button.pack(side=tk.LEFT, padx=(0, 15))
+        self.pry_button.pack(side=tk.LEFT, padx=(0, 8))
 
         self.delete_button = tk.Button(
             button_container,
@@ -485,7 +485,8 @@ class ServerListWindow:
         )
         # Force a red theme to signal destructive action
         self.theme.apply_to_widget(self.delete_button, "button_danger")
-        self.delete_button.pack(side=tk.LEFT, padx=(0, 15))
+        # Double padding before delete for visual separation; standard after
+        self.delete_button.pack(side=tk.LEFT, padx=(16, 8))
 
         self.stop_button = tk.Button(
             button_container,
@@ -972,6 +973,7 @@ class ServerListWindow:
             # If any servers were deleted, refresh table
             if deleted_count > 0:
                 self.db_reader.clear_cache()
+                self._load_data()
                 self._apply_filters(force=True)
 
             # Clear selection BEFORE re-enabling buttons

@@ -1431,7 +1431,7 @@ class DashboardWidget:
         """Show summary dialog for batch operations."""
         dialog = tk.Toplevel(self.parent)
         dialog.title("Batch Operations Summary")
-        dialog.geometry("700x400")
+        dialog.geometry("700x515")
         dialog.transient(self.parent)
         self.theme.apply_to_widget(dialog, "main_window")
 
