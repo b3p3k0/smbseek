@@ -61,16 +61,15 @@ def create_server_table(parent, theme, callbacks):
     tree.column("Last Seen", width=150, anchor="w")
     tree.column("Country", width=100, anchor="w", stretch=True)  # Flexible width
 
-    # Configure headings
+    # Configure headings (use clear labels to reduce ambiguity)
+    heading_labels = {
+        "favorite": "Favorite",
+        "avoid": "Avoid",
+        "probe": "Probed"
+    }
     for col in columns:
-        if col == "favorite":
-            tree.heading(col, text="★", command=lambda c=col: callbacks.get('on_sort_column', lambda x: None)(c))
-        elif col == "avoid":
-            tree.heading(col, text="☠", command=lambda c=col: callbacks.get('on_sort_column', lambda x: None)(c))
-        elif col == "probe":
-            tree.heading(col, text="○", command=lambda c=col: callbacks.get('on_sort_column', lambda x: None)(c))
-        else:
-            tree.heading(col, text=col, command=lambda c=col: callbacks.get('on_sort_column', lambda x: None)(c))
+        label = heading_labels.get(col, col)
+        tree.heading(col, text=label, command=lambda c=col: callbacks.get('on_sort_column', lambda x: None)(c))
 
     # Add scrollbars
     scrollbar_v = ttk.Scrollbar(
