@@ -1009,32 +1009,27 @@ class DashboardWidget:
                         self._log_status_event("Scan cancelled by user request")
                         self._reset_scan_status()
                     elif results:
-                        # Show normal results dialog for completed/failed scans
-                        self._show_scan_results(results)
-
-                        # Check if post-scan batch operations should run
-                        # Extract status indicators for clearer logic
                         status = results.get("status", "")
                         success = results.get("success", False)
-
-                        # Run batch ops if scan finished and wasn't cancelled
-                        # Permissive approach: check success flag OR status in completed/success/failed
-                        # This allows batch operations to run even if scan had some failures
                         is_finished = status not in {"cancelled"} and (
                             success or status in {"completed", "success", "failed"}
                         )
 
-                        if self.current_scan_options and is_finished:
-                            self._run_post_scan_batch_operations(self.current_scan_options, results)
-                        elif not self.current_scan_options:
-                            print("Bulk operations skipped: no scan options stored")
-                        elif not is_finished:
-                            print(f"Bulk operations skipped: status '{status}' (success={success})")
+                        # Determine if we should delay scan summary for bulk ops
+                        bulk_probe_enabled = self.current_scan_options.get('bulk_probe_enabled', False) if self.current_scan_options else False
+                        bulk_extract_enabled = self.current_scan_options.get('bulk_extract_enabled', False) if self.current_scan_options else False
+                        has_bulk_ops = self.current_scan_options and is_finished and (bulk_probe_enabled or bulk_extract_enabled)
 
-                        try:
-                            self.parent.after(5000, self._reset_scan_status)
-                        except tk.TclError:
-                            pass
+                        if has_bulk_ops:
+                            self._pending_scan_results = results
+                            self._run_post_scan_batch_operations(self.current_scan_options, results)
+                        else:
+                            # Show scan summary immediately when no bulk ops
+                            self._show_scan_results(results)
+                            try:
+                                self.parent.after(5000, self._reset_scan_status)
+                            except tk.TclError:
+                                pass
                     else:
                         self._reset_scan_status()
                     # If no results, scan may have been cancelled before any results were recorded
@@ -1096,6 +1091,11 @@ class DashboardWidget:
             bulk_extract_enabled = scan_options.get('bulk_extract_enabled', False)
 
             if not (bulk_probe_enabled or bulk_extract_enabled):
+                self._show_scan_results(scan_results)
+                try:
+                    self.parent.after(5000, self._reset_scan_status)
+                except tk.TclError:
+                    pass
                 return  # No bulk operations requested
 
             # Query database for servers with successful authentication (keep UI responsive)
@@ -1113,6 +1113,11 @@ class DashboardWidget:
                     "Bulk Operations Error",
                     f"Failed to gather servers for bulk operations:\n{fetch_error}"
                 )
+                self._show_scan_results(scan_results)
+                try:
+                    self.parent.after(5000, self._reset_scan_status)
+                except tk.TclError:
+                    pass
                 return
 
             if not successful_servers:
@@ -1122,22 +1127,36 @@ class DashboardWidget:
                     "No servers with successful authentication found.\n\n"
                     "Bulk probe/extract operations require at least one accessible server."
                 )
+                self._show_scan_results(scan_results)
+                try:
+                    self.parent.after(5000, self._reset_scan_status)
+                except tk.TclError:
+                    pass
                 return
 
-            # Run batch operations
-            all_results = []
+            # Run batch operations (record summaries per op, show in LIFO order)
+            summary_stack: List[Tuple[str, List[Dict[str, Any]]]] = []
 
             if bulk_probe_enabled:
                 probe_results = self._execute_batch_probe(successful_servers)
-                all_results.extend(probe_results)
+                summary_stack.append(("probe", probe_results))
 
             if bulk_extract_enabled:
                 extract_results = self._execute_batch_extract(successful_servers)
-                all_results.extend(extract_results)
+                summary_stack.append(("extract", extract_results))
 
-            # Show summary of all operations
-            if all_results:
-                self._show_batch_summary(all_results)
+            # Present summaries in LIFO order
+            while summary_stack:
+                job_type, results = summary_stack.pop()
+                if results:
+                    self._show_batch_summary(results, job_type=job_type)
+
+            # After bulk operations, show the deferred scan summary
+            self._show_scan_results(scan_results)
+            try:
+                self.parent.after(5000, self._reset_scan_status)
+            except tk.TclError:
+                pass
 
         except Exception as e:
             messagebox.showerror(
@@ -1145,6 +1164,12 @@ class DashboardWidget:
                 f"Error running post-scan batch operations: {str(e)}\n\n"
                 f"The scan completed successfully but bulk operations encountered an error."
             )
+            # Even on error, fall back to showing the scan summary
+            try:
+                self._show_scan_results(scan_results)
+                self.parent.after(5000, self._reset_scan_status)
+            except Exception:
+                pass
 
     def _get_servers_with_successful_auth(self) -> list:
         """Query database for servers with successful authentication."""
@@ -1582,15 +1607,17 @@ class DashboardWidget:
                 "notes": str(e)
             }
 
-    def _show_batch_summary(self, results: List[Dict[str, Any]]) -> None:
+    def _show_batch_summary(self, results: List[Dict[str, Any]], job_type: Optional[str] = None) -> None:
         """Show summary dialog for batch operations."""
         dialog = tk.Toplevel(self.parent)
-        dialog.title("Batch Operations Summary")
+        title = f"{(job_type or 'Batch').title()} Operations Summary"
+        dialog.title(title)
         dialog.geometry("700x515")
         dialog.transient(self.parent)
         self.theme.apply_to_widget(dialog, "main_window")
+        dialog.grab_set()
 
-        tk.Label(dialog, text="Batch Operations Complete", font=("TkDefaultFont", 12, "bold")).pack(pady=10)
+        tk.Label(dialog, text=f"{title} Complete", font=("TkDefaultFont", 12, "bold")).pack(pady=10)
 
         # Create treeview for results
         tree_frame = tk.Frame(dialog)
@@ -1641,6 +1668,9 @@ class DashboardWidget:
         # Close button
         close_button = tk.Button(dialog, text="Close", command=dialog.destroy)
         close_button.pack(pady=10)
+
+        # Block until closed to preserve display sequencing
+        self.parent.wait_window(dialog)
 
     def _show_scan_results(self, results: Dict[str, Any]) -> None:
         """Show scan results dialog."""
