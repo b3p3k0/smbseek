@@ -1511,6 +1511,7 @@ class ServerListWindow:
                 denied_extensions=options["excluded_extensions"],
                 delay_seconds=options["download_delay_seconds"],
                 connection_timeout=options["connection_timeout"],
+                extension_mode=options.get("extension_mode"),
                 progress_callback=progress_cb,
                 cancel_event=cancel_event
             )

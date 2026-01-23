@@ -15,6 +15,7 @@ import webbrowser
 import tkinter.font as tkfont
 import threading
 import time
+import json
 from typing import Dict, List, Any, Optional, Callable
 from datetime import datetime
 import sys
@@ -1417,6 +1418,20 @@ class DashboardWidget:
         max_total_mb = int(self.settings_manager.get_setting('extract.max_total_size_mb', 200))
         max_time = int(self.settings_manager.get_setting('extract.max_time_seconds', 300))
         max_files = int(self.settings_manager.get_setting('extract.max_files_per_target', 10))
+        extension_mode = str(self.settings_manager.get_setting('extract.extension_mode', 'allow_only')).lower()
+
+        # Load extension filters from config if available
+        included_extensions: List[str] = []
+        excluded_extensions: List[str] = []
+        config_path = self.settings_manager.get_setting('backend.config_path', None) if self.settings_manager else None
+        if config_path and Path(config_path).exists():
+            try:
+                config_data = json.loads(Path(config_path).read_text(encoding="utf-8"))
+                file_cfg = config_data.get("file_collection", {})
+                included_extensions = file_cfg.get("included_extensions", []) or []
+                excluded_extensions = file_cfg.get("excluded_extensions", []) or []
+            except Exception:
+                pass
 
         results = []
         cancel_event = threading.Event()
@@ -1454,6 +1469,9 @@ class DashboardWidget:
                     max_total_mb,
                     max_time,
                     max_files,
+                    extension_mode,
+                    included_extensions,
+                    excluded_extensions,
                     cancel_event
                 )
                 futures.append((server, future))
@@ -1477,7 +1495,9 @@ class DashboardWidget:
         return results
 
     def _extract_single_server(self, server: Dict[str, Any], max_file_mb: int, max_total_mb: int,
-                                 max_time: int, max_files: int, cancel_event: threading.Event) -> Dict[str, Any]:
+                                 max_time: int, max_files: int, extension_mode: str,
+                                 included_extensions: List[str], excluded_extensions: List[str],
+                                 cancel_event: threading.Event) -> Dict[str, Any]:
         """Extract files from a single server."""
         if cancel_event.is_set():
             return {
@@ -1527,10 +1547,11 @@ class DashboardWidget:
                 max_file_count=max_files,
                 max_seconds=max_time,
                 max_depth=3,
-                allowed_extensions=[],
-                denied_extensions=[],
+                allowed_extensions=included_extensions,
+                denied_extensions=excluded_extensions,
                 delay_seconds=0,
                 connection_timeout=30,
+                extension_mode=extension_mode,
                 progress_callback=None,
                 cancel_event=cancel_event
             )

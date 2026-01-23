@@ -299,8 +299,7 @@ class BatchExtractSettingsDialog:
         # Backend status note (italic, small font)
         status_note = tk.Label(
             parent,
-            text="Note: Filtering mode will apply once backend update ships; "
-                 "current releases still use allow/deny lists together.",
+            text="Extension mode now applies during extract. In allow-only, add '<no extension>' to permit extensionless files.",
             font=("TkDefaultFont", 8, "italic"),
             fg="gray"
         )
@@ -400,8 +399,7 @@ class BatchExtractSettingsDialog:
             result = messagebox.askokcancel(
                 "Empty Allow List",
                 "No allowed extensions configured.\n\n"
-                "Note: Extension mode filtering is pending backend implementation. "
-                "Current behavior will continue until extract runner is updated.\n\n"
+                "With allow-only selected, nothing will be downloaded until at least one extension (or '<no extension>') is allowed.\n\n"
                 "Click OK to save anyway, or Cancel to review settings.",
                 parent=self.dialog,
                 icon=messagebox.WARNING
@@ -413,8 +411,7 @@ class BatchExtractSettingsDialog:
             result = messagebox.askokcancel(
                 "Empty Deny List",
                 "No excluded extensions configured.\n\n"
-                "Note: Extension mode filtering is pending backend implementation. "
-                "Current behavior will continue until extract runner is updated.\n\n"
+                "Deny-only will download everything when the deny list is empty.\n\n"
                 "Click OK to save anyway, or Cancel to review settings.",
                 parent=self.dialog,
                 icon=messagebox.WARNING

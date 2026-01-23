@@ -768,6 +768,7 @@ def _start_extract(
                 denied_extensions=extract_config["excluded_extensions"],
                 delay_seconds=extract_config["download_delay_seconds"],
                 connection_timeout=extract_config["connection_timeout"],
+                extension_mode=extract_config.get("extension_mode"),
                 progress_callback=thread_progress
             )
             log_path = extract_runner.write_extract_log(summary)
@@ -830,7 +831,8 @@ def _load_file_collection_config(settings_manager) -> Dict[str, Any]:
         "download_delay_seconds": 0.5,
         "included_extensions": [],
         "excluded_extensions": [],
-        "connection_timeout": 30
+        "connection_timeout": 30,
+        "extension_mode": (settings_manager.get_setting('extract.extension_mode', 'allow_only') if settings_manager else 'allow_only')
     }
 
     config_path = None

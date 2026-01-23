@@ -45,6 +45,7 @@ def run_extract(
     denied_extensions: Sequence[str],
     delay_seconds: float,
     connection_timeout: int,
+    extension_mode: Optional[str] = None,
     progress_callback: Optional[Callable[[str, int, Optional[int]], None]] = None,
     cancel_event: Optional[Event] = None,
 ) -> Dict[str, Any]:
@@ -86,6 +87,9 @@ def run_extract(
 
     allowed_set = _normalize_extensions(allowed_extensions)
     denied_set = _normalize_extensions(denied_extensions)
+    mode = (extension_mode or "legacy").lower()
+    if mode not in ("download_all", "allow_only", "deny_only", "legacy"):
+        mode = "legacy"
 
     summary: Dict[str, Any] = {
         "ip_address": ip_address,
@@ -105,6 +109,7 @@ def run_extract(
             "bytes_downloaded": 0,
             "files_skipped": 0,
         },
+        "extension_mode": mode,
         "files": [],
         "skipped": [],
         "errors": [],
@@ -153,6 +158,7 @@ def run_extract(
                     file_size,
                     allowed_set,
                     denied_set,
+                    mode,
                     max_file_bytes,
                     max_total_bytes,
                     total_bytes,
@@ -375,17 +381,32 @@ def _should_download_file(
     file_size: int,
     allowed_set: set,
     denied_set: set,
+    mode: str,
     max_file_bytes: int,
     max_total_bytes: int,
     total_bytes: int,
 ) -> Tuple[bool, Optional[str]]:
     ext = Path(rel_path).suffix.lower()
-    # Deny list always takes precedence (even for extensionless files)
-    if denied_set and ext in denied_set:
-        return False, "denied_extension"
-    # Allow extensionless files even when an allow-list is present
-    if allowed_set and ext and ext not in allowed_set:
-        return False, "not_included_extension"
+
+    if mode == "download_all":
+        pass  # skip extension filtering entirely
+    elif mode == "deny_only":
+        if denied_set and ext in denied_set:
+            return False, "denied_extension"
+    elif mode == "allow_only":
+        if allowed_set:
+            if ext in allowed_set:
+                pass
+            elif ext == "" and "" in allowed_set:
+                pass
+            else:
+                return False, "not_included_extension"
+    else:  # legacy combined behavior
+        if denied_set and ext in denied_set:
+            return False, "denied_extension"
+        if allowed_set and ext and ext not in allowed_set:
+            return False, "not_included_extension"
+
     if max_file_bytes > 0 and file_size > max_file_bytes:
         return False, "file_too_large"
     if max_total_bytes > 0 and (total_bytes + file_size) > max_total_bytes:
