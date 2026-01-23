@@ -27,6 +27,21 @@ except ImportError:
     from server_list_window import details as detail_helpers
 
 
+def _format_file_size(size_bytes: int) -> str:
+    """Convert bytes to human-readable format (e.g., '1.6 MB')."""
+    if size_bytes == 0:
+        return "0 B"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    unit_index = 0
+    size = float(size_bytes)
+    while size >= 1024 and unit_index < len(units) - 1:
+        size /= 1024
+        unit_index += 1
+    if unit_index == 0:
+        return f"{int(size)} B"
+    return f"{size:.1f} {units[unit_index]}"
+
+
 def _load_file_browser_config(config_path: Optional[str]) -> Dict:
     defaults = {
         "allow_smb1": True,
@@ -142,7 +157,7 @@ class FileBrowserWindow:
         self.tree = ttk.Treeview(self.window, columns=columns, show="headings", selectmode="extended")
         self.tree.heading("name", text="Name")
         self.tree.heading("type", text="Type")
-        self.tree.heading("size", text="Size (bytes)")
+        self.tree.heading("size", text="Size")
         self.tree.heading("modified", text="Modified")
         self.tree.column("name", width=260, anchor="w")
         self.tree.column("type", width=90, anchor="w")
@@ -471,7 +486,7 @@ class FileBrowserWindow:
             self.tree.insert(
                 "",
                 "end",
-                values=(entry.name, "dir" if entry.is_dir else "file", entry.size, mtime_str),
+                values=(entry.name, "dir" if entry.is_dir else "file", _format_file_size(entry.size), mtime_str),
             )
 
         status_parts = [f"Path {path} ({len(result.entries)} items)"]
