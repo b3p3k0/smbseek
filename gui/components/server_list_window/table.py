@@ -33,6 +33,7 @@ def create_server_table(parent, theme, callbacks):
         "favorite",
         "avoid",
         "probe",
+        "extracted",
         "IP Address",
         "Shares",
         "Accessible",
@@ -54,6 +55,7 @@ def create_server_table(parent, theme, callbacks):
     tree.column("favorite", width=40, anchor="center")  # Favorite star column
     tree.column("avoid", width=40, anchor="center")  # Avoid skull column
     tree.column("probe", width=50, anchor="center")
+    tree.column("extracted", width=60, anchor="center")
     tree.column("IP Address", width=160, anchor="w")
     tree.column("Shares", width=100, anchor="center")
     tree.column("Accessible", width=520, anchor="w")  # reclaim space for denied column
@@ -65,7 +67,8 @@ def create_server_table(parent, theme, callbacks):
     heading_labels = {
         "favorite": "Favorite",
         "avoid": "Avoid",
-        "probe": "Probed"
+        "probe": "Probed",
+        "extracted": "Extracted"
     }
     for col in columns:
         label = heading_labels.get(col, col)
@@ -152,12 +155,13 @@ def update_table_display(tree, filtered_servers: List[Dict[str, Any]], settings_
             skull = "💀"
 
         probe_emoji = server.get("probe_status_emoji", "⚪")
+        extracted_emoji = server.get("extract_status_emoji", "○")
 
         # Insert row with new column structure including favorite, avoid, probe columns
         item_id = tree.insert(
             "",
             "end",
-            values=(star, skull, probe_emoji, ip_addr, shares_count, accessible_shares, denied_count, last_seen, country)
+            values=(star, skull, probe_emoji, extracted_emoji, ip_addr, shares_count, accessible_shares, denied_count, last_seen, country)
         )
 
         # Add visual indicators for shares count
@@ -186,8 +190,8 @@ def get_selected_server_data(tree, filtered_servers: List[Dict[str, Any]]) -> Li
 
     for item in selected_items:
         values = tree.item(item)["values"]
-        if len(values) >= 4:
-            selected_ips.append(values[3])  # IP address now at index 3 (after favorite/avoid/probe)
+        if len(values) >= 5:
+            selected_ips.append(values[4])  # IP address now at index 4 (after favorite/avoid/probe/extracted)
 
     selected_servers = [
         server for server in filtered_servers
@@ -214,8 +218,8 @@ def sort_table_by_column(tree, column: str, current_sort_column: Optional[str],
     Returns:
         tuple: (new_sort_column, new_sort_direction)
     """
-    # Short-circuit for favorite and avoid columns - no meaningful sort order
-    if column in ("favorite", "avoid"):
+    # Short-circuit for favorite/avoid/extracted columns - no meaningful sort order
+    if column in ("favorite", "avoid", "extracted"):
         return current_sort_column, current_sort_direction
 
     # Cache original header text on first access to this column
@@ -322,10 +326,10 @@ def handle_treeview_click(tree, event, settings_manager, callbacks):
         return None
 
     values = tree.item(item)["values"]
-    if not values or len(values) < 4:
+    if not values or len(values) < 5:
         return None
 
-    ip_address = values[3]  # IP is now at index 3
+    ip_address = values[4]  # IP is now at index 4
 
     # Handle favorite column clicks (#1, since #0 hidden)
     if column == '#1':
@@ -408,11 +412,11 @@ def handle_double_click(tree, event, filtered_servers: List[Dict[str, Any]], det
 
     # Use identical logic as "View Details" button - get data from clicked row
     values = tree.item(clicked_item)["values"]
-    if not values or len(values) < 4:
+    if not values or len(values) < 5:
         messagebox.showerror("Error", "Unable to retrieve server data.", parent=parent_window)
         return False
 
-    ip_address = values[3]  # IP Address is now at index 3 due to favorite/avoid/probe columns
+    ip_address = values[4]  # IP Address now at index 4 (fav/avoid/probe/extracted columns)
 
     # Same data lookup as working "View Details" button
     server_data = next(

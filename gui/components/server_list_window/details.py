@@ -780,6 +780,19 @@ def _start_extract(
                 files = summary["totals"]["files_downloaded"]
                 bytes_downloaded = summary["totals"]["bytes_downloaded"]
                 size_mb = bytes_downloaded / (1024 * 1024) if bytes_downloaded else 0
+                # Persist extracted flag (best effort)
+                try:
+                    if settings_manager:
+                        db_path = settings_manager.get_database_path() if hasattr(settings_manager, "get_database_path") else None
+                        if not db_path:
+                            db_path = settings_manager.get_setting('backend.database_path', None)
+                        if db_path:
+                            db_reader = DatabaseReader(db_path)
+                            db_reader.upsert_extracted_flag(ip_address, True)
+                    server_data["extracted"] = 1
+                    server_data["extract_status_emoji"] = "✔"
+                except Exception:
+                    pass
                 note_parts = []
                 if summary.get("timed_out"):
                     note_parts.append("timed out")

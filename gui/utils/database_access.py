@@ -735,6 +735,7 @@ class DatabaseReader:
                 "notes": flags.get("notes", ""),
                 "probe_status": probe.get("status", "unprobed"),
                 "indicator_matches": probe.get("indicator_matches", 0),
+                "extracted": probe.get("extracted", 0),
                 # Include vulnerabilities as 0 for backward compatibility
                 "vulnerabilities": 0
             })
@@ -841,8 +842,9 @@ class DatabaseReader:
                 "notes": flags.get("notes", ""),
                 "probe_status": probe.get("status", "unprobed"),
                 "indicator_matches": probe.get("indicator_matches", 0),
+                "extracted": probe.get("extracted", 0),
             })
-        
+
         return servers, total_count
 
     def _load_user_flags_map(self, conn: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
@@ -863,7 +865,7 @@ class DatabaseReader:
 
     def _load_probe_cache_map(self, conn: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
         query = """
-        SELECT s.ip_address, pc.status, pc.indicator_matches
+        SELECT s.ip_address, pc.status, pc.indicator_matches, pc.extracted
         FROM host_probe_cache pc
         JOIN smb_servers s ON s.id = pc.server_id
         """
@@ -872,6 +874,7 @@ class DatabaseReader:
             row["ip_address"]: {
                 "status": row["status"] or "unprobed",
                 "indicator_matches": row["indicator_matches"] or 0,
+                "extracted": row["extracted"] or 0,
             }
             for row in rows
         }
@@ -971,6 +974,30 @@ class DatabaseReader:
                     updated_at=CURRENT_TIMESTAMP
                 """,
                 (server_id, status, indicator_matches, snapshot_path),
+            )
+            conn.commit()
+        self.clear_cache()
+
+    def upsert_extracted_flag(self, ip_address: str, extracted: bool = True) -> None:
+        """Mark a host as extracted in host_probe_cache."""
+        if not ip_address:
+            return
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM smb_servers WHERE ip_address = ?", (ip_address,))
+            row = cur.fetchone()
+            if not row:
+                return
+            server_id = row["id"]
+            cur.execute(
+                """
+                INSERT INTO host_probe_cache (server_id, extracted, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(server_id) DO UPDATE SET
+                    extracted=excluded.extracted,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (server_id, 1 if extracted else 0),
             )
             conn.commit()
         self.clear_cache()

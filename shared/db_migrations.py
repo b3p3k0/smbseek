@@ -70,6 +70,7 @@ def run_migrations(db_path: str) -> None:
                 indicator_matches INTEGER DEFAULT 0,
                 indicator_samples TEXT,
                 snapshot_path TEXT,
+                extracted INTEGER DEFAULT 0,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (server_id) REFERENCES smb_servers(id) ON DELETE CASCADE
             )
@@ -85,6 +86,12 @@ def run_migrations(db_path: str) -> None:
 
         # One-time migration: import favorites/avoids/probe status from legacy settings if present
         _import_legacy_settings(cur)
+
+        # Migration: add extracted flag if missing
+        cur.execute("PRAGMA table_info(host_probe_cache)")
+        columns = [row[1] for row in cur.fetchall()]
+        if "extracted" not in columns:
+            cur.execute("ALTER TABLE host_probe_cache ADD COLUMN extracted INTEGER DEFAULT 0")
 
         conn.commit()
     finally:
@@ -140,11 +147,12 @@ def _import_legacy_settings(cur: sqlite3.Cursor) -> None:
                 continue
             cur.execute(
                 """
-                INSERT INTO host_probe_cache (server_id, status, last_probe_at, indicator_matches, updated_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP)
+                INSERT INTO host_probe_cache (server_id, status, last_probe_at, indicator_matches, extracted, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP, 0, 0, CURRENT_TIMESTAMP)
                 ON CONFLICT(server_id) DO UPDATE SET
                     status=excluded.status,
                     last_probe_at=excluded.last_probe_at,
+                    extracted=COALESCE(host_probe_cache.extracted, 0),
                     updated_at=CURRENT_TIMESTAMP
                 """,
                 (server_id, status or "unprobed"),

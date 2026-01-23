@@ -176,7 +176,8 @@ class ServerListWindow:
             "Accessible": "desc",     # high share count first (sorts by number of shares)
             "Last Seen": "desc",      # MOST RECENT dates first (2024-01-02, 2024-01-01, 2023-12-31)
             "Country": "asc",         # alphabetical A-Z
-            "probe": "desc"
+            "probe": "desc",
+            "extracted": "desc"
         }
 
         self._create_window()
@@ -737,7 +738,7 @@ class ServerListWindow:
         # Get server data
         item = selected_items[0]
         values = self.tree.item(item)["values"]
-        ip_address = values[3]  # IP Address now at index 3 (fav/avoid/probe)
+        ip_address = values[4]  # IP Address now at index 4 (fav/avoid/probe/extracted)
 
         # Find server in data
         server_data = next(
@@ -1535,6 +1536,9 @@ class ServerListWindow:
             note_parts.append(summary["stop_reason"].replace("_", " "))
         note_parts.append(f"log: {log_path}")
 
+        # Mark host as extracted (successful run, even if zero files)
+        self._handle_extracted_update(ip_address)
+
         # Update dialog progress (per target)
         self.window.after(0, self._update_batch_status_dialog, dialog, 1, self.active_jobs.get(job_id, {}).get("total"), f"Extracted {ip_address}")
 
@@ -2178,6 +2182,8 @@ class ServerListWindow:
             for server in servers:
                 server["probe_status"] = 'unprobed'
                 server["probe_status_emoji"] = self._probe_status_to_emoji('unprobed')
+                server["extracted"] = server.get("extracted", 0) or 0
+                server["extract_status_emoji"] = self._extract_status_to_emoji(server.get("extracted", 0))
             return
 
         for server in servers:
@@ -2185,6 +2191,8 @@ class ServerListWindow:
             status = server.get("probe_status") or self._determine_probe_status(ip)
             server["probe_status"] = status
             server["probe_status_emoji"] = self._probe_status_to_emoji(status)
+            extracted_flag = server.get("extracted", 0)
+            server["extract_status_emoji"] = self._extract_status_to_emoji(extracted_flag)
 
     def _determine_probe_status(self, ip_address: Optional[str]) -> str:
         if not ip_address:
@@ -2220,6 +2228,13 @@ class ServerListWindow:
         }
         return mapping.get(status, '⚪')
 
+    @staticmethod
+    def _extract_status_to_emoji(extracted: Any) -> str:
+        try:
+            return '✔' if int(extracted) else '○'
+        except Exception:
+            return '○'
+
     def _handle_probe_status_update(self, ip_address: str, status: str) -> None:
         if not ip_address:
             return
@@ -2241,12 +2256,36 @@ class ServerListWindow:
             self._apply_filters()
             self._restore_selection(selected_ips)
 
+    def _handle_extracted_update(self, ip_address: str) -> None:
+        """Mark host as extracted in-memory and persist to DB."""
+        if not ip_address:
+            return
+        if self.db_reader:
+            try:
+                self.db_reader.upsert_extracted_flag(ip_address, True)
+            except Exception:
+                pass
+
+        for server in self.all_servers:
+            if server.get("ip_address") == ip_address:
+                server["extracted"] = 1
+                server["extract_status_emoji"] = self._extract_status_to_emoji(1)
+
+        if self._is_batch_active():
+            if not self._pending_table_refresh:
+                self._pending_selection = self._get_selected_ips()
+            self._pending_table_refresh = True
+        else:
+            selected_ips = self._get_selected_ips()
+            self._apply_filters()
+            self._restore_selection(selected_ips)
+
     def _get_selected_ips(self) -> List[str]:
         ips = []
         for item in self.tree.selection():
             values = self.tree.item(item)["values"]
-            if len(values) >= 4:
-                ips.append(values[3])
+            if len(values) >= 5:
+                ips.append(values[4])
         return ips
 
     def _restore_selection(self, ip_addresses: List[str]) -> None:
@@ -2254,7 +2293,7 @@ class ServerListWindow:
             return
         for item in self.tree.get_children():
             values = self.tree.item(item)["values"]
-            if len(values) >= 4 and values[3] in ip_addresses:
+            if len(values) >= 5 and values[4] in ip_addresses:
                 self.tree.selection_add(item)
 
     # Mode and filter management

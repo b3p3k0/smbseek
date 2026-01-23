@@ -1560,6 +1560,13 @@ class DashboardWidget:
             bytes_downloaded = summary["totals"].get("bytes_downloaded", 0)
             size_mb = bytes_downloaded / (1024 * 1024) if bytes_downloaded else 0
 
+            # Mark host as extracted (one-way flag)
+            try:
+                if self.db_reader:
+                    self.db_reader.upsert_extracted_flag(ip_address, True)
+            except Exception:
+                pass
+
             return {
                 "ip_address": ip_address,
                 "action": "extract",
