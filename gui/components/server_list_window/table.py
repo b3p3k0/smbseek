@@ -52,11 +52,11 @@ def create_server_table(parent, theme, callbacks):
 
     # Configure columns - optimized dimensions for enhanced share tracking with favorites and avoid
     tree.column("#0", width=0, stretch=False)  # Hide tree column
-    tree.column("favorite", width=40, anchor="center")  # Favorite star column
-    tree.column("avoid", width=40, anchor="center")  # Avoid skull column
-    tree.column("probe", width=50, anchor="center")
-    tree.column("extracted", width=60, anchor="center")
-    tree.column("IP Address", width=160, anchor="w")
+    tree.column("favorite", width=80, anchor="center")  # Favorite star column
+    tree.column("avoid", width=55, anchor="center")  # Avoid skull column
+    tree.column("probe", width=65, anchor="center")
+    tree.column("extracted", width=85, anchor="center")
+    tree.column("IP Address", width=135, anchor="w")
     tree.column("Shares", width=100, anchor="center")
     tree.column("Accessible", width=520, anchor="w")  # reclaim space for denied column
     tree.column("Denied", width=110, anchor="center")
