@@ -616,10 +616,10 @@ class ScanManager:
         shares_found = (results.get("accessible_shares", 0) or
                        results.get("shares_discovered", 0) or 0)
 
-        # Add fallback logic: if parsing failed to extract meaningful numbers,
-        # attempt to query database for recent scan statistics
+        # Add fallback logic only for successful scans with missing numbers.
+        # If an error was returned (e.g., Shodan API failure), do NOT fallback to prior DB data.
         used_fallback = False
-        if hosts_scanned == 0 and accessible_hosts == 0 and shares_found == 0:
+        if results.get("success", False) and not results.get("error") and hosts_scanned == 0 and accessible_hosts == 0 and shares_found == 0:
             print("WARNING: CLI parsing returned zero values for all statistics. Attempting database fallback.")
             try:
                 # Try to get recent statistics from database as fallback

@@ -1011,20 +1011,22 @@ class DashboardWidget:
                     elif results:
                         status = results.get("status", "")
                         success = results.get("success", False)
-                        is_finished = status not in {"cancelled"} and (
-                            success or status in {"completed", "success", "failed"}
-                        )
+                        error = results.get("error")
+                        hosts_scanned = results.get("hosts_scanned", 0)
 
-                        # Determine if we should delay scan summary for bulk ops
+                        # Run bulk ops only when scan succeeded and yielded hosts
+                        is_finished = status not in {"cancelled"} and success
+                        has_new_hosts = hosts_scanned > 0
+
                         bulk_probe_enabled = self.current_scan_options.get('bulk_probe_enabled', False) if self.current_scan_options else False
                         bulk_extract_enabled = self.current_scan_options.get('bulk_extract_enabled', False) if self.current_scan_options else False
-                        has_bulk_ops = self.current_scan_options and is_finished and (bulk_probe_enabled or bulk_extract_enabled)
+                        has_bulk_ops = self.current_scan_options and is_finished and has_new_hosts and (bulk_probe_enabled or bulk_extract_enabled)
 
                         if has_bulk_ops:
                             self._pending_scan_results = results
                             self._run_post_scan_batch_operations(self.current_scan_options, results)
                         else:
-                            # Show scan summary immediately when no bulk ops
+                            # Show scan summary immediately when no bulk ops or no data
                             self._show_scan_results(results)
                             try:
                                 self.parent.after(5000, self._reset_scan_status)
@@ -1097,6 +1099,15 @@ class DashboardWidget:
                 except tk.TclError:
                     pass
                 return  # No bulk operations requested
+
+            # Skip bulk if scan failed or produced no hosts
+            if scan_results.get("error") or scan_results.get("hosts_scanned", 0) == 0:
+                self._show_scan_results(scan_results)
+                try:
+                    self.parent.after(5000, self._reset_scan_status)
+                except tk.TclError:
+                    pass
+                return
 
             # Query database for servers with successful authentication (keep UI responsive)
             def _fetch_servers():
@@ -1751,11 +1762,14 @@ class DashboardWidget:
     def _open_drill_down(self, window_type: str) -> None:
         """
         Open drill-down window.
-        
+
         Args:
             window_type: Type of drill-down window to open
         """
+        print(f"[Dashboard] _open_drill_down called with window_type={window_type}")
+        print(f"[Dashboard] drill_down_callback is set: {self.drill_down_callback is not None}")
         if self.drill_down_callback:
+            print(f"[Dashboard] Calling drill_down_callback")
             self.drill_down_callback(window_type, {})
     
     def enable_mock_mode(self) -> None:
