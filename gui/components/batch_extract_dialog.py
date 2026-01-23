@@ -853,9 +853,10 @@ class ExtensionEditorDialog:
         # 4. Convert to lowercase
         ext = ext.lower()
 
-        # 5. Check for invalid characters (allow only alphanumeric + dot)
-        if not all(c.isalnum() or c == "." for c in ext):
-            return (False, "", "Extension can only contain letters, numbers, and dots")
+        # 5. Block only dangerous characters (path separators, control chars)
+        unsafe_chars = set('\\/\x00')
+        if any(c in unsafe_chars or ord(c) < 32 for c in ext):
+            return (False, "", "Extension cannot contain path separators or control characters")
 
         # 6. Check uniqueness in source list (case-insensitive)
         if any(e.lower() == ext for e in source_list):
