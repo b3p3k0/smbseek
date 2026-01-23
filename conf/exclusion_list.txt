@@ -55,6 +55,7 @@ Pathway Communications
 Distributel Communications Limited
 velia.net
 TekSavvy Solutions Inc.
+OJSC Rostelecom
 
 # Hosting Providers and Data Centers
 HostUS
