@@ -41,6 +41,7 @@ class DownloadResult:
     saved_path: Path
     size: int
     elapsed_seconds: float
+    mtime: Optional[float] = None
 
 
 class SMBNavigator:
@@ -185,7 +186,7 @@ class SMBNavigator:
 
         return ListResult(entries=entries, truncated=truncated, warning=warning)
 
-    def download_file(self, remote_path: str, dest_dir: Path, preserve_structure: bool = False) -> DownloadResult:
+    def download_file(self, remote_path: str, dest_dir: Path, preserve_structure: bool = False, mtime: Optional[float] = None) -> DownloadResult:
         conn = self._require_conn()
         share = self._require_share()
 
@@ -234,8 +235,15 @@ class SMBNavigator:
         except Exception:
             pass
 
+        # Preserve original modification time if provided
+        if mtime is not None:
+            try:
+                os.utime(dest_path, (mtime, mtime))
+            except Exception:
+                pass
+
         elapsed = time.time() - start
-        return DownloadResult(saved_path=dest_path, size=bytes_written, elapsed_seconds=elapsed)
+        return DownloadResult(saved_path=dest_path, size=bytes_written, elapsed_seconds=elapsed, mtime=mtime)
 
     # --- Helpers -------------------------------------------------------
 

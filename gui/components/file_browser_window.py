@@ -153,7 +153,7 @@ class FileBrowserWindow:
             btn.pack(side=tk.LEFT, padx=5)
 
         # Treeview for entries
-        columns = ("name", "type", "size", "modified")
+        columns = ("name", "type", "size", "modified", "mtime_raw")
         self.tree = ttk.Treeview(self.window, columns=columns, show="headings", selectmode="extended")
         self.tree.heading("name", text="Name")
         self.tree.heading("type", text="Type")
@@ -163,6 +163,7 @@ class FileBrowserWindow:
         self.tree.column("type", width=90, anchor="w")
         self.tree.column("size", width=120, anchor="e")
         self.tree.column("modified", width=180, anchor="w")
+        self.tree.column("mtime_raw", width=0, stretch=False)  # Hidden column for raw epoch
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.tree.bind("<Double-1>", self._on_item_double_click)
 
@@ -229,7 +230,7 @@ class FileBrowserWindow:
             messagebox.showinfo("No selection", "Select one or more files to download.", parent=self.window)
             return
 
-        files = []
+        files = []  # List of (path, mtime) tuples
         dirs = []
         skipped_dirs = 0
         for item_id in selection:
@@ -239,9 +240,15 @@ class FileBrowserWindow:
                 continue
             name = values[0]
             type_label = values[1]
+            mtime_raw = values[4] if len(values) > 4 and values[4] != "" else None
+            if isinstance(mtime_raw, str):
+                try:
+                    mtime_raw = float(mtime_raw)
+                except (ValueError, TypeError):
+                    mtime_raw = None
             if type_label == "file":
                 remote_path = self._join_path(self.current_path, name)
-                files.append(remote_path)
+                files.append((remote_path, mtime_raw))
             else:
                 dir_path = self._join_path(self.current_path, name)
                 dirs.append(dir_path)
@@ -346,7 +353,7 @@ class FileBrowserWindow:
         self.list_thread = threading.Thread(target=worker, daemon=True)
         self.list_thread.start()
 
-    def _start_download_thread(self, remote_paths: List[str], remote_dirs: List[str], folder_limits: Optional[Dict[str, int]]) -> None:
+    def _start_download_thread(self, files_with_mtime: List[Tuple[str, Optional[float]]], remote_dirs: List[str], folder_limits: Optional[Dict[str, int]]) -> None:
         def worker():
             try:
                 self._set_busy(True)
@@ -356,7 +363,7 @@ class FileBrowserWindow:
                     self.current_share,
                     base_path=self.config.get("quarantine_root"),
                 )
-                files_to_download = list(remote_paths)
+                files_to_download = list(files_with_mtime)  # List of (path, mtime) tuples
                 expand_errors: List[Tuple[str, str]] = []
                 if remote_dirs and folder_limits:
                     expanded, skipped, expand_errors = self._expand_directories(remote_dirs, folder_limits)
@@ -365,10 +372,10 @@ class FileBrowserWindow:
                 completed = 0
                 errors: List[Tuple[str, str]] = []
 
-                for remote_path in files_to_download:
+                for remote_path, mtime in files_to_download:
                     self._safe_after(0, lambda rp=remote_path, c=completed, t=total: self._set_status(f"Downloading {rp} ({c+1}/{t})"))
                     try:
-                        result = self.navigator.download_file(remote_path, dest_dir, preserve_structure=True)
+                        result = self.navigator.download_file(remote_path, dest_dir, preserve_structure=True, mtime=mtime)
                         try:
                             host_dir = Path(dest_dir).parent.parent  # host/date/share
                             log_quarantine_event(host_dir, f"downloaded {self.current_share}{remote_path} -> {result.saved_path}")
@@ -401,13 +408,13 @@ class FileBrowserWindow:
 
     # --- SMB helpers ---------------------------------------------------
 
-    def _expand_directories(self, dirs: List[str], limits: Dict[str, int]) -> Tuple[List[str], int, List[Tuple[str, str]]]:
+    def _expand_directories(self, dirs: List[str], limits: Dict[str, int]) -> Tuple[List[Tuple[str, Optional[float]]], int, List[Tuple[str, str]]]:
         max_depth = limits.get("max_depth", 0)
         max_files = limits.get("max_files", 0)
         max_total_mb = limits.get("max_total_mb", 0)
         max_file_mb = limits.get("max_file_mb", 0)
 
-        expanded: List[str] = []
+        expanded: List[Tuple[str, Optional[float]]] = []  # (path, mtime) tuples
         errors: List[Tuple[str, str]] = []
         skipped = 0
         total_bytes = 0
@@ -438,7 +445,7 @@ class FileBrowserWindow:
                     if (total_bytes + size) > max_total_mb * 1024 * 1024:
                         errors.append((rel, "total size limit reached"))
                         return expanded, skipped, errors
-                expanded.append(rel)
+                expanded.append((rel, entry.modified_time))
                 total_bytes += size
                 if max_files and len(expanded) >= max_files:
                     return expanded, skipped, errors
@@ -481,12 +488,13 @@ class FileBrowserWindow:
 
         for entry in sorted_entries:
             mtime_str = ""
+            mtime_raw = entry.modified_time or ""
             if entry.modified_time:
                 mtime_str = datetime.fromtimestamp(entry.modified_time).strftime("%Y-%m-%d %H:%M:%S")
             self.tree.insert(
                 "",
                 "end",
-                values=(entry.name, "dir" if entry.is_dir else "file", _format_file_size(entry.size), mtime_str),
+                values=(entry.name, "dir" if entry.is_dir else "file", _format_file_size(entry.size), mtime_str, mtime_raw),
             )
 
         status_parts = [f"Path {path} ({len(result.entries)} items)"]

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -152,6 +153,7 @@ def run_extract(
                 rel_display = file_info["display_path"]
                 smb_path = file_info["smb_path"]
                 file_size = file_info["size"]
+                file_mtime = file_info.get("mtime")
 
                 should_download, reason = _should_download_file(
                     rel_display,
@@ -220,6 +222,13 @@ def run_extract(
                         except Exception:
                             pass
                         continue
+
+                # Preserve original modification time if available
+                if file_mtime is not None:
+                    try:
+                        os.utime(dest_path, (file_mtime, file_mtime))
+                    except Exception:
+                        pass
 
                 total_files += 1
                 total_bytes += file_size
@@ -338,6 +347,7 @@ def _walk_files(
                 "smb_path": smb_path,
                 "local_rel_path": local_rel,
                 "size": entry["size"],
+                "mtime": entry.get("mtime"),
             }
 
 
@@ -353,10 +363,12 @@ def _list_directory(
         name = entry.get_longname()
         if name in (".", ".."):
             continue
+        mtime = entry.get_mtime_epoch() if hasattr(entry, "get_mtime_epoch") else None
         payload.append({
             "name": name,
             "is_directory": entry.is_directory(),
             "size": entry.get_filesize(),
+            "mtime": mtime,
         })
     return payload
 
