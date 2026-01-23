@@ -103,7 +103,7 @@ Pry includes lockout detection and configurable delays between attempts. That sa
 
 ## Configuration
 
-All settings live in `conf/config.json`. The example file (`conf/config.json.example`) documents every option.
+App settings live in `conf/config.json`. The example file (`conf/config.json.example`) documents every option.
 
 Key sections:
 - `shodan.api_key` — required for discovery
@@ -111,6 +111,13 @@ Key sections:
 - `file_collection.*` — extraction limits
 - `file_browser.*` — browse mode limits
 - `connection.*` — timeouts and rate limiting
+
+Two additional files hold editable lists:
+
+- `conf/exclusion_list.json` — Organizations to skip during Shodan queries (hosting providers, ISPs you don't care about etc.). Add entries to the `organizations` array.
+- `conf/ransomware_indicators.json` — Filename patterns checked during probe. Matches flag a server as potentially compromised.
+
+These are separate so you can customize or share them without touching app settings.
 
 The GUI includes a built-in config editor for common settings.
 
@@ -146,14 +153,24 @@ kill <PID>
 
 ---
 
-## Advanced: CLI Usage
+## Advanced
+
+### Templates
+
+**Scan templates** save your search configuration — country filters, Shodan limits, concurrency, rate limits. Click "Save Current" in the scan dialog. Templates live in `~/.smbseek/templates/` as JSON files you can edit directly.
+
+**Filter templates** save your server list filters — search text, date range, countries, checkboxes. Click "Save Filters" in the advanced filter panel. Stored in `~/.smbseek/filter_templates/`.
+
+Both auto-restore your last-used template on startup.
+
+### CLI Usage
 
 The CLI is useful for scripting and automation. The GUI uses the same backend.
 
 ```bash
 ./smbseek --country US              # Discover US servers
 ./smbseek --country US,GB,CA        # Multiple countries
-./smbseek --string "Finance"        # Search by keyword
+./smbseek --string "SIPR files"        # Search by keyword
 ./smbseek --verbose                 # Detailed output
 ```
 
