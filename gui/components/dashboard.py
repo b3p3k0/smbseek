@@ -1766,10 +1766,7 @@ class DashboardWidget:
         Args:
             window_type: Type of drill-down window to open
         """
-        print(f"[Dashboard] _open_drill_down called with window_type={window_type}")
-        print(f"[Dashboard] drill_down_callback is set: {self.drill_down_callback is not None}")
         if self.drill_down_callback:
-            print(f"[Dashboard] Calling drill_down_callback")
             self.drill_down_callback(window_type, {})
     
     def enable_mock_mode(self) -> None:

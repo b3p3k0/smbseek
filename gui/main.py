@@ -397,7 +397,7 @@ class SMBSeekGUI:
     def _open_drill_down_window(self, window_type: str, data: Dict[str, Any]) -> None:
         """
         Open drill-down window for detailed analysis.
-        
+
         Args:
             window_type: Type of window to open
             data: Data to pass to the window
@@ -407,7 +407,7 @@ class SMBSeekGUI:
                 # Check if server list window already exists
                 existing_window = self.drill_down_windows.get('server_list')
 
-                if existing_window and existing_window.window.winfo_exists():
+                if existing_window and existing_window.window and existing_window.window.winfo_exists():
                     # Reuse existing window: restore and focus
                     existing_window.restore_and_focus()
                 else:
