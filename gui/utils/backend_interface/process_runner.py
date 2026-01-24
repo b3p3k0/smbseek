@@ -10,6 +10,7 @@ import sys
 import threading
 import os
 import time
+import signal
 from typing import Dict, List, Optional, Callable
 
 from . import config
@@ -180,6 +181,77 @@ def execute_with_progress(interface, cmd: List[str],
         interface.active_process = None
         interface.active_output_thread = None
         interface.cancel_requested = False
+
+
+def terminate_operation(interface, graceful: bool = False) -> None:
+    """
+    Terminate the currently running operation by killing the subprocess and its children.
+
+    Args:
+        interface: BackendInterface instance
+        graceful: Whether to attempt graceful termination first (currently unused)
+    """
+    if interface.mock_mode:
+        return
+
+    if interface.active_process is None:
+        return
+
+    interface.cancel_requested = True
+
+    try:
+        process = interface.active_process
+
+        if sys.platform.startswith('win'):
+            try:
+                process.send_signal(signal.CTRL_BREAK_EVENT)
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.terminate()
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+        else:
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError, OSError):
+                        pass
+            except (ProcessLookupError, PermissionError, OSError):
+                try:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
+
+        try:
+            if process.stdout and not process.stdout.closed:
+                process.stdout.close()
+        except (AttributeError, OSError):
+            pass
+
+        if interface.active_output_thread is not None:
+            try:
+                interface.active_output_thread.join(timeout=3)
+            except (threading.ThreadError, RuntimeError):
+                pass
+            interface.active_output_thread = None
+
+        if interface.current_operation:
+            interface.current_operation.update({
+                "status": "cancelled",
+                "end_time": time.time()
+            })
+
+    except Exception as e:
+        print(f"Warning: Error during operation termination: {e}")
 
 
 def handle_no_recent_hosts_error(interface, original_cmd: List[str], error_details: str,

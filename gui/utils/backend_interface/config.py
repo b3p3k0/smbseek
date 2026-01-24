@@ -220,3 +220,25 @@ def process_exists(pid: int) -> bool:
         return True
     except (OSError, ProcessLookupError):
         return False
+
+
+def validate_backend(interface) -> None:
+    """
+    Validate that backend is accessible and functional.
+
+    Raises:
+        FileNotFoundError: If backend CLI script not found
+        PermissionError: If backend not executable
+    """
+    if not interface.cli_script.exists():
+        raise FileNotFoundError(
+            f"Backend CLI not found at {interface.cli_script}. "
+            f"Ensure backend is properly installed."
+        )
+
+    import os
+    if not os.access(interface.cli_script, os.X_OK):
+        raise PermissionError(
+            f"Backend CLI not executable: {interface.cli_script}. "
+            f"Run: chmod +x {interface.cli_script}"
+        )

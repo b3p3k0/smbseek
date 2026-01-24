@@ -17,23 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from shared.config import load_config
 from shared.database import create_workflow_database
 from shared.output import create_output_manager
-
-
-@dataclass
-class DiscoverResult:
-    """Results from discovery operation"""
-    query_used: str
-    total_hosts: int
-    authenticated_hosts: int
-    host_ips: Set[str]
-
-
-@dataclass
-class AccessResult:
-    """Results from access verification operation"""
-    accessible_hosts: int        # Count of hosts with any accessible shares
-    accessible_shares: int       # Total count of accessible share entries
-    share_details: List[Dict]    # Detailed share information
+from shared.results import DiscoverResult, AccessResult
 
 
 @dataclass

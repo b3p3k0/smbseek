@@ -12,7 +12,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 
 from shared.smb_browser import SMBNavigator, ListResult, Entry
@@ -25,6 +25,11 @@ try:
     from gui.components.server_list_window import details as detail_helpers  # for credential derivation
 except ImportError:
     from server_list_window import details as detail_helpers
+
+try:
+    from gui.components.batch_extract_dialog import BatchExtractSettingsDialog, NO_EXTENSION_TOKEN
+except ImportError:
+    from batch_extract_dialog import BatchExtractSettingsDialog, NO_EXTENSION_TOKEN
 
 
 def _format_file_size(size_bytes: int) -> str:
@@ -84,6 +89,7 @@ class FileBrowserWindow:
         self.auth_method = auth_method or ""
         self.db_reader = db_reader
         self.theme = theme
+        self.config_path = config_path
         self.config = _load_file_browser_config(config_path)
         self.settings_manager = settings_manager
         self.share_credentials = share_credentials or {}
@@ -267,11 +273,12 @@ class FileBrowserWindow:
             if not proceed:
                 return
 
+        extract_opts = None
         if dirs:
-            limits = self._prompt_folder_limits()
-            if not limits:
+            extract_opts = self._prompt_extract_options(len(dirs))
+            if not extract_opts:
                 return
-        self._start_download_thread(files, dirs, limits if dirs else None)
+        self._start_download_thread(files, dirs, extract_opts if dirs else None)
 
     def _on_cancel(self) -> None:
         self.navigator.cancel()
@@ -286,54 +293,43 @@ class FileBrowserWindow:
 
     # --- Thread wrappers ----------------------------------------------
 
-    def _prompt_folder_limits(self) -> Optional[Dict[str, int]]:
-        dlg = tk.Toplevel(self.window)
-        dlg.title("Folder Download Limits")
-        dlg.transient(self.window)
-        dlg.grab_set()
+    def _prompt_extract_options(self, target_count: int) -> Optional[Dict[str, Any]]:
+        """Use the shared batch extract dialog for folder downloads."""
+        config_path = self.config_path
+        if self.settings_manager:
+            # Prefer user-set backend config path if available
+            cfg_override = self.settings_manager.get_setting('backend.config_path', None)
+            if cfg_override:
+                config_path = cfg_override
+        dialog_config = BatchExtractSettingsDialog(
+            parent=self.window,
+            theme=self.theme,
+            settings_manager=self.settings_manager,
+            config_path=config_path,
+            config_editor_callback=None,
+            mode="on-demand",
+            target_count=target_count
+        ).show()
 
-        defaults = self._load_folder_limit_defaults()
-        max_depth_var = tk.IntVar(value=int(defaults.get("max_depth", 5)))
-        max_files_var = tk.IntVar(value=int(defaults.get("max_files", 200)))
-        max_total_mb_var = tk.IntVar(value=int(defaults.get("max_total_mb", 500)))
-        max_file_mb_var = tk.IntVar(value=int(defaults.get("max_file_mb", 100)))
+        if not dialog_config:
+            return None
 
-        def add_row(label, var, row):
-            tk.Label(dlg, text=label).grid(row=row, column=0, sticky="w", padx=8, pady=4)
-            tk.Entry(dlg, textvariable=var, width=8).grid(row=row, column=1, sticky="w", padx=8, pady=4)
+        # Persist legacy folder limits for continuity
+        limits = {
+            "max_depth": int(dialog_config.get("max_directory_depth", 0)),
+            "max_files": int(dialog_config.get("max_files_per_target", 0)),
+            "max_total_mb": int(dialog_config.get("max_total_size_mb", 0)),
+            "max_file_mb": int(dialog_config.get("max_file_size_mb", 0)),
+        }
+        self._persist_folder_limit_defaults(limits)
 
-        add_row("Max depth", max_depth_var, 0)
-        add_row("Max files", max_files_var, 1)
-        add_row("Max total MB", max_total_mb_var, 2)
-        add_row("Max file MB", max_file_mb_var, 3)
-
-        limits: Dict[str, int] = {}
-
-        def on_ok():
-            try:
-                limits.update({
-                    "max_depth": max(0, int(max_depth_var.get())),
-                    "max_files": max(0, int(max_files_var.get())),
-                    "max_total_mb": max(0, int(max_total_mb_var.get())),
-                    "max_file_mb": max(0, int(max_file_mb_var.get())),
-                })
-            except Exception:
-                messagebox.showerror("Invalid input", "Please enter numeric limits.", parent=dlg)
-                return
-            self._persist_folder_limit_defaults(limits)
-            dlg.destroy()
-
-        def on_cancel():
-            limits.clear()
-            dlg.destroy()
-
-        btn_frame = tk.Frame(dlg)
-        btn_frame.grid(row=4, column=0, columnspan=2, pady=(8, 6))
-        tk.Button(btn_frame, text="Cancel", command=on_cancel).pack(side=tk.RIGHT, padx=5)
-        tk.Button(btn_frame, text="Start", command=on_ok).pack(side=tk.RIGHT)
-
-        dlg.wait_window()
-        return limits or None
+        # Add extension filter settings for directory expansion
+        limits.update({
+            "extension_mode": dialog_config.get("extension_mode", "download_all"),
+            "included_extensions": [ext.lower() for ext in dialog_config.get("included_extensions", [])],
+            "excluded_extensions": [ext.lower() for ext in dialog_config.get("excluded_extensions", [])],
+        })
+        return limits
 
     def _start_list_thread(self, path: str) -> None:
         # Mark busy before the worker thread starts to block re-entrant navigation.
@@ -353,7 +349,7 @@ class FileBrowserWindow:
         self.list_thread = threading.Thread(target=worker, daemon=True)
         self.list_thread.start()
 
-    def _start_download_thread(self, files_with_mtime: List[Tuple[str, Optional[float]]], remote_dirs: List[str], folder_limits: Optional[Dict[str, int]]) -> None:
+    def _start_download_thread(self, files_with_mtime: List[Tuple[str, Optional[float]]], remote_dirs: List[str], folder_limits: Optional[Dict[str, Any]]) -> None:
         def worker():
             try:
                 self._set_busy(True)
@@ -408,11 +404,14 @@ class FileBrowserWindow:
 
     # --- SMB helpers ---------------------------------------------------
 
-    def _expand_directories(self, dirs: List[str], limits: Dict[str, int]) -> Tuple[List[Tuple[str, Optional[float]]], int, List[Tuple[str, str]]]:
+    def _expand_directories(self, dirs: List[str], limits: Dict[str, Any]) -> Tuple[List[Tuple[str, Optional[float]]], int, List[Tuple[str, str]]]:
         max_depth = limits.get("max_depth", 0)
         max_files = limits.get("max_files", 0)
         max_total_mb = limits.get("max_total_mb", 0)
         max_file_mb = limits.get("max_file_mb", 0)
+        extension_mode = limits.get("extension_mode", "download_all")
+        included_ext = [ext.lower() for ext in limits.get("included_extensions", [])]
+        excluded_ext = [ext.lower() for ext in limits.get("excluded_extensions", [])]
 
         expanded: List[Tuple[str, Optional[float]]] = []  # (path, mtime) tuples
         errors: List[Tuple[str, str]] = []
@@ -445,12 +444,29 @@ class FileBrowserWindow:
                     if (total_bytes + size) > max_total_mb * 1024 * 1024:
                         errors.append((rel, "total size limit reached"))
                         return expanded, skipped, errors
+
+                if not self._should_include_extension(name, extension_mode, included_ext, excluded_ext):
+                    skipped += 1
+                    continue
+
                 expanded.append((rel, entry.modified_time))
                 total_bytes += size
                 if max_files and len(expanded) >= max_files:
                     return expanded, skipped, errors
 
         return expanded, skipped, errors
+
+    def _should_include_extension(self, name: str, mode: str, included: List[str], excluded: List[str]) -> bool:
+        """Determine if a file should be included based on extension filters."""
+        if mode == "download_all":
+            return True
+        ext = Path(name).suffix.lower()
+        token = ext if ext else NO_EXTENSION_TOKEN.lower()
+        if mode == "allow_only":
+            return token in included
+        if mode == "deny_only":
+            return token not in excluded
+        return True
 
     def _ensure_connected(self) -> None:
         if self.navigator and self.current_share and self.navigator.share_name == self.current_share:

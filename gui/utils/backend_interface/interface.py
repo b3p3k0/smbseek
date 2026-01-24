@@ -25,6 +25,7 @@ from . import config
 from . import process_runner
 from . import progress
 from . import mock_operations
+from . import error_parser
 
 
 class BackendInterface:
@@ -99,109 +100,12 @@ class BackendInterface:
             self.default_recent_days = 90
     
     def _extract_error_details(self, full_output: str, cmd: List[str]) -> str:
-        """
-        Extract meaningful error details from SMBSeek CLI output with enhanced
-        error handling for recent filtering scenarios.
-        
-        Args:
-            full_output: Complete output from failed command
-            cmd: The command that failed
-            
-        Returns:
-            User-friendly error message with actual CLI error details
-        """
-        lines = full_output.split('\n')
-        
-        # Check for specific recent filtering errors first (as per backend team recommendations)
-        for line in lines:
-            line_clean = re.sub(r'\x1b\[[0-9;]*m', '', line).strip()
-            
-            # Pattern: "No authenticated hosts found from the last N hours"
-            if "No authenticated hosts found from the last" in line_clean:
-                return f"RECENT_HOSTS_ERROR: {line_clean}"
-            
-            # Pattern: "None of the specified servers are authenticated"
-            if "None of the specified servers are authenticated" in line_clean:
-                return f"SERVERS_NOT_AUTHENTICATED: {line_clean}"
-
-            # Missing dependency patterns (smbprotocol / pyspnego not installed)
-            missing_dependency_substrings = (
-                "SMB libraries not available",
-                "ModuleNotFoundError: No module named 'smbprotocol'",
-                'ModuleNotFoundError: No module named "smbprotocol"',
-                "ModuleNotFoundError: No module named 'pyspnego'",
-                'ModuleNotFoundError: No module named "pyspnego"',
-                "No module named 'smbprotocol'",
-                'No module named "smbprotocol"',
-                "No module named 'pyspnego'",
-                'No module named "pyspnego"'
-            )
-            if any(substring in line_clean for substring in missing_dependency_substrings):
-                friendly_message = (
-                    "SMBSeek backend is missing required SMB libraries (smbprotocol). "
-                    "This usually happens when the xsmbseek GUI runs outside the project "
-                    "virtual environment. Activate the venv (e.g., `source venv/bin/activate`) "
-                    "or install the dependencies with `pip install -r requirements.txt`.\n"
-                    f"Backend output: {line_clean}"
-                )
-                return f"DEPENDENCY_MISSING: {friendly_message}"
-        
-        # Look for common error patterns
-        error_indicators = [
-            'error:', 'Error:', 'ERROR:',
-            'failed:', 'Failed:', 'FAILED:',
-            'exception:', 'Exception:', 'EXCEPTION:',
-            'traceback', 'Traceback',
-            'invalid', 'Invalid', 'INVALID',
-            'missing', 'Missing', 'MISSING',
-            'not found', 'Not found', 'NOT FOUND'
-        ]
-        
-        # Extract relevant error lines
-        error_lines = []
-        for line in lines:
-            line_lower = line.lower().strip()
-            if any(indicator.lower() in line_lower for indicator in error_indicators):
-                # Clean up ANSI codes and whitespace
-                clean_line = re.sub(r'\x1b\[[0-9;]*m', '', line).strip()
-                if clean_line:
-                    error_lines.append(clean_line)
-        
-        if error_lines:
-            # Return first few error lines
-            return '\n'.join(error_lines[:3])
-        
-        # If no specific errors found, look for last non-empty lines
-        non_empty_lines = [line.strip() for line in lines if line.strip()]
-        if non_empty_lines:
-            # Return last few lines which often contain the error
-            last_lines = non_empty_lines[-3:]
-            # Clean up ANSI codes
-            clean_lines = [re.sub(r'\x1b\[[0-9;]*m', '', line) for line in last_lines]
-            return '\n'.join(clean_lines)
-        
-        # Fallback to command and basic info
-        return f"Command failed: {' '.join(cmd[:3])}{'...' if len(cmd) > 3 else ''}"
+        """Delegate to error_parser while preserving public API."""
+        return error_parser.extract_error_details(full_output, cmd)
     
     def _validate_backend(self) -> None:
-        """
-        Validate that backend is accessible and functional.
-        
-        Raises:
-            FileNotFoundError: If backend CLI script not found
-            PermissionError: If backend not executable
-        """
-        if not self.cli_script.exists():
-            raise FileNotFoundError(
-                f"Backend CLI not found at {self.cli_script}. "
-                f"Ensure backend is properly installed."
-            )
-        
-        if not os.access(self.cli_script, os.X_OK):
-            raise PermissionError(
-                f"Backend CLI not executable: {self.cli_script}. "
-                f"Run: chmod +x {self.cli_script}"
-            )
+        """Delegate backend validation to config helper."""
+        return config.validate_backend(self)
 
     def _build_cli_command(self, *args) -> List[str]:
         """
@@ -670,97 +574,8 @@ class BackendInterface:
     
 
     def terminate_current_operation(self, graceful: bool = False) -> None:
-        """
-        Terminate the currently running operation by killing the subprocess and its children.
-
-        Args:
-            graceful: Whether to attempt graceful termination first (currently unused)
-
-        Design: Kills entire process tree using platform-specific process groups to ensure
-        all child processes (workers spawned by backend) are terminated.
-        """
-        # Mock mode safety - no subprocess operations to terminate
-        if self.mock_mode:
-            return
-
-        # No active process to terminate
-        if self.active_process is None:
-            return
-
-        # Set cancellation flag for _execute_with_progress to detect
-        self.cancel_requested = True
-
-        try:
-            process = self.active_process
-
-            # Platform-specific process group termination
-            if sys.platform.startswith('win'):
-                # Windows: Send CTRL_BREAK_EVENT to process group, then terminate
-                try:
-                    process.send_signal(signal.CTRL_BREAK_EVENT)
-                    # Wait briefly for graceful shutdown
-                    try:
-                        process.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        process.terminate()  # Force kill on Windows
-                except (ProcessLookupError, PermissionError, OSError):
-                    # Process may have already exited, continue with cleanup
-                    pass
-            else:
-                # POSIX: Send SIGTERM to entire process group, escalate to SIGKILL if needed
-                try:
-                    # Kill entire process group to catch worker children
-                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                    # Wait for graceful shutdown
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        # Escalate to SIGKILL for process group
-                        try:
-                            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-                        except (ProcessLookupError, PermissionError, OSError):
-                            pass
-                except (ProcessLookupError, PermissionError, OSError):
-                    # Process group may not exist or we lack permissions, try individual process
-                    try:
-                        process.terminate()
-                        try:
-                            process.wait(timeout=3)
-                        except subprocess.TimeoutExpired:
-                            process.kill()
-                    except (ProcessLookupError, PermissionError, OSError):
-                        pass
-
-            # Clean up stdout pipe to unblock reader thread
-            try:
-                if process.stdout and not process.stdout.closed:
-                    process.stdout.close()
-            except (AttributeError, OSError):
-                pass
-
-            # Join the output reader thread with timeout
-            if self.active_output_thread is not None:
-                try:
-                    self.active_output_thread.join(timeout=3)
-                except (threading.ThreadError, RuntimeError):
-                    # Thread may have already finished or be in invalid state
-                    pass
-                # Clear thread reference after join
-                self.active_output_thread = None
-
-            # Update operation status to cancelled
-            if self.current_operation:
-                self.current_operation.update({
-                    "status": "cancelled",
-                    "end_time": time.time()
-                })
-
-        except Exception as e:
-            # Log termination errors but don't raise - cancellation should always succeed
-            print(f"Warning: Error during operation termination: {e}")
-
-        # Note: Don't clear active_process or cancel_requested here - let _execute_with_progress
-        # see these values and handle the cancellation properly in its finally block
+        """Terminate the currently running operation."""
+        return process_runner.terminate_operation(self, graceful)
 
     def get_operation_status(self) -> Optional[Dict]:
         """

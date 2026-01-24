@@ -1,0 +1,341 @@
+"""
+Server List Filter Template & Preferences Mixin
+
+Handles filter preference persistence, country selections, and template CRUD
+for the server list window.
+"""
+
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+from typing import Dict, Any, Optional
+
+from server_list_window import filters, table
+from gui.utils.dialog_helpers import ensure_dialog_focus
+
+
+class ServerListWindowTemplateMixin:
+    def _restore_country_filter_selections(self) -> None:
+        """Restore saved country filter selections from the listbox."""
+        if not self.country_listbox or not self.country_code_list:
+            return
+
+        saved_codes = self.settings_manager.get_setting('windows.server_list.selected_countries', []) if self.settings_manager else []
+        saved_codes_set = set(saved_codes)
+
+        self.country_listbox.selection_clear(0, tk.END)
+        for idx, code in enumerate(self.country_code_list):
+            if code in saved_codes_set:
+                self.country_listbox.selection_set(idx)
+
+    def _get_selected_country_codes(self):
+        """Get selected country codes from listbox."""
+        if not self.country_listbox:
+            return []
+        return [self.country_code_list[i] for i in self.country_listbox.curselection()]
+
+    def _toggle_show_all_results(self) -> None:
+        """Toggle showing all results when in recent-filter mode."""
+        self.filter_recent = not self.filter_recent
+        self._update_mode_display()
+        self._apply_filters(force=True)
+
+    def _reset_filters(self) -> None:
+        """Reset filters to default values and refresh list."""
+        self.search_text.set("")
+        self.date_filter.set("All")
+        self.shares_filter.set(True)
+        self.favorites_only.set(False)
+        self.exclude_avoid.set(False)
+        self.probed_only.set(False)
+        self.exclude_compromised.set(False)
+
+        if self.country_listbox:
+            self.country_listbox.selection_clear(0, tk.END)
+
+        self._apply_filters()
+
+    def _load_filter_preferences(self) -> None:
+        """Load filter preferences from settings manager if available."""
+        if not self.settings_manager:
+            return
+
+        prefs = self.settings_manager.get_setting('windows.server_list.filter_preferences', {})
+        if not prefs:
+            return
+
+        try:
+            self.search_text.set(prefs.get('search_text', ''))
+            self.date_filter.set(prefs.get('date_filter', 'All'))
+            self.shares_filter.set(prefs.get('shares_filter', True))
+            self.favorites_only.set(prefs.get('favorites_only', False))
+            self.exclude_avoid.set(prefs.get('exclude_avoid', False))
+            self.probed_only.set(prefs.get('probed_only', False))
+            self.exclude_compromised.set(prefs.get('exclude_compromised', False))
+        except Exception:
+            # Graceful degradation if settings are malformed
+            pass
+
+    def _persist_filter_preferences(self) -> None:
+        """Persist filter preferences to settings manager if available."""
+        if not self.settings_manager:
+            return
+
+        prefs = {
+            'search_text': self.search_text.get(),
+            'date_filter': self.date_filter.get(),
+            'shares_filter': bool(self.shares_filter.get()),
+            'favorites_only': bool(self.favorites_only.get()),
+            'exclude_avoid': bool(self.exclude_avoid.get()),
+            'probed_only': bool(self.probed_only.get()),
+            'exclude_compromised': bool(self.exclude_compromised.get())
+        }
+
+        if self.country_listbox:
+            prefs['country_codes'] = self._get_selected_country_codes()
+
+        try:
+            self.settings_manager.set_setting('windows.server_list.filter_preferences', prefs)
+        except Exception:
+            pass
+
+    def _get_last_filter_template_slug(self) -> Optional[str]:
+        if not self.settings_manager:
+            return None
+        return self.settings_manager.get_setting('windows.server_list.filter_template_last_used', None)
+
+    def _set_last_filter_template_slug(self, slug: Optional[str]) -> None:
+        if not self.settings_manager:
+            return
+        self.settings_manager.set_setting('windows.server_list.filter_template_last_used', slug)
+
+    def _refresh_filter_templates(self, select_slug: Optional[str] = None) -> None:
+        """Refresh filter template dropdown options."""
+        if 'filter_template_delete_button' in self.filter_widgets:
+            delete_btn = self.filter_widgets['filter_template_delete_button']
+            delete_btn.config(state=tk.NORMAL if self.filter_template_store else tk.DISABLED)
+
+        if 'filter_template_dropdown' not in self.filter_widgets or not self.filter_template_store:
+            return
+
+        dropdown = self.filter_widgets['filter_template_dropdown']
+        templates = self.filter_template_store.list_templates()
+        self._filter_template_label_to_slug = {tpl.name: tpl.slug for tpl in templates}
+        labels = sorted(self._filter_template_label_to_slug.keys())
+
+        dropdown.configure(values=labels or [self.FILTER_TEMPLATE_PLACEHOLDER])
+
+        target_slug = select_slug or self._get_last_filter_template_slug()
+        if target_slug and target_slug in self._filter_template_label_to_slug.values():
+            target_label = next((name for name, slug in self._filter_template_label_to_slug.items() if slug == target_slug), self.FILTER_TEMPLATE_PLACEHOLDER)
+            self.filter_template_var.set(target_label)
+            self._selected_filter_template_slug = self._filter_template_label_to_slug.get(target_label)
+        else:
+            self.filter_template_var.set(self.FILTER_TEMPLATE_PLACEHOLDER)
+            self._selected_filter_template_slug = None
+
+    def _capture_filter_state(self) -> Dict[str, Any]:
+        """Capture current filter state for template saving."""
+        return {
+            'search_text': self.search_text.get(),
+            'date_filter': self.date_filter.get(),
+            'shares_filter': bool(self.shares_filter.get()),
+            'favorites_only': bool(self.favorites_only.get()),
+            'exclude_avoid': bool(self.exclude_avoid.get()),
+            'probed_only': bool(self.probed_only.get()),
+            'exclude_compromised': bool(self.exclude_compromised.get()),
+            'country_codes': self._get_selected_country_codes(),
+            'advanced_mode': bool(self.is_advanced_mode),
+        }
+
+    def _apply_filter_state(self, state: Dict[str, Any]) -> None:
+        """Apply a saved filter state to UI and refresh results."""
+        self.search_text.set(state.get('search_text', ''))
+        self.date_filter.set(state.get('date_filter', 'All'))
+        self.shares_filter.set(bool(state.get('shares_filter', False)))
+        self.favorites_only.set(bool(state.get('favorites_only', False)))
+        self.exclude_avoid.set(bool(state.get('exclude_avoid', False)))
+        self.probed_only.set(bool(state.get('probed_only', False)))
+        self.exclude_compromised.set(bool(state.get('exclude_compromised', False)))
+
+        if self.country_listbox:
+            self.country_listbox.selection_clear(0, tk.END)
+            selected = set(state.get('country_codes', []))
+            for idx, code in enumerate(self.country_code_list):
+                if code in selected:
+                    self.country_listbox.selection_set(idx)
+
+        if state.get('advanced_mode') is not None:
+            self.is_advanced_mode = bool(state['advanced_mode'])
+            self._update_mode_display()
+
+        self._apply_filters()
+
+    def _on_filter_template_selected(self) -> None:
+        """Handle template selection change."""
+        if not self.filter_template_store:
+            return
+
+        label = self.filter_template_var.get()
+        if not label or label == self.FILTER_TEMPLATE_PLACEHOLDER:
+            self._selected_filter_template_slug = None
+            return
+
+        slug = self._filter_template_label_to_slug.get(label)
+        self._selected_filter_template_slug = slug
+
+        template = self.filter_template_store.load_template(slug) if self.filter_template_store else None
+        if template:
+            self._apply_filter_state(template.form_state)
+            self._set_last_filter_template_slug(slug)
+
+    def _on_save_filter_template(self) -> None:
+        """Save current filter state as a template."""
+        label = self.filter_template_var.get()
+        name = label if label and label != self.FILTER_TEMPLATE_PLACEHOLDER else None
+
+        if not name:
+            name = simpledialog.askstring("Save Filter Template", "Template name:", parent=self.window)
+            if not name:
+                return
+
+        slug = filters.slugify_template_name(name)
+        existing = self.filter_template_store.load_template(slug) if self.filter_template_store else None
+
+        if existing:
+            overwrite = messagebox.askyesno(
+                "Overwrite Template",
+                f"Template '{name}' already exists. Overwrite?",
+                parent=self.window
+            )
+            if not overwrite:
+                return
+
+        if not self.filter_template_store:
+            messagebox.showinfo(
+                "Filter Template",
+                "Filter template storage is unavailable.",
+                parent=self.window
+            )
+            return
+
+        template = self.filter_template_store.save_template(name, self._capture_filter_state())
+        self._set_last_filter_template_slug(template.slug)
+        self._refresh_filter_templates(select_slug=template.slug)
+
+    def _on_delete_filter_template(self) -> None:
+        """Delete the selected filter template."""
+        if not self.filter_template_store:
+            messagebox.showinfo(
+                "Filter Template",
+                "Filter template storage is unavailable.",
+                parent=self.window
+            )
+            return
+
+        label = self.filter_template_var.get()
+        if not label or label == self.FILTER_TEMPLATE_PLACEHOLDER:
+            messagebox.showinfo(
+                "Delete Filter Template",
+                "Select a template to delete.",
+                parent=self.window
+            )
+            return
+
+        slug = self._filter_template_label_to_slug.get(label)
+        if not slug:
+            messagebox.showwarning(
+                "Delete Filter Template",
+                "Template not found.",
+                parent=self.window
+            )
+            return
+
+        confirmed = messagebox.askyesno(
+            "Delete Filter Template",
+            f"Delete template '{label}'? This cannot be undone.",
+            parent=self.window
+        )
+        if not confirmed:
+            return
+
+        deleted = self.filter_template_store.delete_template(slug)
+        if deleted:
+            messagebox.showinfo(
+                "Delete Filter Template",
+                f"Template '{label}' deleted.",
+                parent=self.window
+            )
+        else:
+            messagebox.showwarning(
+                "Delete Filter Template",
+                "Failed to delete template.",
+                parent=self.window
+            )
+
+        if self._get_last_filter_template_slug() == slug:
+            self._set_last_filter_template_slug(None)
+
+        self.filter_template_var.set(self.FILTER_TEMPLATE_PLACEHOLDER)
+        self._selected_filter_template_slug = None
+        self._refresh_filter_templates()
+
+    def _refresh_data(self) -> None:
+        """Refresh server data from the database."""
+        self._load_data()
+        self._persist_filter_preferences()
+
+    def _close_window(self) -> None:
+        """Close the window and persist filter prefs."""
+        self._persist_filter_preferences()
+        if self.window is not None:
+            self.window.destroy()
+
+    def restore_and_focus(self) -> None:
+        """Restore window focus (public adapter)."""
+        if self.window:
+            self.window.deiconify()
+            self.window.lift()
+            ensure_dialog_focus(self.window, self.parent)
+
+    def apply_recent_discoveries_filter(self) -> None:
+        """Apply filter to show only recent discoveries (used by dashboard)."""
+        try:
+            # Clear existing filters first
+            self.search_text.set("")
+            self.date_filter.set("All")
+
+            # Load servers with recent scan filter
+            servers, total_count = self.db_reader.get_server_list(
+                limit=10000,
+                offset=0,
+                country_codes=None,
+                favorites_only=False,
+                probed_only=False,
+                exclude_avoid=False,
+                exclude_compromised=False,
+                shares_filter=False,
+                recent_discovery_only=True
+            )
+
+            self.all_servers = servers
+            self.filtered_servers = servers
+            self.count_label.config(text=f"Showing {len(servers)} of {total_count} servers")
+
+            table.populate_server_table(
+                self.tree,
+                self.filtered_servers,
+                self.country_code_list,
+                attach_probe_status=self._attach_probe_status
+            )
+
+            self._reset_sort_state()
+            self._on_selection_changed()
+            self._update_action_buttons_state()
+            self._update_context_menu_state()
+
+        except Exception as e:
+            messagebox.showerror(
+                "Recent Discoveries",
+                f"Failed to apply recent discoveries filter: {e}",
+                parent=self.window
+            )

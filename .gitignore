@@ -97,6 +97,8 @@ conf/*.json
 smbseek.db.*
 *.db.cleanup_backup_*
 db_backups/
+gui/.scan_lock
+
 
 # Generated output files
 *.csv
