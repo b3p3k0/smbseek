@@ -38,6 +38,7 @@ from scan_results_dialog import show_scan_results_dialog
 from settings_manager import SettingsManager
 from probe_runner import run_probe
 from extract_runner import run_extract
+import dashboard_logs
 
 # Import probe/extract utilities
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -273,269 +274,52 @@ class DashboardWidget:
         self._build_status_footer()
 
     def _configure_log_tags(self) -> None:
-        """Configure text tags used for ANSI-colored output."""
-        if not self.log_text_widget:
-            return
-
-        mono_font = self.theme.fonts["mono"]
-        bold_font = (mono_font[0], mono_font[1], "bold")
-        self.log_text_widget.tag_configure("ansi_bold", font=bold_font)
-
-        color_map = {
-            "ansi_fg_black": "#7f8796",
-            "ansi_fg_red": "#ff7676",
-            "ansi_fg_green": "#7dd87d",
-            "ansi_fg_yellow": "#ffd666",
-            "ansi_fg_blue": "#76b9ff",
-            "ansi_fg_magenta": "#d692ff",
-            "ansi_fg_cyan": "#4dd0e1",
-            "ansi_fg_white": self.log_fg_color,
-            "ansi_fg_bright_black": "#a0a7b4",
-            "ansi_fg_bright_red": "#ff8b8b",
-            "ansi_fg_bright_green": "#8ef79a",
-            "ansi_fg_bright_yellow": "#ffe082",
-            "ansi_fg_bright_blue": "#90c8ff",
-            "ansi_fg_bright_magenta": "#f78bff",
-            "ansi_fg_bright_cyan": "#6fe8ff",
-            "ansi_fg_bright_white": "#ffffff"
-        }
-
-        for tag, color in color_map.items():
-            self.log_text_widget.tag_configure(tag, foreground=color)
-
-        self.log_text_widget.tag_configure(
-            "log_placeholder",
-            foreground=self.log_placeholder_color
-        )
+        dashboard_logs.configure_log_tags(self)
 
     def _render_log_placeholder(self) -> None:
-        """Display placeholder text when no log output is available."""
-        if not self.log_text_widget:
-            return
-
-        self.log_text_widget.configure(state=tk.NORMAL)
-        self.log_text_widget.delete("1.0", tk.END)
-        self.log_text_widget.insert(
-            tk.END,
-            f"{self.log_placeholder_text}\n",
-            ("log_placeholder",)
-        )
-        self.log_text_widget.configure(state=tk.DISABLED)
-        self._log_placeholder_visible = True
-        self.log_autoscroll = True
-        self._hide_log_jump_button()
+        dashboard_logs.render_log_placeholder(self)
 
     def _reset_log_output(self, country: Optional[str]) -> None:
-        """Clear log output and add a friendly header for the new scan."""
-        self._clear_log_output()
-        target = country or "global"
-        self._append_log_line(f"GUI: awaiting backend output for {target} scan...")
+        dashboard_logs.reset_log_output(self, country)
 
     def _append_log_line(self, line: str) -> None:
-        """Append a raw CLI line to the text widget preserving ANSI colors."""
-        if not self.log_text_widget or line is None:
-            return
-
-        previous_len = len(self.log_history)
-        self.log_history.append(line)
-
-        self.log_text_widget.configure(state=tk.NORMAL)
-        if self._log_placeholder_visible:
-            self.log_text_widget.delete("1.0", tk.END)
-            self._log_placeholder_visible = False
-
-        segments = self._parse_ansi_segments(line)
-        if not segments:
-            segments = [(line, ())]
-
-        for segment_text, tags in segments:
-            if segment_text:
-                self.log_text_widget.insert(tk.END, segment_text, tags)
-        self.log_text_widget.insert(tk.END, "\n")
-
-        if previous_len == self.log_history.maxlen:
-            self.log_text_widget.delete("1.0", "2.0")
-
-        self.log_text_widget.configure(state=tk.DISABLED)
-
-        if self.log_autoscroll:
-            self.log_text_widget.see(tk.END)
-
-        self._update_log_autoscroll_state()
+        dashboard_logs.append_log_line(self, line)
 
     def _parse_ansi_segments(self, text: str) -> List[tuple]:
-        """Split text into (segment, tags) respecting ANSI escape codes."""
-        segments = []
-        last_end = 0
-        active_tags: List[str] = []
-
-        for match in self._ansi_pattern.finditer(text):
-            start, end = match.span()
-            if start > last_end:
-                segments.append((text[last_end:start], tuple(active_tags)))
-
-            codes = match.group(1).split(";") if match.group(1) else ["0"]
-            active_tags = self._apply_ansi_codes(active_tags, codes)
-            last_end = end
-
-        if last_end < len(text):
-            segments.append((text[last_end:], tuple(active_tags)))
-
-        return segments
+        return dashboard_logs.parse_ansi_segments(self, text)
 
     def _apply_ansi_codes(self, active_tags: List[str], codes: List[str]) -> List[str]:
-        """Update active tag list based on ANSI code sequence."""
-        tags = list(active_tags)
-        for code in codes:
-            if not code:
-                code = "0"
-
-            if code == "0":
-                tags.clear()
-            elif code == "1":
-                if "ansi_bold" not in tags:
-                    tags.append("ansi_bold")
-            elif code in self._ansi_color_tag_map:
-                tags = [t for t in tags if t not in self._ansi_color_tags]
-                tags.append(self._ansi_color_tag_map[code])
-
-        return tags
+        return dashboard_logs.apply_ansi_codes(self, active_tags, codes)
 
     def _handle_scan_log_line(self, line: str) -> None:
-        """Queue log lines coming from background scan threads."""
-        if line is None:
-            return
-        self.log_queue.put(line)
+        dashboard_logs.handle_scan_log_line(self, line)
 
     def _process_log_queue(self) -> None:
-        """Drain queued log lines on the Tk thread."""
-        if not self.parent or not self.parent.winfo_exists():
-            return
-
-        try:
-            while True:
-                line = self.log_queue.get_nowait()
-                self._append_log_line(line)
-        except queue.Empty:
-            pass
-
-        self.log_processing_job = self.parent.after(150, self._process_log_queue)
+        dashboard_logs.process_log_queue(self)
 
     def _update_log_autoscroll_state(self, *_args) -> None:
-        """Detect whether the viewer is scrolled to the bottom."""
-        if not self.log_text_widget:
-            return
-
-        at_bottom = self._is_log_at_bottom()
-        self.log_autoscroll = at_bottom
-
-        if at_bottom:
-            self._hide_log_jump_button()
-        else:
-            self._show_log_jump_button()
+        dashboard_logs.update_log_autoscroll_state(self, *_args)
 
     def _is_log_at_bottom(self) -> bool:
-        """Return True if the viewer is scrolled to the bottom."""
-        if not self.log_text_widget:
-            return True
-        start, end = self.log_text_widget.yview()
-        return end >= 0.995
+        return dashboard_logs.is_log_at_bottom(self)
 
     def _scroll_log_to_latest(self) -> None:
-        """Scroll the viewer to the most recent line and resume autoscroll."""
-        if not self.log_text_widget:
-            return
-        self.log_text_widget.see(tk.END)
-        self.log_autoscroll = True
-        self._hide_log_jump_button()
+        dashboard_logs.scroll_log_to_latest(self)
 
     def _show_log_jump_button(self) -> None:
-        """Display the jump-to-latest helper."""
-        if self.log_jump_button and not self.log_jump_button.winfo_ismapped():
-            self.log_jump_button.pack(side=tk.RIGHT, padx=(5, 0))
+        dashboard_logs.show_log_jump_button(self)
 
     def _hide_log_jump_button(self) -> None:
-        """Hide the jump-to-latest helper."""
-        if self.log_jump_button and self.log_jump_button.winfo_ismapped():
-            self.log_jump_button.pack_forget()
+        dashboard_logs.hide_log_jump_button(self)
 
     def _copy_log_output(self) -> None:
-        """Copy current log contents to clipboard."""
-        if not self.log_history:
-            return
-        try:
-            self.parent.clipboard_clear()
-            self.parent.clipboard_append("\n".join(self.log_history))
-        except tk.TclError:
-            pass
+        dashboard_logs.copy_log_output(self)
 
     def _clear_log_output(self) -> None:
-        """Clear log viewer and reset placeholder."""
-        self.log_history.clear()
-        self._render_log_placeholder()
+        dashboard_logs.clear_log_output(self)
 
     def _build_log_viewer(self) -> None:
-        """Create expanded live output viewer."""
-        log_container = tk.Frame(
-            self.progress_frame,
-            bg=self.theme.colors["card_bg"],
-            highlightthickness=0
-        )
-        log_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=(4, 14))
-
-        header_frame = tk.Frame(log_container, bg=self.theme.colors["card_bg"])
-        header_frame.pack(fill=tk.X, pady=(0, 6))
-
-        header_label = tk.Label(
-            header_frame,
-            text="Live Scan Output",
-            bg=self.theme.colors["card_bg"],
-            fg=self.theme.colors["text"],
-            font=self.theme.fonts["heading"]
-        )
-        header_label.pack(side=tk.LEFT)
-
-        self.log_jump_button = tk.Button(
-            header_frame,
-            text="Jump to Latest",
-            command=self._scroll_log_to_latest
-        )
-        self.theme.apply_to_widget(self.log_jump_button, "button_secondary")
-        self.log_jump_button.pack(side=tk.RIGHT, padx=(5, 0))
-        self.log_jump_button.pack_forget()  # hidden until user scrolls away
-
-        text_frame = tk.Frame(log_container, bg=self.log_bg_color)
-        text_frame.pack(fill=tk.BOTH, expand=True)
-
-        scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        base_log_lines = 10
-        extra_log_height_px = 300  # 150px original bump + 150px new request
-        expanded_lines = base_log_lines + self._pixels_to_text_lines(extra_log_height_px)
-        self.log_text_widget = tk.Text(
-            text_frame,
-            height=expanded_lines,
-            wrap=tk.NONE,
-            bg=self.log_bg_color,
-            fg=self.log_fg_color,
-            font=self.theme.fonts["mono"],
-            state=tk.DISABLED,
-            relief="solid",
-            borderwidth=1,
-            highlightthickness=0,
-            insertbackground=self.log_fg_color
-        )
-        self.log_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.log_text_widget.configure(yscrollcommand=scrollbar.set)
-        scrollbar.configure(command=self.log_text_widget.yview)
-
-        # Track manual scrolling to toggle autoscroll state
-        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>", "<ButtonRelease-1>", "<Shift-MouseWheel>"):
-            self.log_text_widget.bind(sequence, self._update_log_autoscroll_state, add="+")
-
-        self._configure_log_tags()
-        self._render_log_placeholder()
+        dashboard_logs.build_log_viewer(self)
     
     def _build_status_footer(self) -> None:
         """Place status summary + clipboard controls below the console."""
@@ -1012,7 +796,15 @@ class DashboardWidget:
                         status = results.get("status", "")
                         success = results.get("success", False)
                         error = results.get("error")
-                        hosts_scanned = results.get("hosts_scanned", 0)
+                        # Be tolerant of different result field names
+                        hosts_scanned = (
+                            results.get("hosts_scanned", 0)
+                            or results.get("hosts_tested", 0)
+                            or results.get("hosts_discovered", 0)
+                            or results.get("accessible_hosts", 0)
+                            or results.get("shares_found", 0)
+                            or 0
+                        )
 
                         # Run bulk ops only when scan succeeded and yielded hosts
                         is_finished = status not in {"cancelled"} and success
@@ -1100,8 +892,13 @@ class DashboardWidget:
                     pass
                 return  # No bulk operations requested
 
-            # Skip bulk if scan failed or produced no hosts
-            if scan_results.get("error") or scan_results.get("hosts_scanned", 0) == 0:
+            # Skip bulk if scan failed or produced no hosts (use tolerant metrics)
+            host_metric = max(
+                scan_results.get("hosts_scanned", 0) or scan_results.get("hosts_tested", 0) or scan_results.get("hosts_discovered", 0) or 0,
+                scan_results.get("accessible_hosts", 0) or 0,
+                scan_results.get("shares_found", 0) or 0,
+            )
+            if scan_results.get("error") or host_metric == 0:
                 self._show_scan_results(scan_results)
                 try:
                     self.parent.after(5000, self._reset_scan_status)

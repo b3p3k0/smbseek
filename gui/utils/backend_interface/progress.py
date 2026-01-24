@@ -564,6 +564,11 @@ def parse_final_results(output: str) -> Dict:
         "✓ Discovery completed:" in cleaned_output):
         results["success"] = True
 
+    # Fallback: also consider it success if we actually parsed scan results
+    # This handles cases where CLI output format changed but data was parsed
+    if not results["success"] and (results["hosts_scanned"] > 0 or results["hosts_accessible"] > 0):
+        results["success"] = True
+
     return results
 
 

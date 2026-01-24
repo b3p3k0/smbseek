@@ -20,19 +20,19 @@ except ImportError:
 
 
 class ServerListWindowBatchStatusMixin:
-        def _parse_accessible_shares(raw_value: Optional[Any]) -> List[str]:
+        def _parse_accessible_shares(self, raw_value: Optional[Any]) -> List[str]:
             if not raw_value:
                 return []
             if isinstance(raw_value, list):
                 return [share.strip() for share in raw_value if isinstance(share, str) and share.strip()]
             return [share.strip() for share in str(raw_value).split(',') if share.strip()]
 
-        def _is_table_lock_required(job_type: str) -> bool:
+        def _is_table_lock_required(self, job_type: str) -> bool:
             """Return True if the server table should be locked for this batch type."""
             # Concurrency-friendly: do not lock the table for any job
             return False
 
-        def _normalize_share_name(name: str) -> str:
+        def _normalize_share_name(self, name: str) -> str:
             """
             Strip badges or slashes from share labels (e.g., 'share (denied)' -> 'share').
             """
