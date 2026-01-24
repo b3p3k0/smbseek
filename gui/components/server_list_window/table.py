@@ -142,17 +142,17 @@ def update_table_display(tree, filtered_servers: List[Dict[str, Any]], settings_
             # Remove any spaces after commas and ensure clean formatting
             accessible_shares = ",".join([share.strip() for share in accessible_shares.split(",") if share.strip()])
 
-        # Determine favorite star
+        # Determine favorite icon
         if settings_manager and settings_manager.is_favorite_server(ip_addr):
-            star = "★"
+            favorite_icon = "✔"
         else:
-            star = "☆"
+            favorite_icon = "○"
 
-        # Determine avoid skull
+        # Determine avoid icon
         if settings_manager and settings_manager.is_avoid_server(ip_addr):
-            skull = "☠"
+            avoid_icon = "✖"
         else:
-            skull = "💀"
+            avoid_icon = "○"
 
         probe_emoji = server.get("probe_status_emoji", "⚪")
         extracted_emoji = server.get("extract_status_emoji", "○")
@@ -161,7 +161,7 @@ def update_table_display(tree, filtered_servers: List[Dict[str, Any]], settings_
         item_id = tree.insert(
             "",
             "end",
-            values=(star, skull, probe_emoji, extracted_emoji, ip_addr, shares_count, accessible_shares, denied_count, last_seen, country)
+            values=(favorite_icon, avoid_icon, probe_emoji, extracted_emoji, ip_addr, shares_count, accessible_shares, denied_count, last_seen, country)
         )
 
         # Add visual indicators for shares count
@@ -340,8 +340,8 @@ def handle_treeview_click(tree, event, settings_manager, callbacks):
                 callbacks['on_favorite_toggle'](ip_address, is_now_favorite)
         except Exception:
             pass
-        star = "★" if is_now_favorite else "☆"
-        tree.set(item, "favorite", star)
+        favorite_icon = "✔" if is_now_favorite else "○"
+        tree.set(item, "favorite", favorite_icon)
 
         # Re-apply filters if favorites-only is enabled
         if callbacks.get('on_favorites_filter_changed'):
@@ -363,8 +363,8 @@ def handle_treeview_click(tree, event, settings_manager, callbacks):
                 callbacks['on_avoid_toggle'](ip_address, is_now_avoided)
         except Exception:
             pass
-        skull = "☠" if is_now_avoided else "💀"
-        tree.set(item, "avoid", skull)
+        avoid_icon = "✖" if is_now_avoided else "○"
+        tree.set(item, "avoid", avoid_icon)
 
         # Re-apply filters if avoid-only is enabled
         if callbacks.get('on_avoid_filter_changed'):
