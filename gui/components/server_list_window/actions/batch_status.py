@@ -437,10 +437,11 @@ class ServerListWindowBatchStatusMixin:
             batch_active = self._is_batch_active()
             # Context menu items enabled when selection exists (batch ops don't block)
             selection_state = tk.NORMAL if has_selection else tk.DISABLED
-            self.context_menu.entryconfig(0, state=selection_state)  # Probe
-            self.context_menu.entryconfig(1, state=selection_state)  # Extract
-            self.context_menu.entryconfig(2, state=selection_state)  # Pry
-            self.context_menu.entryconfig(3, state=selection_state)  # Browse
+            self.context_menu.entryconfig(0, state=selection_state)  # Copy IP
+            self.context_menu.entryconfig(1, state=selection_state)  # Probe
+            self.context_menu.entryconfig(2, state=selection_state)  # Extract
+            self.context_menu.entryconfig(3, state=selection_state)  # Pry
+            self.context_menu.entryconfig(4, state=selection_state)  # Browse
             # Delete (use stored index, not hardcoded)
             if self._delete_menu_index is not None:
                 delete_allowed = has_selection and not batch_active and not getattr(self, '_delete_in_progress', False)

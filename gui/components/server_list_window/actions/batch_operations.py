@@ -38,6 +38,28 @@ class ServerListWindowBatchOperationsMixin:
     """
     Batch action handlers shared by the server list window.
     """
+    def _on_copy_ip(self) -> None:
+        """Copy selected host IP address(es) to clipboard."""
+        self._hide_context_menu()
+        if not self.tree:
+            return
+        selected = self.tree.selection()
+        if not selected:
+            return
+
+        ips = []
+        for item in selected:
+            values = self.tree.item(item)["values"]
+            if len(values) >= 5:
+                ips.append(str(values[4]))  # IP at index 4
+
+        if ips:
+            try:
+                self.window.clipboard_clear()
+                self.window.clipboard_append("\n".join(ips))
+            except tk.TclError:
+                pass
+
     def _on_probe_selected(self) -> None:
         self._hide_context_menu()
         targets = self._build_selected_targets()

@@ -383,12 +383,13 @@ class ServerListWindow(ServerListWindowActionsMixin):
 
     def _create_context_menu(self, tree: ttk.Treeview) -> None:
         self.context_menu = tk.Menu(self.window, tearoff=0)
+        self.context_menu.add_command(label="📋 Copy IP", command=self._on_copy_ip)
         self.context_menu.add_command(label="🔍 Probe Selected", command=self._on_probe_selected)
         self.context_menu.add_command(label="📦 Extract Selected", command=self._on_extract_selected)
         self.context_menu.add_command(label="🔓 Pry Selected", command=self._on_pry_selected)
         self.context_menu.add_command(label="🗂️ Browse Selected", command=self._on_file_browser_selected)
-        # Store index before adding Delete item (context menu currently has 4 items: 0-3)
-        self._delete_menu_index = 4  # Will be the 5th item (index 4)
+        # Store index before adding Delete item (context menu currently has 5 items: 0-4)
+        self._delete_menu_index = 5  # Will be the 6th item (index 5)
         self.context_menu.add_command(label="🗑️ Delete Selected", command=self._on_delete_selected)
         self._update_context_menu_state()
 
