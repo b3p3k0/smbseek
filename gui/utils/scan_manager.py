@@ -590,6 +590,7 @@ class ScanManager:
                 "end_time": end_time.isoformat(),
                 "duration_seconds": duration.total_seconds(),
                 "status": "cancelled",
+                "success": False,  # Cancelled scans are not successful
                 "backend_results": results,
                 "hosts_scanned": hosts_scanned,
                 "accessible_hosts": accessible_hosts,
@@ -641,6 +642,7 @@ class ScanManager:
             "end_time": end_time.isoformat(),
             "duration_seconds": duration.total_seconds(),
             "status": "completed" if results.get("success", False) else "failed",
+            "success": results.get("success", False),  # Propagate success to top-level for dashboard
             "backend_results": results,
             "hosts_scanned": hosts_scanned,
             "accessible_hosts": accessible_hosts,

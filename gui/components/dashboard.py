@@ -806,13 +806,24 @@ class DashboardWidget:
                             or 0
                         )
 
-                        # Run bulk ops only when scan succeeded and yielded hosts
-                        is_finished = status not in {"cancelled"} and success
+                        # Run bulk ops if scan finished and wasn't cancelled
+                        # Permissive: check success flag OR status in completed/success/failed
+                        is_finished = status not in {"cancelled"} and (
+                            success or status in {"completed", "success", "failed"}
+                        )
                         has_new_hosts = hosts_scanned > 0
 
                         bulk_probe_enabled = self.current_scan_options.get('bulk_probe_enabled', False) if self.current_scan_options else False
                         bulk_extract_enabled = self.current_scan_options.get('bulk_extract_enabled', False) if self.current_scan_options else False
                         has_bulk_ops = self.current_scan_options and is_finished and has_new_hosts and (bulk_probe_enabled or bulk_extract_enabled)
+
+                        # Debug output for bulk ops decision
+                        import os
+                        if os.getenv("XSMBSEEK_DEBUG_PARSING"):
+                            print(f"DEBUG: Bulk ops decision: status={status}, success={success}, is_finished={is_finished}")
+                            print(f"DEBUG: hosts_scanned={hosts_scanned}, has_new_hosts={has_new_hosts}")
+                            print(f"DEBUG: bulk_probe_enabled={bulk_probe_enabled}, bulk_extract_enabled={bulk_extract_enabled}")
+                            print(f"DEBUG: has_bulk_ops={has_bulk_ops}")
 
                         if has_bulk_ops:
                             self._pending_scan_results = results

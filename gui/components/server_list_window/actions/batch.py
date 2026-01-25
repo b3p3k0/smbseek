@@ -56,13 +56,6 @@ from .batch_operations import ServerListWindowBatchOperationsMixin
 
 class ServerListWindowBatchMixin(ServerListWindowBatchOperationsMixin, ServerListWindowBatchStatusMixin):
 
-    @staticmethod
-
-    @staticmethod
-
-    @staticmethod
-
-
     def _start_batch_job(self, job_type: str, targets: List[Dict[str, Any]], options: Dict[str, Any]) -> None:
         if not targets:
             return

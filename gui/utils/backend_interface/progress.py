@@ -568,6 +568,11 @@ def parse_final_results(output: str) -> Dict:
     # This handles cases where CLI output format changed but data was parsed
     if not results["success"] and (results["hosts_scanned"] > 0 or results["hosts_accessible"] > 0):
         results["success"] = True
+        if debug_enabled:
+            print(f"DEBUG: Set success=True via fallback (hosts_scanned={results['hosts_scanned']}, hosts_accessible={results['hosts_accessible']})")
+
+    if debug_enabled:
+        print(f"DEBUG: Final success value: {results['success']}")
 
     return results
 
