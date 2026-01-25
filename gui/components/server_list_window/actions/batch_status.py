@@ -746,6 +746,9 @@ class ServerListWindowBatchStatusMixin:
             # Sort alphabetically by country code (BEFORE adding display text)
             sorted_countries = sorted(country_breakdown.items())
 
+            # Store full data for text filtering
+            self.country_full_data = sorted_countries
+
             # Populate listbox with "CODE (count)" format
             for code, count in sorted_countries:
                 display_text = f"{code} ({count})"

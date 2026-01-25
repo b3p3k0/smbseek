@@ -48,11 +48,46 @@ class ServerListWindowTemplateMixin:
         self.exclude_avoid.set(False)
         self.probed_only.set(False)
         self.exclude_compromised.set(False)
+        self.country_filter_text.set("")
 
         if self.country_listbox:
             self.country_listbox.selection_clear(0, tk.END)
+            # Repopulate to show all countries (in case filter text was active)
+            self._on_country_filter_text_changed()
 
         self._apply_filters()
+
+    def _clear_countries(self) -> None:
+        """Clear country filter selections without affecting other filters."""
+        self.country_filter_text.set("")
+        if self.country_listbox:
+            self.country_listbox.selection_clear(0, tk.END)
+            # Repopulate to show all countries (in case filter text was active)
+            self._on_country_filter_text_changed()
+        self._apply_filters()
+
+    def _on_country_filter_text_changed(self) -> None:
+        """Filter country listbox based on typed text."""
+        if not self.country_listbox or not hasattr(self, 'country_full_data'):
+            return
+
+        filter_text = self.country_filter_text.get().upper()
+
+        # Save current selections
+        saved_selections = set(self._get_selected_country_codes())
+
+        # Clear and repopulate with filtered items
+        self.country_listbox.delete(0, tk.END)
+        self.country_code_list = []
+
+        for code, count in self.country_full_data:
+            if not filter_text or code.startswith(filter_text):
+                display_text = f"{code} ({count})"
+                self.country_listbox.insert(tk.END, display_text)
+                self.country_code_list.append(code)
+                # Restore selection if it was selected
+                if code in saved_selections:
+                    self.country_listbox.selection_set(tk.END)
 
     def _load_filter_preferences(self) -> None:
         """Load filter preferences from settings manager if available."""

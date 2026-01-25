@@ -118,6 +118,7 @@ class ServerListWindow(ServerListWindowActionsMixin):
         # Country filter state
         self.country_listbox = None
         self.country_code_list = []
+        self.country_filter_text = tk.StringVar()
 
         # UI components
         self.count_label = None
@@ -295,7 +296,8 @@ class ServerListWindow(ServerListWindowActionsMixin):
             'favorites_only': self.favorites_only,
             'exclude_avoid': self.exclude_avoid,
             'probed_only': self.probed_only,
-            'exclude_compromised': self.exclude_compromised
+            'exclude_compromised': self.exclude_compromised,
+            'country_filter_text': self.country_filter_text
         }
 
         # Prepare callbacks
@@ -308,6 +310,8 @@ class ServerListWindow(ServerListWindowActionsMixin):
             'on_probed_only_changed': self._apply_filters,
             'on_exclude_compromised_changed': self._apply_filters,
             'on_country_filter_changed': self._apply_filters,
+            'on_country_filter_text_changed': self._on_country_filter_text_changed,
+            'on_clear_countries': self._clear_countries,
             'on_clear_search': self._clear_search,
             'on_reset_filters': self._reset_filters,
             'on_toggle_mode': self._toggle_mode,

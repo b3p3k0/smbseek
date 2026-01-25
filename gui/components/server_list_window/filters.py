@@ -118,19 +118,54 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
     advanced_filters_frame = tk.Frame(filter_frame)
     theme.apply_to_widget(advanced_filters_frame, "card")
 
-    # Two-column layout plus reset on the right
+    # Two-column layout: left (templates + filters), right (countries)
     left_column = tk.Frame(advanced_filters_frame)
     theme.apply_to_widget(left_column, "card")
     left_column.pack(side=tk.LEFT, padx=10, pady=5)
 
-    right_column = tk.Frame(advanced_filters_frame)
-    theme.apply_to_widget(right_column, "card")
-    right_column.pack(side=tk.LEFT, padx=10, pady=5)
+    # --- Template controls section (top of left column) ---
+    # Button row: Save, Reset, Delete
+    template_button_row = tk.Frame(left_column)
+    template_button_row.pack(anchor="w", pady=(0, 2))
 
-    # Accessible shares filter (stacked above date)
+    save_button = tk.Button(
+        template_button_row,
+        text="Save",
+        command=callbacks['on_save_filter_template']
+    )
+    theme.apply_to_widget(save_button, "button_secondary")
+    save_button.pack(side=tk.LEFT, padx=(0, 2))
+
+    reset_button = tk.Button(
+        template_button_row,
+        text="Reset",
+        command=callbacks['on_reset_filters']
+    )
+    theme.apply_to_widget(reset_button, "button_secondary")
+    reset_button.pack(side=tk.LEFT, padx=(0, 2))
+
+    delete_button = tk.Button(
+        template_button_row,
+        text="Del",
+        command=callbacks['on_delete_filter_template'],
+        state=tk.DISABLED
+    )
+    theme.apply_to_widget(delete_button, "button_secondary")
+    delete_button.pack(side=tk.LEFT)
+
+    # Template dropdown
+    template_dropdown = ttk.Combobox(
+        left_column,
+        width=20,
+        state="readonly"
+    )
+    template_dropdown.pack(anchor="w", pady=(0, 5))
+    template_dropdown.bind("<<ComboboxSelected>>", lambda e: callbacks['on_filter_template_selected']())
+
+    # --- Date/Shares section (below templates) ---
     shares_filter_checkbox = tk.Checkbutton(
         left_column,
-        text="Show only servers with accessible shares > 0",
+        text="Shares > 0",
         variable=filter_vars['shares_filter'],
         command=callbacks['on_shares_filter_changed']
     )
@@ -147,14 +182,18 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
         left_column,
         textvariable=filter_vars['date_filter'],
         values=["All", "Since Last Scan", "Last 24 Hours", "Last 7 Days", "Last 30 Days"],
-        width=15,
+        width=18,
         state="readonly"
     )
     date_combo.set("All")
     date_combo.pack(anchor="w")
     date_combo.bind("<<ComboboxSelected>>", lambda e: callbacks['on_date_filter_changed']())
 
-    # Country filter in second column
+    # --- Right column: Country filter only ---
+    right_column = tk.Frame(advanced_filters_frame)
+    theme.apply_to_widget(right_column, "card")
+    right_column.pack(side=tk.LEFT, padx=10, pady=5)
+
     country_label = theme.create_styled_label(
         right_column,
         "Countries (2-letter):",
@@ -170,10 +209,10 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
 
     country_listbox = tk.Listbox(
         country_list_container,
-        height=4,
+        height=6,
         width=15,
         selectmode=tk.MULTIPLE,
-        exportselection=False,  # Preserve selection when focus changes
+        exportselection=False,
         yscrollcommand=country_scrollbar.set
     )
     country_listbox.pack(side=tk.LEFT)
@@ -182,54 +221,25 @@ def create_filter_panel(parent, theme, filter_vars, callbacks):
     country_listbox.bind('<<ListboxSelect>>', lambda e: callbacks['on_country_filter_changed']())
     theme.apply_to_widget(country_listbox, "listbox")
 
-    # Template + reset cluster on the right
-    template_frame = tk.Frame(advanced_filters_frame)
-    theme.apply_to_widget(template_frame, "card")
-    template_frame.pack(side=tk.RIGHT, padx=10, pady=5)
+    # Container for Clear button and filter entry
+    country_controls_frame = tk.Frame(right_column)
+    country_controls_frame.pack(anchor="w")
 
-    template_label = theme.create_styled_label(
-        template_frame,
-        "Filter Templates:",
-        "small"
+    country_clear_button = tk.Button(
+        country_controls_frame,
+        text="Clear",
+        command=callbacks['on_clear_countries']
     )
-    template_label.pack(anchor="e")
+    theme.apply_to_widget(country_clear_button, "button_secondary")
+    country_clear_button.pack(side=tk.LEFT)
 
-    template_row = tk.Frame(template_frame)
-    template_row.pack(anchor="e", pady=(0, 4), fill=tk.X)
-
-    template_dropdown = ttk.Combobox(
-        template_row,
-        width=25,
-        state="readonly"
+    country_filter_entry = tk.Entry(
+        country_controls_frame,
+        width=5,
+        textvariable=filter_vars.get('country_filter_text')
     )
-    template_dropdown.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-    template_dropdown.bind("<<ComboboxSelected>>", lambda e: callbacks['on_filter_template_selected']())
-
-    delete_button = tk.Button(
-        template_row,
-        text="Delete",
-        command=callbacks['on_delete_filter_template'],
-        state=tk.DISABLED,
-        width=8
-    )
-    theme.apply_to_widget(delete_button, "button_secondary")
-    delete_button.pack(side=tk.LEFT)
-
-    save_button = tk.Button(
-        template_frame,
-        text="Save Filters",
-        command=callbacks['on_save_filter_template']
-    )
-    theme.apply_to_widget(save_button, "button_secondary")
-    save_button.pack(anchor="e", pady=(0, 2))
-
-    reset_button = tk.Button(
-        template_frame,
-        text="Reset Filters",
-        command=callbacks['on_reset_filters']
-    )
-    theme.apply_to_widget(reset_button, "button_secondary")
-    reset_button.pack(anchor="e")
+    country_filter_entry.pack(side=tk.LEFT, padx=(5, 0))
+    country_filter_entry.bind('<KeyRelease>', lambda e: callbacks['on_country_filter_text_changed']())
 
     # Widget references for parent access
     widget_refs = {
