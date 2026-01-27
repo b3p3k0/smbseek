@@ -235,7 +235,17 @@ class SMBSeekConfig:
     
     def get_exclusion_file_path(self) -> str:
         """Get path to exclusion list file."""
-        return self.get("security", "exclusion_file", "conf/exclusion_list.json")
+        configured = self.get("security", "exclusion_file", "conf/exclusion_list.json")
+        # Migrate legacy .txt configs to JSON path if encountered
+        if configured.lower().endswith(".txt"):
+            migrated = str(Path(configured).with_suffix(".json"))
+            logger.warning(
+                "Legacy exclusion_file path (%s) detected; switching to JSON file %s",
+                configured,
+                migrated,
+            )
+            return migrated
+        return configured
 
     def get_exclusion_list(self) -> list:
         """
