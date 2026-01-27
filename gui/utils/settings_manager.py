@@ -15,6 +15,9 @@ from typing import Dict, Any, Optional, Callable, List
 from datetime import datetime
 
 from gui.utils.default_gui_settings import DEFAULT_GUI_SETTINGS
+from gui.utils.logging_config import get_logger
+
+_logger = get_logger("settings_manager")
 
 
 class SettingsManager:
@@ -77,8 +80,8 @@ class SettingsManager:
                 self.save_settings()
                 
         except Exception as e:
-            print(f"Warning: Failed to load settings: {e}")
-            print("Using default settings")
+            _logger.warning("Failed to load settings: %s", e)
+            _logger.warning("Using default settings")
             self.settings = self.default_settings.copy()
     
     def save_settings(self) -> bool:
@@ -97,7 +100,7 @@ class SettingsManager:
             return True
             
         except Exception as e:
-            print(f"Error: Failed to save settings: {e}")
+            _logger.error("Failed to save settings: %s", e)
             return False
     
     def get_setting(self, key_path: str, default: Any = None) -> Any:
@@ -158,7 +161,7 @@ class SettingsManager:
             return True
             
         except Exception as e:
-            print(f"Error: Failed to set setting {key_path}: {e}")
+            _logger.error("Failed to set setting %s: %s", key_path, e)
             return False
     
     def _merge_settings(self, defaults: Dict[str, Any], user_settings: Dict[str, Any]) -> Dict[str, Any]:
@@ -320,7 +323,7 @@ class SettingsManager:
             return self.save_settings()
             
         except Exception as e:
-            print(f"Error: Failed to reset settings: {e}")
+            _logger.error("Failed to reset settings: %s", e)
             return False
     
     def export_settings(self, export_path: str) -> bool:
@@ -339,7 +342,7 @@ class SettingsManager:
             return True
             
         except Exception as e:
-            print(f"Error: Failed to export settings: {e}")
+            _logger.error("Failed to export settings: %s", e)
             return False
     
     def import_settings(self, import_path: str, merge: bool = True) -> bool:
@@ -369,7 +372,7 @@ class SettingsManager:
             return self.save_settings()
             
         except Exception as e:
-            print(f"Error: Failed to import settings: {e}")
+            _logger.error("Failed to import settings: %s", e)
             return False
     
     def register_change_callback(self, callback: Callable[[str, Any, Any], None]) -> None:
@@ -477,7 +480,7 @@ class SettingsManager:
             try:
                 callback(key_path, old_value, new_value)
             except Exception as e:
-                print(f"Warning: Settings callback error: {e}")
+                _logger.warning("Settings callback error: %s", e)
 
     def _auto_fix_backend_paths(self) -> None:
         """
@@ -595,7 +598,7 @@ class SettingsManager:
             return success1 and success2 and success3
             
         except Exception as e:
-            print(f"Error setting SMBSeek paths: {e}")
+            _logger.error("Error setting SMBSeek paths: %s", e)
             return False
     
     def get_statistics(self) -> Dict[str, Any]:

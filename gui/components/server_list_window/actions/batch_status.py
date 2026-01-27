@@ -14,7 +14,10 @@ from typing import Dict, Any, Optional, List
 
 from gui.components.server_list_window import table, filters
 from gui.utils import probe_cache
+from gui.utils.logging_config import get_logger
 from gui.components.pry_status_dialog import BatchStatusDialog
+
+_logger = get_logger("server_list_window.batch_status")
 
 
 class ServerListWindowBatchStatusMixin:
@@ -356,8 +359,8 @@ class ServerListWindowBatchStatusMixin:
                     conn.rollback()
                 except Exception:
                     pass
-                # Log to console; avoid breaking UI
-                print(f"Warning: failed to persist Pry credential for {ip_address}/{share_name}: {exc}")
+                # Log warning; avoid breaking UI
+                _logger.warning("Failed to persist Pry credential for %s/%s: %s", ip_address, share_name, exc)
             finally:
                 conn.close()
 

@@ -12,6 +12,10 @@ import shutil
 from pathlib import Path
 from typing import Dict, Any
 
+from ..logging_config import get_logger
+
+_logger = get_logger("backend_interface.config")
+
 
 def ensure_config_exists(interface) -> None:
     """
@@ -119,8 +123,8 @@ def load_timeout_configuration(interface) -> None:
         # Fallback to safe default - no timeout
         interface.default_timeout = None
         interface.enable_debug_timeouts = False
-        print(f"Warning: Could not load timeout configuration: {e}")
-        print("Using default: no timeout")
+        _logger.warning("Could not load timeout configuration: %s", e)
+        _logger.warning("Using default: no timeout")
 
 
 def load_workflow_configuration(interface) -> None:
@@ -143,8 +147,8 @@ def load_workflow_configuration(interface) -> None:
     except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
         # Fallback to safe defaults
         interface.default_recent_days = 90
-        print(f"Warning: Could not load workflow configuration: {e}")
-        print("Using default: 90 days for recent filtering")
+        _logger.warning("Could not load workflow configuration: %s", e)
+        _logger.warning("Using default: 90 days for recent filtering")
 
 
 def cleanup_startup_locks(interface) -> None:

@@ -6,8 +6,13 @@ and mapping progress to workflow ranges. Includes all regex patterns and constan
 used for progress tracking.
 """
 
+import os
 import re
 from typing import Dict, List, Optional, Callable, Tuple, Any
+
+from ..logging_config import get_logger
+
+_logger = get_logger("backend_interface.progress")
 
 
 def parse_output_stream(interface, stdout, output_lines: List[str],
@@ -537,7 +542,6 @@ def parse_final_results(output: str) -> Dict:
         results["shares_discovered"] = results["accessible_shares"]
 
     # Add validation and debug logging for parsing results
-    import os
     debug_enabled = os.getenv("XSMBSEEK_DEBUG_PARSING")
     parsing_success = any(results[key] > 0 for key in ["hosts_scanned", "hosts_tested", "hosts_accessible", "successful_auth"])
 
@@ -546,17 +550,17 @@ def parse_final_results(output: str) -> Dict:
         parsed_fields = {k: v for k, v in results.items() if k != "raw_output" and isinstance(v, (int, str))}
 
         if debug_enabled:
-            print(f"DEBUG: Parse results: {parsed_fields}")
+            _logger.debug("Parse results: %s", parsed_fields)
 
         if not parsing_success:
-            print(f"WARNING: CLI output parsing failed to extract meaningful statistics.")
-            print(f"Parsed values: {parsed_fields}")
+            _logger.warning("CLI output parsing failed to extract meaningful statistics.")
+            _logger.warning("Parsed values: %s", parsed_fields)
             # Show a snippet of the output for debugging
             output_lines = cleaned_output.split('\n')
             relevant_lines = [line for line in output_lines if any(keyword in line.lower()
                              for keyword in ['hosts', 'scanned', 'accessible', 'shares', 'found', 'results'])]
             if relevant_lines:
-                print(f"Relevant output lines: {relevant_lines[:5]}")  # Show first 5 relevant lines
+                _logger.warning("Relevant output lines: %s", relevant_lines[:5])
 
     # Check for success indicators using cleaned output
     if ("🎉 SMBSeek security assessment completed successfully!" in cleaned_output or
@@ -569,10 +573,11 @@ def parse_final_results(output: str) -> Dict:
     if not results["success"] and (results["hosts_scanned"] > 0 or results["hosts_accessible"] > 0):
         results["success"] = True
         if debug_enabled:
-            print(f"DEBUG: Set success=True via fallback (hosts_scanned={results['hosts_scanned']}, hosts_accessible={results['hosts_accessible']})")
+            _logger.debug("Set success=True via fallback (hosts_scanned=%d, hosts_accessible=%d)",
+                         results['hosts_scanned'], results['hosts_accessible'])
 
     if debug_enabled:
-        print(f"DEBUG: Final success value: {results['success']}")
+        _logger.debug("Final success value: %s", results['success'])
 
     return results
 

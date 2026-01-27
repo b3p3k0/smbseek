@@ -26,6 +26,9 @@ from . import process_runner
 from . import progress
 from . import mock_operations
 from . import error_parser
+from ..logging_config import get_logger
+
+_logger = get_logger("backend_interface")
 
 
 class BackendInterface:
@@ -130,9 +133,9 @@ class BackendInterface:
         script_path = str(self.cli_script)
 
         command_list = [interpreter, script_path, *args]
-        debug_enabled = os.getenv("XSMBSEEK_DEBUG_SUBPROCESS")
-        if debug_enabled:
-            print(f"DEBUG: CLI command -> interpreter={interpreter} cmd={command_list}")  # TODO: remove debug logging
+        if os.getenv("XSMBSEEK_DEBUG_SUBPROCESS"):
+            # Log script and arg count only (avoid logging potential credentials)
+            _logger.debug("CLI command: %s with %d args", script_path, len(args))
         return command_list
 
     def _build_tool_command(self, script_name: str, *args) -> List[str]:
@@ -155,9 +158,9 @@ class BackendInterface:
         script_path = str(self.backend_path / "tools" / script_name)
 
         command_list = [interpreter, script_path, *args]
-        debug_enabled = os.getenv("XSMBSEEK_DEBUG_SUBPROCESS")
-        if debug_enabled:
-            print(f"DEBUG: Tool command -> interpreter={interpreter} cmd={command_list}")  # TODO: remove debug logging
+        if os.getenv("XSMBSEEK_DEBUG_SUBPROCESS"):
+            # Log script and arg count only (avoid logging potential credentials)
+            _logger.debug("Tool command: %s with %d args", script_name, len(args))
         return command_list
 
     def enable_mock_mode(self, mock_data_path: Optional[str] = None) -> None:
@@ -336,7 +339,7 @@ class BackendInterface:
             DeprecationWarning,
             stacklevel=2
         )
-        print("⚠️  DEPRECATED: run_discover() called - redirecting to unified workflow")
+        _logger.warning("DEPRECATED: run_discover() called - redirecting to unified workflow")
         return self.run_scan(countries, progress_callback)
     
     def run_access_verification(self, recent_days: Optional[int] = None,

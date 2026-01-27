@@ -23,6 +23,9 @@ from gui.utils.backend_interface import BackendInterface
 from gui.utils.database_access import DatabaseReader
 from gui.utils.error_codes import get_error, format_error_message
 from gui.utils.dialog_helpers import ensure_dialog_focus
+from gui.utils.logging_config import get_logger
+
+_logger = get_logger("database_setup_dialog")
 
 
 class DatabaseSetupDialog:
@@ -250,13 +253,13 @@ class DatabaseSetupDialog:
             try:
                 self.theme.apply_to_widget(self.cancel_button, "button_secondary")
             except Exception as e:
-                print(f"Warning: Failed to apply theme to cancel button: {e}")
+                _logger.warning("Failed to apply theme to cancel button: %s", e)
             
             self.cancel_button.pack(side=tk.RIGHT)
             
         except Exception as e:
             # Ensure cancel_button always exists even if creation fails
-            print(f"Error creating button frame: {e}")
+            _logger.error("Error creating button frame: %s", e)
             self.cancel_button = None
     
     def _center_dialog(self) -> None:

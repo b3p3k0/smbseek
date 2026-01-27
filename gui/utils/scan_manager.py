@@ -25,6 +25,9 @@ except ImportError:
 import sys
 
 from gui.utils.backend_interface import BackendInterface
+from gui.utils.logging_config import get_logger
+
+_logger = get_logger("scan_manager")
 
 
 class ScanManager:
@@ -631,7 +634,7 @@ class ScanManager:
         # If an error was returned (e.g., Shodan API failure), do NOT fallback to prior DB data.
         used_fallback = False
         if results.get("success", False) and not results.get("error") and hosts_scanned == 0 and accessible_hosts == 0 and shares_found == 0:
-            print("WARNING: CLI parsing returned zero values for all statistics. Attempting database fallback.")
+            _logger.warning("CLI parsing returned zero values for all statistics. Attempting database fallback.")
             try:
                 # Try to get recent statistics from database as fallback
                 fallback_stats = self._get_recent_scan_stats_from_db()
@@ -640,12 +643,13 @@ class ScanManager:
                     accessible_hosts = fallback_stats.get("accessible_hosts", 0)
                     shares_found = fallback_stats.get("shares_found", 0)
                     used_fallback = True
-                    print(f"Database fallback successful: hosts={hosts_scanned}, accessible={accessible_hosts}, shares={shares_found}")
+                    _logger.info("Database fallback successful: hosts=%d, accessible=%d, shares=%d",
+                                hosts_scanned, accessible_hosts, shares_found)
                 else:
-                    print("Database fallback returned no data.")
+                    _logger.warning("Database fallback returned no data.")
             except Exception as e:
                 # Database fallback failed - continue with parsed values (likely 0)
-                print(f"Database fallback failed: {e}")
+                _logger.warning("Database fallback failed: %s", e)
                 pass
 
         self.scan_results.update({
@@ -776,7 +780,7 @@ class ScanManager:
 
         except Exception as e:
             # Log error but don't expose details to UI
-            print(f"Error during scan cancellation: {e}")
+            _logger.error("Error during scan cancellation: %s", e)
             return False
     
     def get_last_scan_time(self) -> Optional[datetime]:

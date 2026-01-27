@@ -15,6 +15,9 @@ from typing import Dict, List, Optional, Callable
 
 from . import config
 from . import progress
+from ..logging_config import get_logger
+
+_logger = get_logger("backend_interface.process_runner")
 
 
 def execute_with_progress(interface, cmd: List[str],
@@ -111,7 +114,7 @@ def execute_with_progress(interface, cmd: List[str],
         if interface.enable_debug_timeouts:
             timeout_source = "override" if timeout_override else "config/env"
             timeout_display = interface._format_timeout_duration(operation_timeout)
-            print(f"DEBUG: Using timeout: {timeout_display} (source: {timeout_source})")
+            _logger.debug("Using timeout: %s (source: %s)", timeout_display, timeout_source)
 
         try:
             returncode = process.wait(timeout=operation_timeout)
@@ -134,11 +137,10 @@ def execute_with_progress(interface, cmd: List[str],
 
         # Parse final results for normal completion
         full_output = "\n".join(output_lines)
-        debug_enabled = os.getenv("XSMBSEEK_DEBUG_SUBPROCESS")
-        if debug_enabled:
-            print("DEBUG: CLI output start")  # TODO: remove debug logging
-            print(full_output)
-            print("DEBUG: CLI output end")  # TODO: remove debug logging
+        if os.getenv("XSMBSEEK_DEBUG_SUBPROCESS"):
+            _logger.debug("CLI output start")
+            _logger.debug("%s", full_output)
+            _logger.debug("CLI output end")
         results = progress.parse_final_results(full_output)
 
         interface.current_operation["status"] = "completed" if returncode == 0 else "failed"
@@ -251,7 +253,7 @@ def terminate_operation(interface, graceful: bool = False) -> None:
             })
 
     except Exception as e:
-        print(f"Warning: Error during operation termination: {e}")
+        _logger.warning("Error during operation termination: %s", e)
 
 
 def handle_no_recent_hosts_error(interface, original_cmd: List[str], error_details: str,

@@ -38,6 +38,11 @@ if str(SCRIPT_DIR) not in sys.path:
 
 GUI_DIR = SCRIPT_DIR / "gui"
 
+# Initialize GUI logging early (before other GUI imports)
+from gui.utils.logging_config import setup_gui_logging, get_logger
+setup_gui_logging()
+_logger = get_logger("xsmbseek")
+
 # Canonical window sizing for the xsmbseek frontend
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 745
@@ -111,7 +116,7 @@ class XSMBSeekConfig:
             self._write_config(self.config)
             return True
         except Exception as e:
-            print(f"Error saving config: {e}")
+            _logger.error("Failed to save config: %s", e)
             return False
     
     def get_smbseek_path(self) -> Path:
@@ -330,8 +335,8 @@ try:
     from gui.utils.style import get_theme, apply_theme_to_window
     from gui.utils.settings_manager import get_settings_manager
 except ImportError as e:
-    print(f"Error importing GUI components: {e}")
-    print("Make sure the gui/ directory exists and contains all required components.")
+    _logger.critical("Failed to import GUI components: %s", e)
+    _logger.critical("Make sure the gui/ directory exists and contains all required components.")
     sys.exit(1)
 
 
@@ -410,10 +415,8 @@ class XSMBSeekGUI:
                     "Please report this error if it persists."
                 )
             except:
-                # Fall back to console
-                print(f"CRITICAL ERROR: {error_msg}")
-                import traceback
-                traceback.print_exception(exc_type, exc_value, exc_traceback)
+                # Fall back to logger
+                _logger.critical("Unhandled exception: %s", error_msg, exc_info=(exc_type, exc_value, exc_traceback))
         
         # Install the handler
         sys.excepthook = handle_exception
@@ -455,7 +458,7 @@ class XSMBSeekGUI:
             
             if new_path is None:
                 # User cancelled setup
-                print("SMBSeek setup cancelled. Exiting.")
+                _logger.info("SMBSeek setup cancelled by user")
                 sys.exit(0)
             
             # Update configuration with new path
@@ -633,8 +636,8 @@ class XSMBSeekGUI:
             messagebox.showerror("Initialization Error", error_message)
             root.destroy()
         except:
-            # Fall back to console output
-            print(f"ERROR: {error_message}")
+            # Fall back to logger
+            _logger.error("%s", error_message)
         
         sys.exit(1)
     
@@ -782,7 +785,7 @@ class XSMBSeekGUI:
                 self.ui_dispatcher.stop()
 
         except Exception as e:
-            print(f"Cleanup error: {e}")
+            _logger.warning("Cleanup error: %s", e)
         finally:
             self.root.destroy()
     
@@ -859,10 +862,10 @@ def main():
         )
         app.run()
     except KeyboardInterrupt:
-        print("\\nApplication interrupted by user")
+        _logger.info("Application interrupted by user")
         sys.exit(0)
     except Exception as e:
-        print(f"Fatal error: {e}")
+        _logger.critical("Fatal error: %s", e)
         sys.exit(1)
 
 

@@ -37,7 +37,10 @@ from gui.utils.probe_runner import run_probe
 from gui.utils.extract_runner import run_extract
 from gui.components import dashboard_logs
 from gui.utils import probe_cache, probe_patterns, probe_runner, extract_runner
+from gui.utils.logging_config import get_logger
 from shared.quarantine import create_quarantine_dir
+
+_logger = get_logger("dashboard")
 
 
 class DashboardWidget:
@@ -546,7 +549,7 @@ class DashboardWidget:
             # Refresh dashboard with new data
             self._refresh_dashboard_data()
         except Exception as e:
-            print(f"Dashboard refresh error after scan completion: {e}")
+            _logger.warning("Dashboard refresh error after scan completion: %s", e)
             # Continue anyway
         finally:
             self._lock_status_updates()
@@ -833,7 +836,7 @@ class DashboardWidget:
 
         except Exception as e:
             # Log error but don't interrupt scan
-            print(f"Progress update error: {e}")  # In production, use proper logging
+            _logger.warning("Progress update error: %s", e)
     
     def _show_scan_progress(self, country: Optional[str]) -> None:
         """Transition progress display to active scanning state."""
@@ -882,8 +885,8 @@ class DashboardWidget:
                                 "Scan was cancelled by user request."
                             )
                         except Exception:
-                            # Fallback - just print message
-                            print("Scan cancelled by user")
+                            # Fallback - log message
+                            _logger.info("Scan cancelled by user")
                         self._log_status_event("Scan cancelled by user request")
                         self._reset_scan_status()
                     elif results:
@@ -912,12 +915,14 @@ class DashboardWidget:
                         has_bulk_ops = self.current_scan_options and is_finished and has_new_hosts and (bulk_probe_enabled or bulk_extract_enabled)
 
                         # Debug output for bulk ops decision
-                        import os
                         if os.getenv("XSMBSEEK_DEBUG_PARSING"):
-                            print(f"DEBUG: Bulk ops decision: status={status}, success={success}, is_finished={is_finished}")
-                            print(f"DEBUG: hosts_scanned={hosts_scanned}, has_new_hosts={has_new_hosts}")
-                            print(f"DEBUG: bulk_probe_enabled={bulk_probe_enabled}, bulk_extract_enabled={bulk_extract_enabled}")
-                            print(f"DEBUG: has_bulk_ops={has_bulk_ops}")
+                            _logger.debug("Bulk ops decision: status=%s, success=%s, is_finished=%s",
+                                        status, success, is_finished)
+                            _logger.debug("hosts_scanned=%d, has_new_hosts=%s",
+                                        hosts_scanned, has_new_hosts)
+                            _logger.debug("bulk_probe_enabled=%s, bulk_extract_enabled=%s",
+                                        bulk_probe_enabled, bulk_extract_enabled)
+                            _logger.debug("has_bulk_ops=%s", has_bulk_ops)
 
                         if has_bulk_ops:
                             self._pending_scan_results = results
@@ -937,7 +942,7 @@ class DashboardWidget:
                     try:
                         self._refresh_after_scan_completion()
                     except Exception as e:
-                        print(f"Dashboard refresh error after scan: {e}")
+                        _logger.warning("Dashboard refresh error after scan: %s", e)
                         # Continue anyway
                 else:
                     # Check again in 1 second
@@ -1097,7 +1102,7 @@ class DashboardWidget:
             return [s for s in servers if (s.get("accessible_shares") or 0) > 0]
 
         except Exception as e:
-            print(f"Error querying servers with successful auth: {e}")
+            _logger.error("Error querying servers with successful auth: %s", e)
             return []
 
     def _load_indicator_patterns(self) -> None:
@@ -1846,7 +1851,7 @@ class DashboardWidget:
             self._update_scan_button_state("idle")
             
         except Exception as e:
-            print(f"Error checking external scans: {e}")
+            _logger.warning("Error checking external scans: %s", e)
             # Fallback to idle state
             self._update_scan_button_state("idle")
     

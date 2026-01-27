@@ -17,6 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+from gui.utils.logging_config import get_logger
+
+_logger = get_logger("template_store")
+
 
 TEMPLATE_DIRNAME = ".smbseek/templates"
 # Repo layout: gui/utils/template_store.py → ../../templates/default_scan_templates
@@ -62,7 +66,7 @@ class TemplateStore:
                     )
                 )
             except Exception as exc:
-                print(f"Warning: Failed to load scan template {path}: {exc}")
+                _logger.warning("Failed to load scan template %s: %s", path, exc)
         return templates
 
     def load_template(self, slug: str) -> Optional[ScanTemplate]:
@@ -80,7 +84,7 @@ class TemplateStore:
                 form_state=data.get("form_state") or {}
             )
         except Exception as exc:
-            print(f"Warning: Failed to read scan template {slug}: {exc}")
+            _logger.warning("Failed to read scan template %s: %s", slug, exc)
             return None
 
     def save_template(self, name: str, form_state: Dict[str, Any]) -> ScanTemplate:
@@ -109,7 +113,7 @@ class TemplateStore:
                 self.set_last_used(None)
             return True
         except OSError as exc:
-            print(f"Warning: Failed to delete scan template {slug}: {exc}")
+            _logger.warning("Failed to delete scan template %s: %s", slug, exc)
             return False
 
     def get_last_used(self) -> Optional[str]:
@@ -154,4 +158,4 @@ class TemplateStore:
             try:
                 shutil.copy(template_file, target)
             except Exception as exc:
-                print(f"Warning: Failed to seed template {template_file.name}: {exc}")
+                _logger.warning("Failed to seed template %s: %s", template_file.name, exc)
