@@ -6,10 +6,13 @@ Handles the reorganized configuration structure while maintaining compatibility.
 """
 
 import json
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def get_standard_timestamp() -> str:
@@ -232,13 +235,14 @@ class SMBSeekConfig:
     
     def get_exclusion_file_path(self) -> str:
         """Get path to exclusion list file."""
-        return self.get("security", "exclusion_file", "conf/exclusion_list.txt")
+        return self.get("security", "exclusion_file", "conf/exclusion_list.json")
 
     def get_exclusion_list(self) -> list:
         """
         Load exclusion organization list from JSON file.
 
-        Soft fallback: if the JSON file is missing but a legacy .txt exists, load it (ignoring comments).
+        The exclusion list is now JSON-only. If the file is missing or invalid, an empty list is
+        returned and a warning/error is logged.
         """
         path = Path(self.get_exclusion_file_path()).expanduser()
         exclusions: list = []
@@ -258,28 +262,20 @@ class SMBSeekConfig:
                 norm.append(cleaned)
             return norm
 
-        if path.exists():
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                raw = data.get("organizations", []) if isinstance(data, dict) else data
-                exclusions = _normalize(raw if isinstance(raw, list) else [])
-                return exclusions
-            except Exception:
-                print("⚠ Failed to parse exclusion list JSON; falling back to legacy .txt if present.")
+        if not path.exists():
+            logger.warning("Exclusion file not found at %s; ensure conf/exclusion_list.json is present.", path)
+            return exclusions
 
-        # Soft fallback to legacy .txt
-        legacy_txt = Path(str(path)).with_suffix(".txt")
-        if not path.exists() and legacy_txt.exists():
-            try:
-                lines = legacy_txt.read_text(encoding="utf-8").splitlines()
-                raw = [ln for ln in lines if ln.strip() and not ln.strip().startswith("#")]
-                exclusions = _normalize(raw)
-                print("⚠ Loaded exclusions from legacy txt; consider updating to JSON.")
-            except Exception:
-                print("⚠ Failed to load legacy exclusion list.")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            raw = data.get("organizations", []) if isinstance(data, dict) else data
+            exclusions = _normalize(raw if isinstance(raw, list) else [])
+        except Exception:
+            logger.error("Failed to parse exclusion list JSON at %s", path, exc_info=True)
+            return []
 
         if not exclusions:
-            print("⚠ Exclusion patterns not found; pull the latest from the repo.")
+            logger.warning("Exclusion list is empty at %s; pull the latest from the repository.", path)
 
         return exclusions
     
