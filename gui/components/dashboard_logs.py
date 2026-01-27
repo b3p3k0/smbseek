@@ -20,23 +20,25 @@ def configure_log_tags(dashboard) -> None:
     bold_font = (mono_font[0], mono_font[1], "bold")
     dashboard.log_text_widget.tag_configure("ansi_bold", font=bold_font)
 
+    # Use theme colors with fallback to original values for visual parity
+    colors = dashboard.theme.colors
     color_map = {
-        "ansi_fg_black": "#7f8796",
-        "ansi_fg_red": "#ff7676",
-        "ansi_fg_green": "#7dd87d",
-        "ansi_fg_yellow": "#ffd666",
-        "ansi_fg_blue": "#76b9ff",
-        "ansi_fg_magenta": "#d692ff",
-        "ansi_fg_cyan": "#4dd0e1",
-        "ansi_fg_white": dashboard.log_fg_color,
-        "ansi_fg_bright_black": "#a0a7b4",
-        "ansi_fg_bright_red": "#ff8b8b",
-        "ansi_fg_bright_green": "#8ef79a",
-        "ansi_fg_bright_yellow": "#ffe082",
-        "ansi_fg_bright_blue": "#90c8ff",
-        "ansi_fg_bright_magenta": "#f78bff",
-        "ansi_fg_bright_cyan": "#6fe8ff",
-        "ansi_fg_bright_white": "#ffffff"
+        "ansi_fg_black": colors.get("ansi_black", "#7f8796"),
+        "ansi_fg_red": colors.get("ansi_red", "#ff7676"),
+        "ansi_fg_green": colors.get("ansi_green", "#7dd87d"),
+        "ansi_fg_yellow": colors.get("ansi_yellow", "#ffd666"),
+        "ansi_fg_blue": colors.get("ansi_blue", "#76b9ff"),
+        "ansi_fg_magenta": colors.get("ansi_magenta", "#d692ff"),
+        "ansi_fg_cyan": colors.get("ansi_cyan", "#4dd0e1"),
+        "ansi_fg_white": colors.get("ansi_white", dashboard.log_fg_color),
+        "ansi_fg_bright_black": colors.get("ansi_bright_black", "#a0a7b4"),
+        "ansi_fg_bright_red": colors.get("ansi_bright_red", "#ff8b8b"),
+        "ansi_fg_bright_green": colors.get("ansi_bright_green", "#8ef79a"),
+        "ansi_fg_bright_yellow": colors.get("ansi_bright_yellow", "#ffe082"),
+        "ansi_fg_bright_blue": colors.get("ansi_bright_blue", "#90c8ff"),
+        "ansi_fg_bright_magenta": colors.get("ansi_bright_magenta", "#f78bff"),
+        "ansi_fg_bright_cyan": colors.get("ansi_bright_cyan", "#6fe8ff"),
+        "ansi_fg_bright_white": colors.get("ansi_bright_white", "#ffffff")
     }
 
     for tag, color in color_map.items():

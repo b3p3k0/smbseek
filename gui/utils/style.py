@@ -80,7 +80,28 @@ class SMBSeekTheme:
                 "medium": "#fbc02d",
                 "low": "#689f38",
                 "accent": "#1976d2",
-                "hover": "#e3f2fd"
+                "hover": "#e3f2fd",
+                # Log viewer colors (dark terminal-style background)
+                "log_bg": "#111418",
+                "log_fg": "#f5f5f5",
+                "log_placeholder": "#9ea4b3",
+                # ANSI terminal colors for log output
+                "ansi_black": "#7f8796",
+                "ansi_red": "#ff7676",
+                "ansi_green": "#7dd87d",
+                "ansi_yellow": "#ffd666",
+                "ansi_blue": "#76b9ff",
+                "ansi_magenta": "#d692ff",
+                "ansi_cyan": "#4dd0e1",
+                "ansi_white": "#f5f5f5",
+                "ansi_bright_black": "#a0a7b4",
+                "ansi_bright_red": "#ff8b8b",
+                "ansi_bright_green": "#8ef79a",
+                "ansi_bright_yellow": "#ffe082",
+                "ansi_bright_blue": "#90c8ff",
+                "ansi_bright_magenta": "#f78bff",
+                "ansi_bright_cyan": "#6fe8ff",
+                "ansi_bright_white": "#ffffff"
             }
     
     def _define_fonts(self) -> Dict[str, tuple]:

@@ -88,6 +88,10 @@ class DashboardWidget:
 
         # UI components
         self.main_frame = None
+        self.body_canvas = None
+        self.body_scrollbar = None
+        self.body_frame = None
+        self.body_canvas_window = None
         self.progress_frame = None
         self.metrics_frame = None
         self.scan_button = None
@@ -109,9 +113,9 @@ class DashboardWidget:
         self._log_placeholder_visible = True
         self.log_processing_job = None
         self.log_jump_button = None
-        self.log_bg_color = "#111418"
-        self.log_fg_color = "#f5f5f5"
-        self.log_placeholder_color = "#9ea4b3"
+        self.log_bg_color = self.theme.colors.get("log_bg", "#111418")
+        self.log_fg_color = self.theme.colors.get("log_fg", "#f5f5f5")
+        self.log_placeholder_color = self.theme.colors.get("log_placeholder", "#9ea4b3")
 
         # ANSI parsing helpers for preserving backend colors
         self._ansi_pattern = re.compile(r"\x1b\[([\d;]*)m")
@@ -137,8 +141,9 @@ class DashboardWidget:
         self.log_placeholder_text = "Scan output will appear here once a scan starts."
         
         # Scan button state management
-        self.scan_button_state = "idle"  # idle, disabled_external, scanning, stopping, error
+        self.scan_button_state = "idle"  # idle, disabled_external, scanning, stopping, retry, error
         self.external_scan_pid = None
+        self.stopping_started_time = None  # Timestamp when stop was initiated
         
         # Callbacks
         self.drill_down_callback = None
@@ -183,19 +188,101 @@ class DashboardWidget:
     def _build_dashboard(self) -> None:
         """
         Build the complete dashboard layout.
-        
+
         Design Decision: Vertical layout with sections allows natural reading
         flow and responsive behavior on different screen sizes.
+
+        Layout structure:
+        - Header (fixed at top): title and action buttons
+        - Body (scrollable): progress frame with log viewer
+        - Status bar (fixed at bottom): external scan notifications
         """
-        # Main container with scrolling capability
+        # Main container
         self.main_frame = tk.Frame(self.parent)
         self.theme.apply_to_widget(self.main_frame, "main_window")
-        self.main_frame.pack(fill=tk.BOTH, expand=False, padx=8, pady=5)
-        
-        # Build sections in order
+        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=5)
+
+        # Header section (fixed at top)
         self._build_header_section()
-        self._build_progress_section()
+
+        # Scrollable body area for progress/log content
+        self._build_scrollable_body()
+
+        # Status bar (fixed at bottom)
         self._build_status_bar()
+
+    def _build_scrollable_body(self) -> None:
+        """Build scrollable container for body content (log viewer)."""
+        # Container frame for canvas and scrollbar
+        body_container = tk.Frame(self.main_frame)
+        self.theme.apply_to_widget(body_container, "main_window")
+        body_container.pack(fill=tk.BOTH, expand=True)
+
+        # Canvas for scrollable content
+        self.body_canvas = tk.Canvas(
+            body_container,
+            highlightthickness=0,
+            bg=self.theme.colors["primary_bg"]
+        )
+        self.body_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Scrollbar (only visible when content overflows)
+        self.body_scrollbar = ttk.Scrollbar(
+            body_container,
+            orient=tk.VERTICAL,
+            command=self.body_canvas.yview
+        )
+        self.body_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.body_canvas.configure(yscrollcommand=self._on_body_scroll)
+
+        # Inner frame to hold body content
+        self.body_frame = tk.Frame(self.body_canvas)
+        self.theme.apply_to_widget(self.body_frame, "main_window")
+        self.body_canvas_window = self.body_canvas.create_window(
+            (0, 0),
+            window=self.body_frame,
+            anchor="nw"
+        )
+
+        # Update scroll region when content changes
+        self.body_frame.bind("<Configure>", self._on_body_frame_configure)
+        self.body_canvas.bind("<Configure>", self._on_canvas_configure)
+
+        # Build progress section inside the scrollable body
+        self._build_progress_section()
+
+    def _on_body_frame_configure(self, event=None) -> None:
+        """Update canvas scroll region when body content changes."""
+        self.body_canvas.configure(scrollregion=self.body_canvas.bbox("all"))
+        self._update_scrollbar_visibility()
+
+    def _on_canvas_configure(self, event=None) -> None:
+        """Expand body frame to fill canvas width."""
+        if event:
+            self.body_canvas.itemconfig(self.body_canvas_window, width=event.width)
+        self._update_scrollbar_visibility()
+
+    def _on_body_scroll(self, *args) -> None:
+        """Handle scroll events and update scrollbar."""
+        self.body_scrollbar.set(*args)
+        self._update_scrollbar_visibility()
+
+    def _update_scrollbar_visibility(self) -> None:
+        """Show scrollbar only when content overflows."""
+        try:
+            # Check if content exceeds visible area
+            bbox = self.body_canvas.bbox("all")
+            if bbox:
+                content_height = bbox[3] - bbox[1]
+                canvas_height = self.body_canvas.winfo_height()
+                if content_height > canvas_height and canvas_height > 1:
+                    if not self.body_scrollbar.winfo_ismapped():
+                        self.body_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+                else:
+                    if self.body_scrollbar.winfo_ismapped():
+                        self.body_scrollbar.pack_forget()
+        except tk.TclError:
+            pass  # Widget may not exist during shutdown
         
         # Initial scan state check and data load
         self._check_external_scans()
@@ -260,7 +347,7 @@ class DashboardWidget:
     
     def _build_progress_section(self) -> None:
         """Build persistent progress display that's always visible."""
-        self.progress_frame = tk.Frame(self.main_frame)
+        self.progress_frame = tk.Frame(self.body_frame)
         self.theme.apply_to_widget(self.progress_frame, "card")
         self.progress_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
 
@@ -757,8 +844,27 @@ class DashboardWidget:
     
     def _monitor_scan_completion(self) -> None:
         """Monitor scan for completion and show results."""
+        STOP_TIMEOUT_SECONDS = 10
+
         def check_completion():
             try:
+                # Check for stop timeout while in "stopping" state
+                if self.scan_button_state == "stopping" and self.stopping_started_time:
+                    elapsed = time.time() - self.stopping_started_time
+                    if elapsed > STOP_TIMEOUT_SECONDS and self.scan_manager.is_scanning:
+                        # Stop is taking too long - offer retry
+                        self._update_scan_button_state("retry")
+                        self._log_status_event(
+                            f"Stop taking longer than {STOP_TIMEOUT_SECONDS}s. "
+                            "Click 'Stop (retry)' to try again."
+                        )
+                        # Continue monitoring
+                        try:
+                            self.parent.after(1000, check_completion)
+                        except tk.TclError:
+                            pass
+                        return
+
                 if not self.scan_manager.is_scanning:
                     # Get results first to check status
                     results = self.scan_manager.get_scan_results()
@@ -1622,7 +1728,10 @@ class DashboardWidget:
                 f"Another scan is currently running (PID: {self.external_scan_pid}). "
                 "Please wait for it to complete or stop it from that application."
             )
-        # Other states (stopping, error) don't respond to clicks
+        elif self.scan_button_state in ("retry", "error"):
+            # Retry stopping the scan
+            self._stop_scan_immediate()
+        # "stopping" state doesn't respond to clicks (button is disabled)
     
     def _update_scan_button_state(self, new_state: str) -> None:
         """Update scan button state and appearance."""
@@ -1631,6 +1740,7 @@ class DashboardWidget:
         if new_state == "idle":
             self._set_button_to_start()
             self._hide_status_bar()
+            self.stopping_started_time = None  # Clear stop timeout tracking
         elif new_state == "disabled_external":
             self._set_button_to_disabled()
             self._show_status_bar(f"Scan running by PID: {self.external_scan_pid} - Please wait")
@@ -1639,6 +1749,8 @@ class DashboardWidget:
             self._hide_status_bar()
         elif new_state == "stopping":
             self._set_button_to_stopping()
+        elif new_state == "retry":
+            self._set_button_to_retry()
         elif new_state == "error":
             self._set_button_to_error()
     
@@ -1668,11 +1780,22 @@ class DashboardWidget:
     
     def _set_button_to_stopping(self) -> None:
         """Configure button for stopping state with warning color."""
+        self.stopping_started_time = time.time()
         self.scan_button.config(
             text="⏳ Stopping...",
             state="disabled"
         )
         # Apply secondary theme first, then override with warning color
+        self.theme.apply_to_widget(self.scan_button, "button_secondary")
+        self.scan_button.config(bg=self.theme.colors["warning"])
+
+    def _set_button_to_retry(self) -> None:
+        """Configure button for retry state after stop timeout."""
+        self.scan_button.config(
+            text="⏹ Stop (retry)",
+            state="normal"
+        )
+        # Use warning color to indicate retry needed
         self.theme.apply_to_widget(self.scan_button, "button_secondary")
         self.scan_button.config(bg=self.theme.colors["warning"])
     
@@ -1847,21 +1970,19 @@ class DashboardWidget:
     def _stop_scan_immediate(self) -> None:
         """Stop scan immediately."""
         self._update_scan_button_state("stopping")
-        
+
         try:
             success = self.scan_manager.interrupt_scan()
-            
+
             if success:
-                # Scan stopped successfully
-                self._update_scan_button_state("idle")
-                messagebox.showinfo(
-                    "Scan Stopped",
-                    "Scan has been stopped successfully."
-                )
+                # Stop signal sent - stay in "stopping" state
+                # Monitor loop will detect when scan actually terminates
+                # and transition to "idle" or "retry" as appropriate
+                self._log_status_event("Stop command sent, waiting for scan to terminate...")
             else:
-                # Stop failed
+                # Stop failed immediately
                 self._handle_stop_error("Failed to interrupt scan - scan may not be active")
-                
+
         except Exception as e:
             self._handle_stop_error(f"Error stopping scan: {str(e)}")
     
@@ -1870,19 +1991,17 @@ class DashboardWidget:
         # For now, implement as immediate stop with different message
         # Future enhancement: could add graceful stopping to scan manager
         self._update_scan_button_state("stopping")
-        
+
         try:
             success = self.scan_manager.interrupt_scan()
-            
+
             if success:
-                self._update_scan_button_state("idle")
-                messagebox.showinfo(
-                    "Scan Stopping",
-                    "Scan will stop after the current host completes processing."
-                )
+                # Stop signal sent - stay in "stopping" state
+                # Monitor loop will handle the transition
+                self._log_status_event("Stop command sent, scan will finish current host...")
             else:
                 self._handle_stop_error("Failed to schedule graceful stop")
-                
+
         except Exception as e:
             self._handle_stop_error(f"Error scheduling graceful stop: {str(e)}")
     
