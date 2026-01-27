@@ -45,6 +45,10 @@ WINDOW_GEOMETRY = f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}"
 sys.path.insert(0, str(GUI_DIR / "components"))
 sys.path.insert(0, str(GUI_DIR / "utils"))
 
+# Thread-safe UI dispatcher for worker callbacks
+from ui_dispatcher import UIDispatcher
+from scan_manager import get_scan_manager
+
 # Configuration manager for xsmbseek settings
 class XSMBSeekConfig:
     """Manages GUI settings stored within conf/config.json."""
@@ -373,6 +377,7 @@ class XSMBSeekGUI:
         self.root = None
         self.dashboard = None
         self.drill_down_windows = {}
+        self.ui_dispatcher = None  # Thread-safe callback dispatcher
         
         # Backend interfaces
         self.db_reader = None
@@ -511,7 +516,14 @@ class XSMBSeekGUI:
         # Update window title to show SMBSeek path
         smbseek_path = self.config.get_smbseek_path()
         self.root.title(f"xsmbseek - SMBSeek GUI Frontend ({smbseek_path.name})")
-    
+
+        # Initialize thread-safe UI dispatcher for worker callbacks
+        # Must happen after root is created but before dashboard (which uses scan_manager)
+        self.ui_dispatcher = UIDispatcher(self.root)
+
+        # Initialize scan manager with dispatcher so it's ready when dashboard gets it
+        get_scan_manager(str(GUI_DIR), ui_dispatcher=self.ui_dispatcher)
+
     def _center_window(self) -> None:
         """
         Center the main window on screen using fixed dimensions.
@@ -789,7 +801,11 @@ class XSMBSeekGUI:
             # Clean up backend interfaces
             if self.db_reader:
                 self.db_reader.clear_cache()
-            
+
+            # Stop UI dispatcher before destroying root to prevent TclError
+            if self.ui_dispatcher:
+                self.ui_dispatcher.stop()
+
         except Exception as e:
             print(f"Cleanup error: {e}")
         finally:

@@ -45,13 +45,19 @@ class ScanManager:
     lifecycle management and error recovery capabilities.
     """
     
-    def __init__(self, gui_directory: str = None):
+    def __init__(self, gui_directory: str = None, ui_dispatcher=None):
         """
         Initialize scan manager.
-        
+
         Args:
             gui_directory: Path to GUI directory for lock files
+            ui_dispatcher: Optional UIDispatcher for thread-safe UI callbacks.
+                           If provided, progress callbacks are marshaled to
+                           the main thread. If None, callbacks are invoked
+                           directly (legacy behavior).
         """
+        self.ui_dispatcher = ui_dispatcher
+
         if gui_directory:
             self.gui_dir = Path(gui_directory)
         else:
@@ -555,14 +561,21 @@ class ScanManager:
     def _update_progress(self, percentage: float, status: str, phase: str) -> None:
         """
         Update scan progress and notify callback.
-        
+
         Args:
             percentage: Progress percentage (0-100)
             status: Status message
             phase: Current scan phase
         """
         if self.progress_callback:
-            self.progress_callback(percentage, status, phase)
+            if self.ui_dispatcher:
+                # Thread-safe: marshal callback to main thread
+                self.ui_dispatcher.schedule(
+                    self.progress_callback, percentage, status, phase
+                )
+            else:
+                # Legacy fallback (gui/main.py path until WP2)
+                self.progress_callback(percentage, status, phase)
     
     def _process_scan_results(self, results: Dict[str, Any]) -> None:
         """
@@ -850,17 +863,19 @@ class ScanManager:
 _scan_manager = None
 
 
-def get_scan_manager(gui_directory: str = None) -> ScanManager:
+def get_scan_manager(gui_directory: str = None, ui_dispatcher=None) -> ScanManager:
     """
     Get global scan manager instance.
-    
+
     Args:
         gui_directory: Path to GUI directory for lock files
-        
+        ui_dispatcher: Optional UIDispatcher for thread-safe UI callbacks.
+                       Only used on first call (when creating the instance).
+
     Returns:
         ScanManager instance
     """
     global _scan_manager
     if _scan_manager is None:
-        _scan_manager = ScanManager(gui_directory)
+        _scan_manager = ScanManager(gui_directory, ui_dispatcher=ui_dispatcher)
     return _scan_manager

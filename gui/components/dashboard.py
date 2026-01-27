@@ -745,16 +745,10 @@ class DashboardWidget:
 
             self._update_progress_summary(progress_text, detail_text)
 
-            # Force UI update safely without triggering window auto-resize
-            # Using update() instead of update_idletasks() to prevent geometry recalculation
-            try:
-                self.parent.update()
-                # Enforce window size after UI update to prevent auto-resizing
-                if self.size_enforcement_callback:
-                    self.size_enforcement_callback()
-            except tk.TclError:
-                # UI may be destroyed, ignore
-                pass
+            # Note: No explicit update() needed here. When using UIDispatcher,
+            # this callback runs on the main thread via after(), so Tk's event
+            # loop handles UI refreshes automatically. Calling update() from a
+            # dispatched callback would be unnecessary and risk reentrancy.
 
         except Exception as e:
             # Log error but don't interrupt scan
