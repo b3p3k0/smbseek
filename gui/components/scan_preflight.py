@@ -11,15 +11,8 @@ from typing import Optional, Dict, Any, List
 import sys
 import os
 
-# Add utils to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
-
-from dialog_helpers import ensure_dialog_focus
-
-try:
-    from batch_extract_dialog import BatchExtractSettingsDialog  # standalone/absolute
-except ImportError:
-    from .batch_extract_dialog import BatchExtractSettingsDialog  # package relative
+from gui.utils.dialog_helpers import ensure_dialog_focus
+from gui.components.batch_extract_dialog import BatchExtractSettingsDialog
 
 
 class ProbeConfigDialog:

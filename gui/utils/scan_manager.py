@@ -24,10 +24,7 @@ except ImportError:
     psutil = None
 import sys
 
-# Add utils to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
-
-from backend_interface import BackendInterface
+from gui.utils.backend_interface import BackendInterface
 
 
 class ScanManager:
@@ -806,9 +803,7 @@ class ScanManager:
         """
         try:
             # Import here to avoid circular dependencies
-            import sys
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
-            from database_access import DatabaseReader
+            from gui.utils.database_access import DatabaseReader
 
             # Try to get backend path for database location
             backend_path = getattr(self.backend_interface, 'backend_path', None)

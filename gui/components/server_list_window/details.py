@@ -16,9 +16,6 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Sequence, Tuple
 
-# Add utils to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'utils'))
-
 from gui.utils import probe_cache, probe_runner, probe_patterns, extract_runner
 from gui.utils.probe_runner import ProbeError
 from gui.utils.database_access import DatabaseReader

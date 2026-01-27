@@ -18,15 +18,11 @@ import queue
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any
 
-# Add utils to path
-gui_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(gui_dir / "utils"))
-
-from style import get_theme
-from backend_interface import BackendInterface
-from database_access import DatabaseReader
-from error_codes import get_error, format_error_message
-from dialog_helpers import ensure_dialog_focus
+from gui.utils.style import get_theme
+from gui.utils.backend_interface import BackendInterface
+from gui.utils.database_access import DatabaseReader
+from gui.utils.error_codes import get_error, format_error_message
+from gui.utils.dialog_helpers import ensure_dialog_focus
 
 
 class DatabaseSetupDialog:

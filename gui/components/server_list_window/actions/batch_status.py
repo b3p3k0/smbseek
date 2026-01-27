@@ -12,12 +12,9 @@ import csv
 from concurrent.futures import Future
 from typing import Dict, Any, Optional, List
 
-from server_list_window import table, filters
+from gui.components.server_list_window import table, filters
 from gui.utils import probe_cache
-try:
-    from ..pry_status_dialog import BatchStatusDialog
-except ImportError:
-    from pry_status_dialog import BatchStatusDialog
+from gui.components.pry_status_dialog import BatchStatusDialog
 
 
 class ServerListWindowBatchStatusMixin:

@@ -18,32 +18,16 @@ import csv
 import os
 import sys
 
-# Add utils to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'utils'))
-
-try:
-    from gui.utils.database_access import DatabaseReader
-    from gui.utils.style import get_theme
-    from gui.utils.data_export_engine import get_export_engine
-    from gui.utils.scan_manager import get_scan_manager
-    from gui.utils.dialog_helpers import ensure_dialog_focus
-    from gui.utils.template_store import TemplateStore
-    from gui.components.file_browser_window import FileBrowserWindow
-    from gui.components.pry_dialog import PryDialog
-    from gui.components.pry_status_dialog import BatchStatusDialog
-    from shared.db_migrations import run_migrations
-except ImportError:
-    # Handle relative imports when running from gui directory
-    from utils.database_access import DatabaseReader
-    from utils.style import get_theme
-    from utils.data_export_engine import get_export_engine
-    from utils.scan_manager import get_scan_manager
-    from utils.dialog_helpers import ensure_dialog_focus
-    from utils.template_store import TemplateStore
-    from components.file_browser_window import FileBrowserWindow
-    from components.pry_dialog import PryDialog
-    from components.pry_status_dialog import BatchStatusDialog
-    from shared.db_migrations import run_migrations
+from gui.utils.database_access import DatabaseReader
+from gui.utils.style import get_theme
+from gui.utils.data_export_engine import get_export_engine
+from gui.utils.scan_manager import get_scan_manager
+from gui.utils.dialog_helpers import ensure_dialog_focus
+from gui.utils.template_store import TemplateStore
+from gui.components.file_browser_window import FileBrowserWindow
+from gui.components.pry_dialog import PryDialog
+from gui.components.pry_status_dialog import BatchStatusDialog
+from shared.db_migrations import run_migrations
 
 # Import modular components
 from . import export, details, filters, table
@@ -54,11 +38,7 @@ except ImportError:
 from gui.utils import probe_cache, probe_patterns, probe_runner, extract_runner, pry_runner
 from shared.quarantine import create_quarantine_dir
 
-# Import actions mixin with robust fallbacks for script/package contexts
-try:
-    from server_list_window.actions import ServerListWindowActionsMixin
-except Exception:
-    from .actions import ServerListWindowActionsMixin
+from gui.components.server_list_window.actions import ServerListWindowActionsMixin
 
 
 class ServerListWindow(ServerListWindowActionsMixin):

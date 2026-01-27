@@ -19,16 +19,10 @@ import webbrowser
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any
 
-# Add utils to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
-
-from style import get_theme
-from template_store import TemplateStore
-from dialog_helpers import ensure_dialog_focus
-try:
-    from scan_preflight import run_preflight   # standalone/absolute
-except ImportError:
-    from .scan_preflight import run_preflight  # package relative
+from gui.utils.style import get_theme
+from gui.utils.template_store import TemplateStore
+from gui.utils.dialog_helpers import ensure_dialog_focus
+from gui.components.scan_preflight import run_preflight
 
 
 class ScanDialog:

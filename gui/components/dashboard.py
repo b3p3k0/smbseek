@@ -26,22 +26,16 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-# Add utils to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
-
-from database_access import DatabaseReader
-from backend_interface import BackendInterface
-from style import get_theme, apply_theme_to_window
-from scan_manager import get_scan_manager
-from scan_dialog import show_scan_dialog
-from scan_results_dialog import show_scan_results_dialog
-from settings_manager import SettingsManager
-from probe_runner import run_probe
-from extract_runner import run_extract
-import dashboard_logs
-
-# Import probe/extract utilities
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from gui.utils.database_access import DatabaseReader
+from gui.utils.backend_interface import BackendInterface
+from gui.utils.style import get_theme, apply_theme_to_window
+from gui.utils.scan_manager import get_scan_manager
+from gui.components.scan_dialog import show_scan_dialog
+from gui.components.scan_results_dialog import show_scan_results_dialog
+from gui.utils.settings_manager import SettingsManager
+from gui.utils.probe_runner import run_probe
+from gui.utils.extract_runner import run_extract
+from gui.components import dashboard_logs
 from gui.utils import probe_cache, probe_patterns, probe_runner, extract_runner
 from shared.quarantine import create_quarantine_dir
 

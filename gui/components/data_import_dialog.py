@@ -15,13 +15,9 @@ import os
 import sys
 from pathlib import Path
 
-# Add utils to path
-gui_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(gui_dir / "utils"))
-
-from style import get_theme
-from data_import_engine import get_import_engine
-from dialog_helpers import ensure_dialog_focus
+from gui.utils.style import get_theme
+from gui.utils.data_import_engine import get_import_engine
+from gui.utils.dialog_helpers import ensure_dialog_focus
 
 
 def open_data_import_dialog(parent: tk.Tk, db_reader) -> None:

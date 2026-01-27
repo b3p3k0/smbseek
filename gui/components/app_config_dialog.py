@@ -19,11 +19,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 import sys
 
-# Add utils to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
-
-from style import get_theme
-from dialog_helpers import ensure_dialog_focus
+from gui.utils.style import get_theme
+from gui.utils.dialog_helpers import ensure_dialog_focus
 
 
 class AppConfigDialog:

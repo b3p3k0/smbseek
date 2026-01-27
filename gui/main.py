@@ -22,25 +22,24 @@ import os
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-# Add components, utils, and parent (for shared module) to path
-gui_dir = Path(__file__).parent
-sys.path.insert(0, str(gui_dir.parent))  # For shared module access
-sys.path.insert(0, str(gui_dir / "components"))
-sys.path.insert(0, str(gui_dir / "utils"))
+# Ensure project root is in path for package imports (handles direct invocation)
+_project_root = Path(__file__).resolve().parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
 
-from dashboard import DashboardWidget
-from server_list_window import open_server_list_window, ServerListWindow
-from config_editor_window import open_config_editor_window
-from app_config_dialog import open_app_config_dialog
-from data_import_dialog import open_data_import_dialog
-from database_setup_dialog import show_database_setup_dialog
+from gui.components.dashboard import DashboardWidget
+from gui.components.server_list_window import open_server_list_window, ServerListWindow
+from gui.components.config_editor_window import open_config_editor_window
+from gui.components.app_config_dialog import open_app_config_dialog
+from gui.components.data_import_dialog import open_data_import_dialog
+from gui.components.database_setup_dialog import show_database_setup_dialog
 from shared.db_migrations import run_migrations
-from database_access import DatabaseReader
-from backend_interface import BackendInterface
-from style import get_theme, apply_theme_to_window
-from settings_manager import get_settings_manager
-from ui_dispatcher import UIDispatcher
-from scan_manager import get_scan_manager
+from gui.utils.database_access import DatabaseReader
+from gui.utils.backend_interface import BackendInterface
+from gui.utils.style import get_theme, apply_theme_to_window
+from gui.utils.settings_manager import get_settings_manager
+from gui.utils.ui_dispatcher import UIDispatcher
+from gui.utils.scan_manager import get_scan_manager
 
 
 class SMBSeekGUI:

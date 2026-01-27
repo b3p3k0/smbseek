@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Callable, List
 from datetime import datetime
 
-from default_gui_settings import DEFAULT_GUI_SETTINGS
+from gui.utils.default_gui_settings import DEFAULT_GUI_SETTINGS
 
 
 class SettingsManager:

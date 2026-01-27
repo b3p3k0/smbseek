@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog
 from typing import Dict, Any, Optional
 
-from server_list_window import filters, table
+from gui.components.server_list_window import filters, table
 from gui.utils.dialog_helpers import ensure_dialog_focus
 
 

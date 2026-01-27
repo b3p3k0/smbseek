@@ -14,22 +14,10 @@ import csv
 import os
 from typing import Dict, List, Any, Optional
 
-from server_list_window import export, details, filters, table
-
-try:
-    from ..batch_extract_dialog import BatchExtractSettingsDialog
-except ImportError:
-    from batch_extract_dialog import BatchExtractSettingsDialog
-
-try:
-    from ..file_browser_window import FileBrowserWindow
-except ImportError:
-    from file_browser_window import FileBrowserWindow
-
-try:
-    from ..pry_dialog import PryDialog
-except ImportError:
-    from pry_dialog import PryDialog
+from gui.components.server_list_window import export, details, filters, table
+from gui.components.batch_extract_dialog import BatchExtractSettingsDialog
+from gui.components.file_browser_window import FileBrowserWindow
+from gui.components.pry_dialog import PryDialog
 from gui.utils import probe_cache, probe_patterns, probe_runner, extract_runner, pry_runner
 from shared.quarantine import create_quarantine_dir
 

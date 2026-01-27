@@ -31,7 +31,11 @@ import webbrowser
 from typing import Dict, Any, Optional
 
 # Ensure we're working with absolute paths regardless of where user runs the script
-SCRIPT_DIR = Path(__file__).parent.absolute()
+# resolve() handles symlinks; idempotent insertion ensures gui package is importable
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
 GUI_DIR = SCRIPT_DIR / "gui"
 
 # Canonical window sizing for the xsmbseek frontend
@@ -39,13 +43,9 @@ WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 745
 WINDOW_GEOMETRY = f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}"
 
-# Add GUI components and utils to path
-sys.path.insert(0, str(GUI_DIR / "components"))
-sys.path.insert(0, str(GUI_DIR / "utils"))
-
 # Thread-safe UI dispatcher for worker callbacks
-from ui_dispatcher import UIDispatcher
-from scan_manager import get_scan_manager
+from gui.utils.ui_dispatcher import UIDispatcher
+from gui.utils.scan_manager import get_scan_manager
 
 # Configuration manager for xsmbseek settings
 class XSMBSeekConfig:
@@ -317,18 +317,18 @@ def show_smbseek_setup_dialog(parent=None, current_path: str = "./smbseek") -> O
     return result
 
 
-# Import GUI components (these need to be imported after path setup)
+# Import GUI components
 try:
-    from dashboard import DashboardWidget
-    from server_list_window import open_server_list_window, ServerListWindow
-    from config_editor_window import open_config_editor_window
-    from app_config_dialog import open_app_config_dialog
-    from data_import_dialog import open_data_import_dialog
-    from database_setup_dialog import show_database_setup_dialog
-    from database_access import DatabaseReader
-    from backend_interface import BackendInterface
-    from style import get_theme, apply_theme_to_window
-    from settings_manager import get_settings_manager
+    from gui.components.dashboard import DashboardWidget
+    from gui.components.server_list_window import open_server_list_window, ServerListWindow
+    from gui.components.config_editor_window import open_config_editor_window
+    from gui.components.app_config_dialog import open_app_config_dialog
+    from gui.components.data_import_dialog import open_data_import_dialog
+    from gui.components.database_setup_dialog import show_database_setup_dialog
+    from gui.utils.database_access import DatabaseReader
+    from gui.utils.backend_interface import BackendInterface
+    from gui.utils.style import get_theme, apply_theme_to_window
+    from gui.utils.settings_manager import get_settings_manager
 except ImportError as e:
     print(f"Error importing GUI components: {e}")
     print("Make sure the gui/ directory exists and contains all required components.")
