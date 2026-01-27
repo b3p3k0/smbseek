@@ -27,8 +27,6 @@ import os
 import json
 import shutil
 from pathlib import Path
-import threading
-import queue
 import webbrowser
 from typing import Dict, Any, Optional
 
@@ -378,16 +376,15 @@ class XSMBSeekGUI:
         self.dashboard = None
         self.drill_down_windows = {}
         self.ui_dispatcher = None  # Thread-safe callback dispatcher
-        
+
         # Backend interfaces
         self.db_reader = None
         self.backend_interface = None
         self.settings_manager = None
-        
-        # Threading for background operations
-        self.scan_thread = None
-        self.scan_queue = queue.Queue()
-        
+
+        # Scan manager reference (initialized via get_scan_manager)
+        self.scan_manager = None
+
         self._initialize_application()
         
         # Set up global exception handler
@@ -522,7 +519,7 @@ class XSMBSeekGUI:
         self.ui_dispatcher = UIDispatcher(self.root)
 
         # Initialize scan manager with dispatcher so it's ready when dashboard gets it
-        get_scan_manager(str(GUI_DIR), ui_dispatcher=self.ui_dispatcher)
+        self.scan_manager = get_scan_manager(str(GUI_DIR), ui_dispatcher=self.ui_dispatcher)
 
     def _center_window(self) -> None:
         """
@@ -614,9 +611,6 @@ class XSMBSeekGUI:
         self.root.bind("<Control-r>", lambda e: self._refresh_dashboard())
         self.root.bind("<Control-i>", lambda e: self._open_drill_down_window("data_import", {}))
         self.root.bind("<Control-comma>", lambda e: self._open_xsmbseek_settings())
-        
-        # Handle scan queue updates
-        self._process_scan_queue()
     
     def _enable_mock_mode(self) -> None:
         """Enable mock mode for testing."""
@@ -753,31 +747,10 @@ class XSMBSeekGUI:
                 "Please check the database path in configuration."
             )
     
-    def _process_scan_queue(self) -> None:
-        """Process scan queue updates for progress display."""
-        try:
-            while True:
-                update = self.scan_queue.get_nowait()
-                if update["type"] == "progress":
-                    self.dashboard.update_scan_progress(
-                        update["percentage"],
-                        update["message"]
-                    )
-                elif update["type"] == "complete":
-                    self.dashboard.finish_scan_progress(
-                        update["success"],
-                        update["results"]
-                    )
-        except queue.Empty:
-            pass
-        
-        # Schedule next check
-        self.root.after(100, self._process_scan_queue)
-    
     def _on_closing(self) -> None:
         """Handle application closing."""
-        # Check for active scans
-        if self.scan_thread and self.scan_thread.is_alive():
+        # Check for active scans via scan_manager
+        if self.scan_manager and self.scan_manager.is_scanning:
             response = messagebox.askyesno(
                 "Scan in Progress",
                 "A scan is currently running. Are you sure you want to exit?",
@@ -785,6 +758,8 @@ class XSMBSeekGUI:
             )
             if not response:
                 return
+            # User confirmed exit during scan - interrupt it
+            self.scan_manager.interrupt_scan()
         
         # Persist any pending configuration changes (geometry is fixed by design)
         self.config.save_config()

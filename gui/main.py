@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-SMBSeek GUI - Main Application Entry Point
+SMBSeek GUI - Legacy Entry Point
 
-Cross-platform graphical interface for the SMBSeek security toolkit.
-Provides mission control dashboard with drill-down capabilities for detailed analysis.
+DEPRECATED: This module is maintained for backward compatibility only.
+Prefer ./xsmbseek as the supported GUI entry point.
+
+This module provides SMBSeekGUI for backward compatibility but delegates
+all scan operations to the unified ScanManager path established in xsmbseek.
+Direct invocation via `python gui/main.py` is deprecated.
 
 Usage:
-    python main.py [--mock] [--config CONFIG_FILE]
-
-Design Decision: Single entry point with dependency injection allows easy testing
-and clear separation between GUI components and backend integration.
+    ./xsmbseek [--mock]                    # Preferred
+    python gui/main.py [--mock] [--config] # Legacy (deprecated)
 """
 
 import tkinter as tk
@@ -18,12 +20,11 @@ import argparse
 import sys
 import os
 from pathlib import Path
-import threading
-import queue
 from typing import Dict, Any, Optional
 
-# Add components and utils to path
+# Add components, utils, and parent (for shared module) to path
 gui_dir = Path(__file__).parent
+sys.path.insert(0, str(gui_dir.parent))  # For shared module access
 sys.path.insert(0, str(gui_dir / "components"))
 sys.path.insert(0, str(gui_dir / "utils"))
 
@@ -38,6 +39,8 @@ from database_access import DatabaseReader
 from backend_interface import BackendInterface
 from style import get_theme, apply_theme_to_window
 from settings_manager import get_settings_manager
+from ui_dispatcher import UIDispatcher
+from scan_manager import get_scan_manager
 
 
 class SMBSeekGUI:
@@ -75,11 +78,11 @@ class SMBSeekGUI:
         
         # Settings manager
         self.settings_manager = get_settings_manager()
-        
-        # Threading for background operations
-        self.scan_thread = None
-        self.scan_queue = queue.Queue()
-        
+
+        # Thread-safe UI dispatcher (initialized after root creation)
+        self.ui_dispatcher = None
+        self.scan_manager = None
+
         self._initialize_application()
         
         # Set up global exception handler
@@ -132,6 +135,7 @@ class SMBSeekGUI:
         try:
             self._setup_backend_interfaces()
             self._create_main_window()
+            self._setup_scan_manager()
             self._create_dashboard()
             self._setup_event_handlers()
             
@@ -278,7 +282,13 @@ class SMBSeekGUI:
         
         # Center window on screen
         self._center_window()
-    
+
+    def _setup_scan_manager(self) -> None:
+        """Initialize thread-safe UI dispatcher and scan manager."""
+        # Must happen after root is created but before dashboard
+        self.ui_dispatcher = UIDispatcher(self.root)
+        self.scan_manager = get_scan_manager(str(gui_dir), ui_dispatcher=self.ui_dispatcher)
+
     def _center_window(self) -> None:
         """
         Center the main window on screen using fixed dimensions.
@@ -365,9 +375,6 @@ class SMBSeekGUI:
         self.root.bind("<Control-r>", lambda e: self._refresh_dashboard())
         self.root.bind("<Control-i>", lambda e: self._open_drill_down_window("data_import", {}))
         self.root.bind("<F1>", lambda e: self._toggle_interface_mode())
-        
-        # Handle scan queue updates
-        self._process_scan_queue()
     
     def _enable_mock_mode(self) -> None:
         """Enable mock mode for testing."""
@@ -475,84 +482,7 @@ class SMBSeekGUI:
         """Manually refresh dashboard data."""
         if self.dashboard:
             self.dashboard._refresh_dashboard_data()
-    
-    def _process_scan_queue(self) -> None:
-        """Process scan queue updates for progress display."""
-        try:
-            while True:
-                update = self.scan_queue.get_nowait()
-                if update["type"] == "progress":
-                    self.dashboard.update_scan_progress(
-                        update["percentage"],
-                        update["message"]
-                    )
-                elif update["type"] == "complete":
-                    self.dashboard.finish_scan_progress(
-                        update["success"],
-                        update["results"]
-                    )
-        except queue.Empty:
-            pass
-        
-        # Schedule next check
-        self.root.after(100, self._process_scan_queue)
-    
-    def _start_scan(self, countries: list) -> None:
-        """
-        Start background scan operation using unified SMBSeek 3.0 workflow.
 
-        Args:
-            countries: List of country codes to scan
-        """
-        if self.scan_thread and self.scan_thread.is_alive():
-            messagebox.showwarning("Scan in Progress", "A scan is already running. Please wait for it to complete.")
-            return
-
-        # Start progress display (using unified scan type)
-        self.dashboard.start_scan_progress("run", countries)
-
-        # Start background scan
-        self.scan_thread = threading.Thread(
-            target=self._scan_worker,
-            args=(countries,),
-            daemon=True
-        )
-        self.scan_thread.start()
-    
-    def _scan_worker(self, countries: list) -> None:
-        """
-        Background worker for unified scan operations (SMBSeek 3.0).
-
-        Args:
-            countries: Countries to scan
-        """
-        try:
-            # Progress callback for scan updates
-            def progress_callback(percentage, message):
-                self.scan_queue.put({
-                    "type": "progress",
-                    "percentage": percentage,
-                    "message": message
-                })
-            
-            # Execute unified scan (SMBSeek 3.0 - discovery-only mode removed)
-            results = self.backend_interface.run_scan(countries, progress_callback)
-            
-            # Send completion notification
-            self.scan_queue.put({
-                "type": "complete",
-                "success": results.get("success", False),
-                "results": results
-            })
-            
-        except Exception as e:
-            # Send error notification
-            self.scan_queue.put({
-                "type": "complete",
-                "success": False,
-                "results": {"error": str(e)}
-            })
-    
     def _toggle_interface_mode(self) -> None:
         """Toggle between simple and advanced interface modes."""
         new_mode = self.settings_manager.toggle_interface_mode()
@@ -580,8 +510,8 @@ class SMBSeekGUI:
     
     def _on_closing(self) -> None:
         """Handle application closing."""
-        # Check for active scans
-        if self.scan_thread and self.scan_thread.is_alive():
+        # Check for active scans via scan_manager
+        if self.scan_manager and self.scan_manager.is_scanning:
             response = messagebox.askyesno(
                 "Scan in Progress",
                 "A scan is currently running. Are you sure you want to exit?",
@@ -589,7 +519,9 @@ class SMBSeekGUI:
             )
             if not response:
                 return
-        
+            # User confirmed exit during scan - interrupt it
+            self.scan_manager.interrupt_scan()
+
         # Clean up and exit
         try:
             # Close any open drill-down windows
@@ -598,11 +530,15 @@ class SMBSeekGUI:
                     window.destroy()
                 except:
                     pass
-            
+
             # Clean up backend interfaces
             if self.db_reader:
                 self.db_reader.clear_cache()
-            
+
+            # Stop UI dispatcher before destroying root to prevent TclError
+            if self.ui_dispatcher:
+                self.ui_dispatcher.stop()
+
         except Exception as e:
             print(f"Cleanup error: {e}")
         finally:
@@ -620,7 +556,9 @@ class SMBSeekGUI:
 
 
 def main():
-    """Main entry point for SMBSeek GUI."""
+    """Main entry point for SMBSeek GUI (deprecated)."""
+    print("Warning: gui/main.py is deprecated. Use ./xsmbseek instead.", file=sys.stderr)
+
     parser = argparse.ArgumentParser(
         description="SMBSeek GUI - Graphical interface for SMBSeek security toolkit"
     )
