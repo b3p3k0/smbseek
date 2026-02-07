@@ -71,7 +71,13 @@ Select multiple hosts for batch probing.
 
 ### Browsing Shares
 
-Read-only navigation through SMB shares. You can download individual files or entire folders. Everything goes to quarantine (`~/.smbseek/quarantine/`). The browser never writes to remote systems.
+Read-only navigation through SMB shares. Double-click directories to descend, files to preview. You can also select a file and click **View**.
+
+The viewer auto-detects binary files and switches to hex mode. Text files get an encoding selector (UTF-8, Latin-1, etc.) if the default doesn't look right.
+
+Files over the specified maximum (default: 5 MB) trigger a warning—you can bump that limit in `conf/config.json` under `file_browser.viewer.max_view_size_mb`, or click "Ignore Once" to load anyway (hard cap: 1 GB).
+
+Downloads land in quarantine (`~/.smbseek/quarantine/`). The browser never writes to remote systems.
 
 ### Extracting Files
 

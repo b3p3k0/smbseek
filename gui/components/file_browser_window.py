@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 
-from shared.smb_browser import SMBNavigator, ListResult, Entry
+from shared.smb_browser import SMBNavigator, ListResult, Entry, ReadResult
+try:
+    from gui.components.file_viewer_window import open_file_viewer, is_binary_content
+except ImportError:
+    from file_viewer_window import open_file_viewer, is_binary_content
 from shared.quarantine import build_quarantine_path, log_quarantine_event
 try:
     from gui.utils.database_access import DatabaseReader
@@ -152,14 +156,15 @@ class FileBrowserWindow:
 
         self.btn_up = tk.Button(button_frame, text="⬆ Up", command=self._on_up)
         self.btn_refresh = tk.Button(button_frame, text="🔄 Refresh", command=self._refresh)
+        self.btn_view = tk.Button(button_frame, text="👁 View", command=self._on_view)
         self.btn_download = tk.Button(button_frame, text="⬇ Download to Quarantine", command=self._on_download)
         self.btn_cancel = tk.Button(button_frame, text="Cancel", command=self._on_cancel, state=tk.DISABLED)
 
-        for btn in (self.btn_up, self.btn_refresh, self.btn_download, self.btn_cancel):
+        for btn in (self.btn_up, self.btn_refresh, self.btn_view, self.btn_download, self.btn_cancel):
             btn.pack(side=tk.LEFT, padx=5)
 
         # Treeview for entries
-        columns = ("name", "type", "size", "modified", "mtime_raw")
+        columns = ("name", "type", "size", "modified", "mtime_raw", "size_raw")
         self.tree = ttk.Treeview(self.window, columns=columns, show="headings", selectmode="extended")
         self.tree.heading("name", text="Name")
         self.tree.heading("type", text="Type")
@@ -170,6 +175,7 @@ class FileBrowserWindow:
         self.tree.column("size", width=120, anchor="e")
         self.tree.column("modified", width=180, anchor="w")
         self.tree.column("mtime_raw", width=0, stretch=False)  # Hidden column for raw epoch
+        self.tree.column("size_raw", width=0, stretch=False)  # Hidden column for raw bytes
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.tree.bind("<Double-1>", self._on_item_double_click)
 
@@ -227,6 +233,9 @@ class FileBrowserWindow:
             self.current_path = new_path
             self.path_var.set(new_path)
             self._refresh()
+        elif type_label == "file":
+            # Double-click on file opens viewer
+            self._on_view()
 
     def _on_download(self) -> None:
         if self.busy or not self.current_share:
@@ -284,6 +293,165 @@ class FileBrowserWindow:
         self.navigator.cancel()
         self._set_status("Cancellation requested…")
         self.btn_cancel.configure(state=tk.DISABLED)
+
+    def _on_view(self) -> None:
+        """View selected file contents."""
+        if self.busy or not self.current_share:
+            return
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showinfo("No selection", "Select a file to view.", parent=self.window)
+            return
+        if len(selection) > 1:
+            messagebox.showinfo("Single file only", "Select only one file to view.", parent=self.window)
+            return
+
+        item_id = selection[0]
+        item = self.tree.item(item_id)
+        values = item.get("values", [])
+        if len(values) < 2:
+            return
+        name = values[0]
+        type_label = values[1]
+
+        if type_label != "file":
+            messagebox.showinfo("Not a file", "Select a file to view, not a directory.", parent=self.window)
+            return
+
+        # Get file size from treeview (size_raw is index 5)
+        size_str = values[2] if len(values) > 2 else "0 B"
+        size_raw = 0
+        if len(values) > 5:
+            try:
+                size_raw = int(values[5])
+            except (ValueError, TypeError):
+                size_raw = 0
+        remote_path = self._join_path(self.current_path, name)
+
+        # Check size limit from config
+        max_view_mb = self.config.get("viewer", {}).get("max_view_size_mb", 5)
+        max_view_bytes = max_view_mb * 1024 * 1024
+
+        # Pre-check: warn if file exceeds configured limit
+        if size_raw > max_view_bytes:
+            if not self._show_size_warning_dialog(name, size_raw, max_view_mb):
+                return  # User clicked OK (cancel)
+            # User clicked "Ignore Once" - proceed with 1GB hard cap
+            max_view_bytes = 1024 * 1024 * 1024
+
+        self._start_view_thread(remote_path, name, max_view_bytes)
+
+    def _show_size_warning_dialog(self, filename: str, file_size: int, max_mb: int) -> bool:
+        """
+        Show dialog when file exceeds size limit.
+
+        Returns:
+            True if user wants to proceed anyway (Ignore Once)
+            False if user wants to cancel (OK)
+        """
+        dialog = tk.Toplevel(self.window)
+        dialog.title("File Too Large")
+        dialog.geometry("450x180")
+        dialog.resizable(False, False)
+        dialog.transient(self.window)
+        dialog.grab_set()
+
+        # Center on parent
+        dialog.update_idletasks()
+        x = self.window.winfo_x() + (self.window.winfo_width() // 2) - 225
+        y = self.window.winfo_y() + (self.window.winfo_height() // 2) - 90
+        dialog.geometry(f"+{x}+{y}")
+
+        result = {"proceed": False}
+
+        # Message
+        msg_frame = tk.Frame(dialog)
+        msg_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=15)
+
+        tk.Label(
+            msg_frame,
+            text=f'The file "{filename}" ({_format_file_size(file_size)}) exceeds\nthe maximum view size of {max_mb} MB.',
+            justify=tk.LEFT
+        ).pack(anchor="w")
+
+        tk.Label(
+            msg_frame,
+            text="\nYou can change this limit in:",
+            justify=tk.LEFT
+        ).pack(anchor="w")
+
+        tk.Label(
+            msg_frame,
+            text="conf/config.json -> file_browser.viewer.max_view_size_mb",
+            font=("Courier", 9),
+            fg="#666666"
+        ).pack(anchor="w")
+
+        # Buttons
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
+
+        def on_ok():
+            result["proceed"] = False
+            dialog.destroy()
+
+        def on_ignore():
+            result["proceed"] = True
+            dialog.destroy()
+
+        tk.Button(btn_frame, text="OK", width=12, command=on_ok).pack(side=tk.LEFT, padx=(0, 10))
+        tk.Button(btn_frame, text="Ignore Once", width=12, command=on_ignore).pack(side=tk.LEFT)
+
+        dialog.protocol("WM_DELETE_WINDOW", on_ok)
+        dialog.wait_window()
+
+        return result["proceed"]
+
+    def _start_view_thread(self, remote_path: str, display_name: str, max_bytes: int) -> None:
+        """Start background thread to read file for viewing."""
+        def worker():
+            try:
+                self._set_busy(True)
+                self._safe_after(0, lambda: self._set_status(f"Reading {display_name}..."))
+                self._ensure_connected()
+                result = self.navigator.read_file(remote_path, max_bytes=max_bytes)
+                # Open viewer on main thread
+                self._safe_after(0, lambda r=result: self._open_viewer(
+                    remote_path, r.data, r.size, r.truncated
+                ))
+            except Exception as e:
+                self._safe_after(0, lambda err=e: self._set_status(f"View failed: {err}"))
+                self._safe_after(0, lambda err=e: messagebox.showerror(
+                    "View error", str(err), parent=self.window
+                ) if self._window_alive() else None)
+            finally:
+                self._safe_after(0, lambda: self._set_busy(False))
+
+        view_thread = threading.Thread(target=worker, daemon=True)
+        view_thread.start()
+
+    def _open_viewer(self, remote_path: str, content: bytes, size: int, truncated: bool) -> None:
+        """Open the file viewer window."""
+        if not self._window_alive():
+            return
+
+        display_path = f"{self.ip_address}/{self.current_share}{remote_path}"
+        file_size = size if not truncated else size  # actual bytes read
+
+        def save_callback():
+            # Download the file to quarantine when Save is clicked
+            mtime = None  # We don't have mtime in viewer context
+            self._start_download_thread([(remote_path, mtime)], [], None)
+
+        open_file_viewer(
+            parent=self.window,
+            file_path=display_path,
+            content=content,
+            file_size=file_size,
+            theme=self.theme,
+            on_save_callback=save_callback,
+        )
+        self._set_status(f"Viewing {remote_path}")
 
     def _on_close(self) -> None:
         self.navigator.cancel()
@@ -507,10 +675,11 @@ class FileBrowserWindow:
             mtime_raw = entry.modified_time or ""
             if entry.modified_time:
                 mtime_str = datetime.fromtimestamp(entry.modified_time).strftime("%Y-%m-%d %H:%M:%S")
+            size_raw = entry.size or 0
             self.tree.insert(
                 "",
                 "end",
-                values=(entry.name, "dir" if entry.is_dir else "file", _format_file_size(entry.size), mtime_str, mtime_raw),
+                values=(entry.name, "dir" if entry.is_dir else "file", _format_file_size(entry.size), mtime_str, mtime_raw, size_raw),
             )
 
         status_parts = [f"Path {path} ({len(result.entries)} items)"]
@@ -524,7 +693,7 @@ class FileBrowserWindow:
     def _set_busy(self, busy: bool) -> None:
         self.busy = busy
         state = tk.DISABLED if busy else tk.NORMAL
-        for btn in (self.btn_up, self.btn_refresh, self.btn_download):
+        for btn in (self.btn_up, self.btn_refresh, self.btn_view, self.btn_download):
             if btn and btn.winfo_exists():
                 btn.configure(state=state)
         if self.btn_cancel and self.btn_cancel.winfo_exists():

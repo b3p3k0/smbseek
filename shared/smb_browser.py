@@ -44,6 +44,14 @@ class DownloadResult:
     mtime: Optional[float] = None
 
 
+@dataclass
+class ReadResult:
+    """Result of reading file contents into memory."""
+    data: bytes
+    size: int
+    truncated: bool
+
+
 class SMBNavigator:
     """Lightweight wrapper around impacket's SMBConnection."""
 
@@ -245,6 +253,61 @@ class SMBNavigator:
         elapsed = time.time() - start
         return DownloadResult(saved_path=dest_path, size=bytes_written, elapsed_seconds=elapsed, mtime=mtime)
 
+    def read_file(self, remote_path: str, max_bytes: int = 5_242_880) -> ReadResult:
+        """
+        Read file contents into memory for preview.
+
+        Args:
+            remote_path: SMB path to file
+            max_bytes: Maximum bytes to read (default 5MB, hard cap 1GB)
+
+        Returns:
+            ReadResult with file data, actual size, and truncation flag
+        """
+        conn = self._require_conn()
+        share = self._require_share()
+
+        norm_path = self._normalize_path(remote_path)
+        self._enforce_limits(norm_path)
+
+        # Hard cap at 1GB for sanity
+        max_bytes = min(max_bytes, 1024 * 1024 * 1024)
+
+        conn.setTimeout(self.request_timeout)
+
+        chunks: List[bytes] = []
+        bytes_read = 0
+        truncated = False
+
+        def _collector(data: bytes) -> None:
+            nonlocal bytes_read, truncated
+            if self._cancel_event.is_set():
+                raise RuntimeError("Read cancelled")
+            remaining = max_bytes - bytes_read
+            if remaining <= 0:
+                truncated = True
+                raise StopIteration("Max bytes reached")
+            if len(data) > remaining:
+                chunks.append(data[:remaining])
+                bytes_read += remaining
+                truncated = True
+                raise StopIteration("Max bytes reached")
+            chunks.append(data)
+            bytes_read += len(data)
+
+        try:
+            conn.getFile(share, norm_path, _collector)
+        except StopIteration:
+            # Expected when max_bytes reached
+            pass
+        except SessionError as e:
+            raise RuntimeError(f"SMB error reading {norm_path}: {e}") from e
+        except Exception as e:
+            if "Max bytes reached" not in str(e) and "Read cancelled" not in str(e):
+                raise RuntimeError(f"Failed to read {norm_path}: {e}") from e
+
+        return ReadResult(data=b"".join(chunks), size=bytes_read, truncated=truncated)
+
     # --- Helpers -------------------------------------------------------
 
     def _require_conn(self) -> SMBConnection:
@@ -285,4 +348,4 @@ def _safe_parts(rel_path: str) -> List[str]:
     return parts
 
 
-__all__ = ["SMBNavigator", "Entry", "ListResult", "DownloadResult"]
+__all__ = ["SMBNavigator", "Entry", "ListResult", "DownloadResult", "ReadResult"]
