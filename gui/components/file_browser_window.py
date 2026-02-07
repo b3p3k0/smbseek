@@ -87,6 +87,7 @@ class FileBrowserWindow:
         theme=None,
         settings_manager=None,
         share_credentials: Optional[Dict[str, Dict[str, str]]] = None,
+        on_extracted=None,
     ) -> None:
         self.parent = parent
         self.ip_address = ip_address
@@ -98,6 +99,7 @@ class FileBrowserWindow:
         self.config = _load_file_browser_config(config_path)
         self.settings_manager = settings_manager
         self.share_credentials = share_credentials or {}
+        self.on_extracted = on_extracted
 
         creds = detail_helpers._derive_credentials(self.auth_method)
         self.username, self.password = creds
@@ -585,6 +587,8 @@ class FileBrowserWindow:
                 if total_errors:
                     summary_msg += f" ({total_errors} failed)"
                 self._safe_after(0, lambda: self._set_status(summary_msg))
+                if completed > 0:
+                    self._safe_after(0, self._handle_extracted_success)
                 if total_errors:
                     combined = errors + expand_errors
                     err_text = "\n".join(f"{p}: {err}" for p, err in combined[:5])
@@ -665,6 +669,20 @@ class FileBrowserWindow:
         if mode == "deny_only":
             return token not in excluded
         return True
+
+    def _handle_extracted_success(self) -> None:
+        """Invoke callback/DB flag when a download succeeds."""
+        if callable(self.on_extracted):
+            try:
+                self.on_extracted(self.ip_address)
+            except Exception:
+                pass
+            return
+        if self.db_reader:
+            try:
+                self.db_reader.upsert_extracted_flag(self.ip_address, True)
+            except Exception:
+                pass
 
     @staticmethod
     def _map_download_error(exc: Exception) -> str:

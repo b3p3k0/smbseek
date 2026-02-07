@@ -438,6 +438,7 @@ class ServerListWindowBatchOperationsMixin:
             theme=self.theme,
             settings_manager=self.settings_manager,
             share_credentials=share_creds,
+            on_extracted=self._handle_extracted_update,
         )
 
     def _launch_probe_from_detail(self, server_data: Dict[str, Any]) -> None:

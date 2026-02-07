@@ -163,7 +163,8 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
             config_path=config_path,
             db_reader=None,
             theme=theme,
-            settings_manager=settings_manager
+            settings_manager=settings_manager,
+            on_extracted=None if not settings_manager else getattr(parent_window, "_handle_extracted_update", None)
         )
 
     # Close button
