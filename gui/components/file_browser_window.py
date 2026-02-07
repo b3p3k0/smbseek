@@ -667,11 +667,12 @@ class FileBrowserWindow:
 
                             def _progress(bytes_written: int, _total_unused: Optional[int]) -> None:
                                 now = time.time()
-                            if now - last_update["ts"] < 0.2:
-                                return
+                                if now - last_update["ts"] < 0.2:
+                                    return
                                 last_update["ts"] = now
-                                self._safe_after(0, lambda bw=bytes_written, rp=remote_path, c=completed: self._set_status(
-                                    f"Downloading {rp} ({c+1}/{max(total_enqueued, completed+1)}) – {self._format_bytes(bw)}"))
+                                human = _format_file_size(bytes_written)
+                                self._safe_after(0, lambda bw=bytes_written, rp=remote_path, c=completed, h=human: self._set_status(
+                                    f"Downloading {rp} ({c+1}/{max(total_enqueued, completed+1)}) – {h}"))
 
                             result = self.navigator.download_file(
                                 remote_path,
