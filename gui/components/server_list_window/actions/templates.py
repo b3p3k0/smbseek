@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional
 
 from gui.components.server_list_window import filters, table
 from gui.utils.dialog_helpers import ensure_dialog_focus
+from gui.utils.template_store import TemplateStore
 
 
 class ServerListWindowTemplateMixin:
@@ -54,6 +55,12 @@ class ServerListWindowTemplateMixin:
             self.country_listbox.selection_clear(0, tk.END)
             # Repopulate to show all countries (in case filter text was active)
             self._on_country_filter_text_changed()
+
+        # Clear any selected filter template to avoid implying an applied template
+        self.filter_template_var.set(self.FILTER_TEMPLATE_PLACEHOLDER)
+        self._selected_filter_template_slug = None
+        self._set_last_filter_template_slug(None)
+        self._refresh_filter_templates(select_slug=None)
 
         self._apply_filters()
 
@@ -160,7 +167,11 @@ class ServerListWindowTemplateMixin:
         dropdown.configure(values=labels or [self.FILTER_TEMPLATE_PLACEHOLDER])
 
         target_slug = select_slug or self._get_last_filter_template_slug()
-        if target_slug and target_slug in self._filter_template_label_to_slug.values():
+        if target_slug is None:
+            # Explicit request to clear selection
+            self.filter_template_var.set(self.FILTER_TEMPLATE_PLACEHOLDER)
+            self._selected_filter_template_slug = None
+        elif target_slug in self._filter_template_label_to_slug.values():
             target_label = next((name for name, slug in self._filter_template_label_to_slug.items() if slug == target_slug), self.FILTER_TEMPLATE_PLACEHOLDER)
             self.filter_template_var.set(target_label)
             self._selected_filter_template_slug = self._filter_template_label_to_slug.get(target_label)
@@ -225,26 +236,6 @@ class ServerListWindowTemplateMixin:
 
     def _on_save_filter_template(self) -> None:
         """Save current filter state as a template."""
-        label = self.filter_template_var.get()
-        name = label if label and label != self.FILTER_TEMPLATE_PLACEHOLDER else None
-
-        if not name:
-            name = simpledialog.askstring("Save Filter Template", "Template name:", parent=self.window)
-            if not name:
-                return
-
-        slug = filters.slugify_template_name(name)
-        existing = self.filter_template_store.load_template(slug) if self.filter_template_store else None
-
-        if existing:
-            overwrite = messagebox.askyesno(
-                "Overwrite Template",
-                f"Template '{name}' already exists. Overwrite?",
-                parent=self.window
-            )
-            if not overwrite:
-                return
-
         if not self.filter_template_store:
             messagebox.showinfo(
                 "Filter Template",
@@ -252,6 +243,82 @@ class ServerListWindowTemplateMixin:
                 parent=self.window
             )
             return
+
+        current_label = self.filter_template_var.get()
+        has_selection = bool(current_label and current_label != self.FILTER_TEMPLATE_PLACEHOLDER and self._selected_filter_template_slug)
+        selected_slug = self._selected_filter_template_slug if has_selection else None
+
+        def _prompt_name(initial: str = "") -> Optional[str]:
+            name = simpledialog.askstring(
+                "Save Filter Template",
+                "Template name:",
+                parent=self.window,
+                initialvalue=initial
+            )
+            if not name:
+                return None
+            name = name.strip()
+            return name or None
+
+        def _prompt_overwrite_choice(label: str) -> Optional[str]:
+            """Custom prompt to choose update vs save-as-new with explicit button labels."""
+            choice = {"value": None}
+            dialog = tk.Toplevel(self.window)
+            dialog.title("Save Filter Template")
+            dialog.transient(self.window)
+            dialog.grab_set()
+            ensure_dialog_focus(dialog, self.window)
+
+            tk.Label(dialog, text=f"Update existing template '{label}'?").pack(padx=20, pady=(15, 10))
+            buttons = tk.Frame(dialog)
+            buttons.pack(pady=(0, 15))
+
+            def _set(val):
+                choice["value"] = val
+                dialog.destroy()
+
+            tk.Button(buttons, text="Update", command=lambda: _set("update")).pack(side=tk.LEFT, padx=5)
+            tk.Button(buttons, text="New Template", command=lambda: _set("new")).pack(side=tk.LEFT, padx=5)
+            tk.Button(buttons, text="Cancel", command=lambda: _set(None)).pack(side=tk.LEFT, padx=5)
+
+            dialog.wait_window()
+            return choice["value"]
+
+        # Decide whether to overwrite or save-as-new
+        save_as_new = False
+        if selected_slug:
+            choice = _prompt_overwrite_choice(current_label)
+            if choice is None:
+                return  # cancel
+            if choice == "update":
+                name = current_label
+                slug = selected_slug
+            else:
+                # Save as new template
+                save_as_new = True
+                name = _prompt_name(f"{current_label} copy")
+                if not name:
+                    return
+                slug = TemplateStore.slugify(name)
+        else:
+            # No selection → create new template
+            name = current_label if current_label and current_label != self.FILTER_TEMPLATE_PLACEHOLDER else None
+            if not name:
+                name = _prompt_name()
+                if not name:
+                    return
+            slug = TemplateStore.slugify(name)
+
+        # If target slug exists and it's not the selected one, confirm overwrite
+        existing = self.filter_template_store.load_template(slug)
+        if existing and (slug != selected_slug or save_as_new):
+            overwrite = messagebox.askyesno(
+                "Overwrite Template",
+                f"Template '{name}' already exists. Overwrite?",
+                parent=self.window
+            )
+            if not overwrite:
+                return
 
         template = self.filter_template_store.save_template(name, self._capture_filter_state())
         self._set_last_filter_template_slug(template.slug)
