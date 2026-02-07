@@ -133,6 +133,7 @@ class ScanDialog:
 
         # Bulk operation toggles (default disabled)
         self.bulk_probe_enabled_var = tk.BooleanVar(value=False)
+        self.skip_indicator_extract_var = tk.BooleanVar(value=True)
         self.bulk_extract_enabled_var = tk.BooleanVar(value=False)
 
         self._concurrency_upper_limit = 256
@@ -580,7 +581,8 @@ class ScanDialog:
             "verbose": self.verbose_var.get(),
             "rce_enabled": self.rce_enabled_var.get(),
             "bulk_probe_enabled": self.bulk_probe_enabled_var.get(),
-            "bulk_extract_enabled": self.bulk_extract_enabled_var.get()
+            "bulk_extract_enabled": self.bulk_extract_enabled_var.get(),
+            "bulk_extract_skip_indicators": self.skip_indicator_extract_var.get()
         }
 
     def _apply_form_state(self, state: Dict[str, Any]) -> None:
@@ -632,6 +634,7 @@ class ScanDialog:
         # Bulk operation settings (with backward compatibility)
         self.bulk_probe_enabled_var.set(bool(state.get("bulk_probe_enabled", False)))
         self.bulk_extract_enabled_var.set(bool(state.get("bulk_extract_enabled", False)))
+        self.skip_indicator_extract_var.set(bool(state.get("bulk_extract_skip_indicators", True)))
 
         self._update_region_status()
 
@@ -1098,6 +1101,17 @@ class ScanDialog:
         )
         self.theme.apply_to_widget(bulk_extract_checkbox, "checkbox")
         bulk_extract_checkbox.pack(anchor="w", padx=10, pady=2)
+
+        # Skip malware hosts toggle
+        self.skip_indicator_extract_var = tk.BooleanVar(value=True)
+        skip_checkbox = tk.Checkbutton(
+            options_frame,
+            text="Skip extract on hosts with malware indicators (recommended)",
+            variable=self.skip_indicator_extract_var,
+            font=self.theme.fonts["small"]
+        )
+        self.theme.apply_to_widget(skip_checkbox, "checkbox")
+        skip_checkbox.pack(anchor="w", padx=10, pady=2)
 
         info_label = self.theme.create_styled_label(
             container,
@@ -1798,6 +1812,7 @@ class ScanDialog:
                 self._settings_manager.set_setting('scan_dialog.rce_enabled', self.rce_enabled_var.get())
                 self._settings_manager.set_setting('scan_dialog.bulk_probe_enabled', self.bulk_probe_enabled_var.get())
                 self._settings_manager.set_setting('scan_dialog.bulk_extract_enabled', self.bulk_extract_enabled_var.get())
+                self._settings_manager.set_setting('scan_dialog.bulk_extract_skip_indicators', self.skip_indicator_extract_var.get())
 
                 # Save region selections
                 self._settings_manager.set_setting('scan_dialog.region_africa', self.africa_var.get())
@@ -1826,7 +1841,8 @@ class ScanDialog:
             'verbose': verbose_enabled,
             'rce_enabled': self.rce_enabled_var.get(),
             'bulk_probe_enabled': self.bulk_probe_enabled_var.get(),
-            'bulk_extract_enabled': self.bulk_extract_enabled_var.get()
+            'bulk_extract_enabled': self.bulk_extract_enabled_var.get(),
+            'bulk_extract_skip_indicators': self.skip_indicator_extract_var.get()
         }
 
         return scan_options
@@ -1879,8 +1895,10 @@ class ScanDialog:
                 # Load bulk operation settings
                 bulk_probe_enabled = bool(self._settings_manager.get_setting('scan_dialog.bulk_probe_enabled', False))
                 bulk_extract_enabled = bool(self._settings_manager.get_setting('scan_dialog.bulk_extract_enabled', False))
+                skip_extract_indicators = bool(self._settings_manager.get_setting('scan_dialog.bulk_extract_skip_indicators', True))
                 self.bulk_probe_enabled_var.set(bulk_probe_enabled)
                 self.bulk_extract_enabled_var.set(bulk_extract_enabled)
+                self.skip_indicator_extract_var.set(skip_extract_indicators)
 
                 # Load region selections
                 africa = bool(self._settings_manager.get_setting('scan_dialog.region_africa', False))

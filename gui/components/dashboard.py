@@ -1018,9 +1018,11 @@ class DashboardWidget:
 
             # Query database for servers with successful authentication (keep UI responsive)
             def _fetch_servers():
-                return self._get_servers_with_successful_auth()
+                return self._get_servers_for_bulk_ops(
+                    skip_indicator_extract=scan_options.get("bulk_extract_skip_indicators", True)
+                )
 
-            successful_servers, fetch_error = self._run_background_fetch(
+            servers_for_ops, fetch_error = self._run_background_fetch(
                 title="Preparing Bulk Operations",
                 message="Gathering servers with successful authentication...",
                 fetch_fn=_fetch_servers
@@ -1038,7 +1040,10 @@ class DashboardWidget:
                     pass
                 return
 
-            if not successful_servers:
+            probe_targets = servers_for_ops.get("probe") if isinstance(servers_for_ops, dict) else []
+            extract_targets = servers_for_ops.get("extract") if isinstance(servers_for_ops, dict) else []
+
+            if not probe_targets and not extract_targets and (bulk_probe_enabled or bulk_extract_enabled):
                 # Show info message only if bulk operations were enabled
                 messagebox.showinfo(
                     "Bulk Operations Skipped",
@@ -1056,12 +1061,20 @@ class DashboardWidget:
             summary_stack: List[Tuple[str, List[Dict[str, Any]]]] = []
 
             if bulk_probe_enabled:
-                probe_results = self._execute_batch_probe(successful_servers)
+                probe_results = self._execute_batch_probe(probe_targets)
                 summary_stack.append(("probe", probe_results))
 
             if bulk_extract_enabled:
-                extract_results = self._execute_batch_extract(successful_servers)
-                summary_stack.append(("extract", extract_results))
+                if not extract_targets:
+                    summary_stack.append(("extract", [{
+                        "ip_address": "",
+                        "action": "extract",
+                        "status": "skipped",
+                        "notes": "All accessible hosts were flagged with indicators; extract skipped."
+                    }]))
+                else:
+                    extract_results = self._execute_batch_extract(extract_targets)
+                    summary_stack.append(("extract", extract_results))
 
             # Present summaries in LIFO order
             while summary_stack:
@@ -1089,21 +1102,40 @@ class DashboardWidget:
             except Exception:
                 pass
 
-    def _get_servers_with_successful_auth(self) -> list:
-        """Query database for servers with successful authentication."""
+    def _get_servers_for_bulk_ops(self, skip_indicator_extract: bool = True) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Gather servers eligible for bulk probe and extract.
+
+        Probe: accessible_shares > 0
+        Extract: accessible_shares > 0 AND (no indicators) unless toggle disabled
+        """
+        result = {"probe": [], "extract": []}
         try:
             if not self.db_reader:
-                return []
+                return result
 
-            # Use enhanced server list view; grab a generous page to cover recent scan
             servers, _ = self.db_reader.get_server_list(limit=5000, offset=0, country_filter=None, recent_scan_only=True)
 
-            # Filter for servers with at least one accessible share
-            return [s for s in servers if (s.get("accessible_shares") or 0) > 0]
+            for server in servers:
+                accessible = (server.get("accessible_shares") or 0) > 0
+                if not accessible:
+                    continue
+
+                result["probe"].append(server)
+
+                indicator_matches = int(server.get("indicator_matches", 0) or 0)
+                probe_status = (server.get("probe_status") or "").lower()
+                is_issue = probe_status == "issue" or indicator_matches > 0
+
+                if skip_indicator_extract and is_issue:
+                    continue
+
+                result["extract"].append(server)
 
         except Exception as e:
-            _logger.error("Error querying servers with successful auth: %s", e)
-            return []
+            _logger.error("Error querying servers for bulk ops: %s", e)
+
+        return result
 
     def _load_indicator_patterns(self) -> None:
         """Load ransomware indicator patterns from SMBSeek config."""

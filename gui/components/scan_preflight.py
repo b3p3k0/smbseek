@@ -197,6 +197,7 @@ class ScanPreflightController:
     def run(self) -> Optional[Dict[str, Any]]:
         probe_enabled = self.scan_options.get('bulk_probe_enabled', False)
         extract_enabled = self.scan_options.get('bulk_extract_enabled', False)
+        self.skip_indicator_extract = bool(self.scan_options.get('bulk_extract_skip_indicators', True))
         rce_enabled = bool(self.scan_options.get('rce_enabled', False))
 
         if not any((probe_enabled, extract_enabled, rce_enabled)):
@@ -247,7 +248,7 @@ class ScanPreflightController:
             self.scan_options['rce_enabled'] = False
             self.summary_lines.append('RCE disabled (requires probe)')
         elif self.scan_options.get('rce_enabled'):
-            self.summary_lines.append('RCE analysis will run with probe results')
+                self.summary_lines.append('RCE analysis will run with probe results')
 
         if not self.summary_lines:
             self.summary_lines.append('No optional post-scan actions selected')
