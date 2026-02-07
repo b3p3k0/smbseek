@@ -59,7 +59,7 @@ The main window. From here you can:
 
 ### Server List
 
-This is where you spend most of your time. Shows discovered SMB hosts with IP, country, auth method, and share counts as well as status indicators and a favorite/avoid list.
+ Shows discovered SMB hosts with IP, country, auth method, and share counts as well as status indicators and a favorite/avoid list.
 
 **Operations** (right-click a host or bottom row buttons):
 - **Probe** — enumerate shares, detect ransomware indicators
@@ -78,6 +78,8 @@ The viewer auto-detects binary files and switches to hex mode. Text files get an
 Files over the specified maximum (default: 5 MB) trigger a warning—you can bump that limit in `conf/config.json` under `file_browser.viewer.max_view_size_mb`, or click "Ignore Once" to load anyway (hard cap: 1 GB).
 
 Downloads land in quarantine (`~/.smbseek/quarantine/`). The browser never writes to remote systems.
+
+**Faster downloads:** Folder selections now stream enumeration and downloads concurrently, and per-file progress updates while bytes are flowing. Large downloads start immediately instead of waiting for full folder expansion.
 
 ### Extracting Files
 
@@ -109,7 +111,7 @@ Pry includes lockout detection and configurable delays between attempts. That sa
 
 ## Configuration
 
-App settings live in `conf/config.json`. The example file (`conf/config.json.example`) documents every option.
+App settings are stored in `conf/config.json`. The example file (`conf/config.json.example`) documents every option.
 
 Key sections:
 - `shodan.api_key` — required for discovery
@@ -121,7 +123,7 @@ Key sections:
 Two additional files hold editable lists:
 
 - `conf/exclusion_list.json` — Organizations to skip during Shodan queries (hosting providers, ISPs you don't care about etc.). Add entries to the `organizations` array.
-- `conf/ransomware_indicators.json` — Filename patterns checked during probe. Matches flag a server as potentially compromised.
+- `conf/ransomware_indicators.json` — Filename patterns checked during probe. Matches flag a server as likely compromised.
 
 These are separate so you can customize or share them without touching app settings.
 
@@ -176,7 +178,7 @@ The CLI is useful for scripting and automation. The GUI uses the same backend.
 ```bash
 ./smbseek --country US              # Discover US servers
 ./smbseek --country US,GB,CA        # Multiple countries
-./smbseek --string "SIPR files"        # Search by keyword
+./smbseek --string "SIPR files"     # Search by keyword
 ./smbseek --verbose                 # Detailed output
 ```
 
@@ -188,11 +190,10 @@ Results persist to `smbseek.db` (SQLite). For full CLI documentation, see [docs/
 
 This tool is for authorized security assessments only. Scan networks you own or have written permission to test. Unauthorized access to computer systems is illegal in most places.
 
-SMBSeek enforces SMB2+/signing by default and includes rate limiting, but it's still your responsibility to use it legally.
 
 ---
 
-## Credits
+## Acknowledgements
 
 **Pry password logic** derived from [mmcbrute](https://github.com/giMini/mmcbrute) (BSD-3-Clause)
 

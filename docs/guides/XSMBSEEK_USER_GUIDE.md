@@ -725,6 +725,7 @@ The Server List and Server Details views include a **Browse (read-only)** action
 - Lists directories over SMB1/2/3 with enforced limits (entries, depth, path length, and timeouts).
 - No previews or execution. The only action is **Download to quarantine**; files land under `~/.smbseek/quarantine/<timestamp>/<host>/<share>/` with exec bits cleared.
 - Entry points: action bar button, row context menu, `Ctrl+B`, and the Browse button inside Server Details.
+- Downloads begin as soon as files are discovered: directory expansion now streams into downloads, and per-file progress updates while bytes flow for quicker feedback.
 
 **Configuration:**
 - Tune limits in `conf/config.json` under `file_browser` (`allow_smb1`, `connect_timeout_seconds`, `request_timeout_seconds`, `max_entries_per_dir`, `max_depth`, `max_path_length`, `download_chunk_mb`, `quarantine_root`).
