@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 import time
+import queue
 
 from shared.smb_browser import SMBNavigator, ListResult, Entry, ReadResult
 try:
@@ -98,6 +99,7 @@ class FileBrowserWindow:
         self.theme = theme
         self.config_path = config_path
         self.config = _load_file_browser_config(config_path)
+        self.download_cancel_event: Optional[threading.Event] = None
         self.settings_manager = settings_manager
         self.share_credentials = share_credentials or {}
         self.on_extracted = on_extracted
@@ -323,6 +325,8 @@ class FileBrowserWindow:
 
     def _on_cancel(self) -> None:
         self.navigator.cancel()
+        if self.download_cancel_event:
+            self.download_cancel_event.set()
         self._set_status("Cancellation requested…")
         self.btn_cancel.configure(state=tk.DISABLED)
 
@@ -550,6 +554,9 @@ class FileBrowserWindow:
         self.list_thread.start()
 
     def _start_download_thread(self, files_with_mtime: List[Tuple[str, Optional[float]]], remote_dirs: List[str], folder_limits: Optional[Dict[str, Any]]) -> None:
+        """
+        Stream directory expansion into a bounded queue and start downloads immediately.
+        """
         def worker():
             try:
                 self._set_busy(True)
@@ -559,49 +566,141 @@ class FileBrowserWindow:
                     self.current_share,
                     base_path=self.config.get("quarantine_root"),
                 )
-                files_to_download = list(files_with_mtime)  # List of (path, mtime) tuples
+
+                q: queue.Queue = queue.Queue(maxsize=200)
                 expand_errors: List[Tuple[str, str]] = []
-                if remote_dirs and folder_limits:
-                    self._safe_after(0, lambda: self._set_status("Enumerating selected folders..."))
-                    expanded, skipped, expand_errors = self._expand_directories(remote_dirs, folder_limits)
-                    files_to_download.extend(expanded)
-                total = len(files_to_download)
-                completed = 0
                 errors: List[Tuple[str, str]] = []
+                completed = 0
+                total_enqueued = 0
+                done_enumerating = threading.Event()
+                cancel_event = threading.Event()
+                self.download_cancel_event = cancel_event
 
-                for remote_path, mtime in files_to_download:
-                    self._safe_after(0, lambda rp=remote_path, c=completed, t=total: self._set_status(f"Downloading {rp} ({c+1}/{t})"))
+                limits = folder_limits or {}
+                max_files = limits.get("max_files", 0)
+                max_total_mb = limits.get("max_total_mb", 0)
+                max_file_mb = limits.get("max_file_mb", 0)
+                max_total_bytes = max_total_mb * 1024 * 1024 if max_total_mb else 0
+                max_file_bytes = max_file_mb * 1024 * 1024 if max_file_mb else 0
+                bytes_enqueued = 0
+
+                def enqueue_file(path: str, mtime: Optional[float], size: int) -> bool:
+                    nonlocal total_enqueued, bytes_enqueued
+                    if cancel_event.is_set():
+                        return False
+                    if max_file_bytes and size > max_file_bytes:
+                        expand_errors.append((path, "skipped: exceeds per-file limit"))
+                        return True
+                    if max_total_bytes and (bytes_enqueued + size) > max_total_bytes:
+                        expand_errors.append((path, "total size limit reached"))
+                        return False
+                    if max_files and total_enqueued >= max_files:
+                        expand_errors.append((path, "file limit reached"))
+                        return False
                     try:
-                        last_update = {"ts": 0}
+                        q.put((path, mtime, size), timeout=0.5)
+                    except queue.Full:
+                        return enqueue_file(path, mtime, size) if not cancel_event.is_set() else False
+                    total_enqueued += 1
+                    bytes_enqueued += size
+                    return True
 
-                        def _progress(bytes_written: int, _total_unused: Optional[int]) -> None:
-                            # Throttle UI updates to keep Tk responsive
-                            now = time.time()
+                def producer():
+                    try:
+                        # Seed initial explicit files
+                        for remote_path, mtime in files_with_mtime:
+                            if cancel_event.is_set():
+                                break
+                            enqueue_file(remote_path, mtime, 0)
+
+                        if remote_dirs and folder_limits:
+                            self._safe_after(0, lambda: self._set_status("Enumerating selected folders..."))
+                            enumerated = 0
+                            stack: List[Tuple[str, int]] = [(d, 0) for d in remote_dirs]
+                            max_depth = limits.get("max_depth", 0)
+                            extension_mode = limits.get("extension_mode", "download_all")
+                            included_ext = [ext.lower() for ext in limits.get("included_extensions", [])]
+                            excluded_ext = [ext.lower() for ext in limits.get("excluded_extensions", [])]
+                            while stack and not cancel_event.is_set():
+                                current_path, depth = stack.pop()
+                                if max_depth and depth > max_depth:
+                                    continue
+                                try:
+                                    entries = self.navigator.list_dir(current_path)
+                                except Exception as exc:
+                                    expand_errors.append((current_path, str(exc)))
+                                    continue
+                                for entry in entries.entries:
+                                    if cancel_event.is_set():
+                                        break
+                                    name = entry.name
+                                    rel = self._join_path(current_path, name)
+                                    if entry.is_dir:
+                                        stack.append((rel, depth + 1))
+                                        continue
+                                    size = entry.size or 0
+                                    if not self._should_include_extension(name, limits.get("extension_mode", "download_all"),
+                                                                          [ext.lower() for ext in limits.get("included_extensions", [])],
+                                                                          [ext.lower() for ext in limits.get("excluded_extensions", [])]):
+                                        continue
+                                    if not enqueue_file(rel, entry.modified_time, size):
+                                        break
+                                    enumerated += 1
+                                    if enumerated % 50 == 0:
+                                        self._safe_after(0, lambda count=enumerated, qsize=q.qsize(): self._set_status(f"Enumerating... {count} files queued ({qsize} ready)"))
+                    finally:
+                        done_enumerating.set()
+
+                def consumer():
+                    nonlocal completed
+                    last_status = {"ts": 0}
+                    while not (done_enumerating.is_set() and q.empty()) and not cancel_event.is_set():
+                        try:
+                            item = q.get(timeout=0.2)
+                        except queue.Empty:
+                            continue
+                        remote_path, mtime, _size = item
+                        idx = completed + 1
+                        self._safe_after(0, lambda rp=remote_path, c=completed, t=lambda: max(total_enqueued, completed + 1): self._set_status(f"Downloading {rp} ({c+1}/{t()})"))
+                        try:
+                            last_update = {"ts": 0}
+
+                            def _progress(bytes_written: int, _total_unused: Optional[int]) -> None:
+                                now = time.time()
                             if now - last_update["ts"] < 0.2:
                                 return
-                            last_update["ts"] = now
-                            self._safe_after(0, lambda bw=bytes_written, rp=remote_path, c=completed, t=total: self._set_status(
-                                f"Downloading {rp} ({c+1}/{t}) – {self._format_bytes(bw)}"))
+                                last_update["ts"] = now
+                                self._safe_after(0, lambda bw=bytes_written, rp=remote_path, c=completed: self._set_status(
+                                    f"Downloading {rp} ({c+1}/{max(total_enqueued, completed+1)}) – {self._format_bytes(bw)}"))
 
-                        result = self.navigator.download_file(
-                            remote_path,
-                            dest_dir,
-                            preserve_structure=True,
-                            mtime=mtime,
-                            progress_callback=_progress
-                        )
-                        try:
-                            host_dir = Path(dest_dir).parent.parent  # host/date/share
-                            log_quarantine_event(host_dir, f"downloaded {self.current_share}{remote_path} -> {result.saved_path}")
-                        except Exception:
-                            pass
-                        completed += 1
-                    except Exception as e:
-                        friendly = self._map_download_error(e)
-                        errors.append((remote_path, friendly))
-                        continue
+                            result = self.navigator.download_file(
+                                remote_path,
+                                dest_dir,
+                                preserve_structure=True,
+                                mtime=mtime,
+                                progress_callback=_progress
+                            )
+                            try:
+                                host_dir = Path(dest_dir).parent.parent  # host/date/share
+                                log_quarantine_event(host_dir, f"downloaded {self.current_share}{remote_path} -> {result.saved_path}")
+                            except Exception:
+                                pass
+                            completed += 1
+                        except Exception as e:
+                            friendly = self._map_download_error(e)
+                            errors.append((remote_path, friendly))
+                        finally:
+                            q.task_done()
 
-                summary_msg = f"Downloaded {completed}/{total} file(s)"
+                producer_thread = threading.Thread(target=producer, daemon=True)
+                consumer_thread = threading.Thread(target=consumer, daemon=True)
+                producer_thread.start()
+                consumer_thread.start()
+
+                producer_thread.join()
+                consumer_thread.join()
+
+                summary_msg = f"Downloaded {completed}/{max(total_enqueued, completed)} file(s)"
                 total_errors = len(errors) + len(expand_errors)
                 if total_errors:
                     summary_msg += f" ({total_errors} failed)"
