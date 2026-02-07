@@ -68,6 +68,13 @@ class ServerListWindowBatchMixin(ServerListWindowBatchOperationsMixin, ServerLis
 
         job_id = f"{job_type}-{len(self.active_jobs)+1}-{int(threading.get_ident())}"
 
+        # Unit tracking: probe counts shares, others count targets
+        unit_label = "targets"
+        total_units = len(targets)
+        if job_type == "probe":
+            unit_label = "shares"
+            total_units = sum(len(t.get("shares", []) or []) for t in targets) or len(targets)
+
         job_record = {
             "id": job_id,
             "type": job_type,
@@ -77,13 +84,14 @@ class ServerListWindowBatchMixin(ServerListWindowBatchOperationsMixin, ServerLis
             "cancel_event": cancel_event,
             "results": [],
             "completed": 0,
-            "total": len(targets),
+            "total": total_units,
+            "unit_label": unit_label,
             "futures": [],
             "dialog": None,
         }
         self.active_jobs[job_id] = job_record
 
-        self._set_status(f"Running {job_type} batch (0/{len(targets)})…")
+        self._set_status(f"Running {job_type} batch (0/{total_units} {unit_label})…")
         self._update_action_buttons_state()
 
         if job_type == "pry":
@@ -104,13 +112,13 @@ class ServerListWindowBatchMixin(ServerListWindowBatchOperationsMixin, ServerLis
             dialog = self._init_batch_status_dialog(
                 "probe",
                 {
-                    "Targets": str(len(targets)),
+                    "Shares": str(total_units),
                     "Workers": str(worker_count),
                     "Max dirs/share": str(options.get("limits", {}).get("max_directories", "")),
                     "Max files/dir": str(options.get("limits", {}).get("max_files", "")),
                 },
                 cancel_event,
-                total=len(targets),
+                total=total_units,
             )
             job_record["dialog"] = dialog
         elif job_type == "extract":
@@ -210,10 +218,6 @@ class ServerListWindowBatchMixin(ServerListWindowBatchOperationsMixin, ServerLis
         except Exception:
             pass
 
-        # Update dialog progress (per target)
-        dialog = self.active_jobs.get(job_id, {}).get("dialog")
-        self.window.after(0, self._update_batch_status_dialog, dialog, self.active_jobs.get(job_id, {}).get("completed", 0), self.active_jobs.get(job_id, {}).get("total"), f"Probed {ip_address}")
-
         share_count = len(result.get("shares", []))
         notes: List[str] = []
         if share_count:
@@ -232,7 +236,8 @@ class ServerListWindowBatchMixin(ServerListWindowBatchOperationsMixin, ServerLis
             "ip_address": ip_address,
             "action": "probe",
             "status": "success",
-            "notes": ", ".join(notes)
+            "notes": ", ".join(notes),
+            "units": max(share_count, 1)
         }
 
     def _execute_extract_target(self, job_id: str, target: Dict[str, Any], options: Dict[str, Any], cancel_event: threading.Event) -> Dict[str, Any]:

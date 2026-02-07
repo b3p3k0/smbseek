@@ -67,11 +67,17 @@ class ServerListWindowBatchStatusMixin:
                 }
 
             job["results"].append(result)
-            job["completed"] += 1
+            units = 1
+            try:
+                units = int(result.get("units", 1))
+            except Exception:
+                units = 1
+            job["completed"] += max(units, 0)
             completed = job["completed"]
             total = job["total"]
             job_type = job["type"].title()
-            self._set_status(f"{job_type} batch {completed}/{total} complete")
+            unit_label = job.get("unit_label", "tasks")
+            self._set_status(f"{job_type} batch {completed}/{total} {unit_label} complete")
 
             if completed >= total:
                 self._finalize_batch_job(job_id, dialog)
