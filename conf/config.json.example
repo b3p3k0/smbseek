@@ -127,6 +127,7 @@
     "max_depth": 12,
     "max_path_length": 240,
     "download_chunk_mb": 4,
+    "max_download_size_mb": 25,
     "quarantine_root": "~/.smbseek/quarantine",
     "max_batch_files": 50,
     "folder_download": {

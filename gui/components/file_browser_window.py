@@ -60,6 +60,7 @@ def _load_file_browser_config(config_path: Optional[str]) -> Dict:
         "max_depth": 12,
         "max_path_length": 240,
         "download_chunk_mb": 4,
+        "max_download_size_mb": 25,
         "quarantine_root": "~/.smbseek/quarantine",
     }
     if not config_path:
@@ -271,6 +272,34 @@ class FileBrowserWindow:
         if not files and not dirs:
             messagebox.showinfo("No files", "No files or folders selected.", parent=self.window)
             return
+
+        # Pre-flight size check for files
+        max_dl_mb = float(self.config.get("max_download_size_mb", 25) or 0)
+        if max_dl_mb > 0:
+            over_limit = []
+            for item_id in selection:
+                item = self.tree.item(item_id)
+                values = item.get("values", [])
+                if len(values) > 5 and values[1] == "file":
+                    try:
+                        size_raw = int(values[5])
+                        if size_raw > max_dl_mb * 1024 * 1024:
+                            over_limit.append((values[0], size_raw))
+                    except Exception:
+                        continue
+            if over_limit:
+                names = ", ".join(n for n, _ in over_limit[:3])
+                if len(over_limit) > 3:
+                    names += f" … +{len(over_limit)-3} more"
+                proceed = messagebox.askyesno(
+                    "Large download",
+                    f"The selected file(s) exceed the download limit of {max_dl_mb:.0f} MB.\n"
+                    f"{names}\n\nDownload anyway?",
+                    icon="warning",
+                    parent=self.window,
+                )
+                if not proceed:
+                    return
 
         if len(files) > self.max_batch_files:
             proceed = messagebox.askyesno(
@@ -547,7 +576,8 @@ class FileBrowserWindow:
                             pass
                         completed += 1
                     except Exception as e:
-                        errors.append((remote_path, str(e)))
+                        friendly = self._map_download_error(e)
+                        errors.append((remote_path, friendly))
                         continue
 
                 summary_msg = f"Downloaded {completed}/{total} file(s)"
@@ -635,6 +665,19 @@ class FileBrowserWindow:
         if mode == "deny_only":
             return token not in excluded
         return True
+
+    @staticmethod
+    def _map_download_error(exc: Exception) -> str:
+        """Translate low-level download errors into user-friendly messages."""
+        text = str(exc)
+        lowered = text.lower()
+        if "protocolid" in lowered or "unpacked data doesn't match" in lowered:
+            return "Unexpected SMB response from server (often happens with large or partial transfers). File not saved."
+        if "timed out" in lowered or "timeout" in lowered:
+            return "Download timed out. Try again or reduce file size."
+        if "cancelled" in lowered:
+            return "Download cancelled."
+        return text
 
     def _ensure_connected(self) -> None:
         if self.navigator and self.current_share and self.navigator.share_name == self.current_share:
