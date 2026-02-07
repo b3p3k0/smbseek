@@ -62,6 +62,8 @@ def _load_file_browser_config(config_path: Optional[str]) -> Dict:
         "max_depth": 12,
         "max_path_length": 240,
         "download_chunk_mb": 4,
+        "download_worker_count": 2,
+        "download_large_file_mb": 25,
         "max_download_size_mb": 25,
         "quarantine_root": "~/.smbseek/quarantine",
     }
@@ -103,6 +105,18 @@ class FileBrowserWindow:
         self.settings_manager = settings_manager
         self.share_credentials = share_credentials or {}
         self.on_extracted = on_extracted
+
+        # Download tuning
+        self.download_workers = int(self.config.get("download_worker_count", 2) or 2)
+        self.download_workers = max(1, min(3, self.download_workers))
+        self.download_large_mb = int(self.config.get("download_large_file_mb", 25) or 25)
+        if self.settings_manager:
+            try:
+                self.download_workers = int(self.settings_manager.get_setting('file_browser.download_worker_count', self.download_workers))
+                self.download_large_mb = int(self.settings_manager.get_setting('file_browser.download_large_file_mb', self.download_large_mb))
+                self.download_workers = max(1, min(3, self.download_workers))
+            except Exception:
+                pass
 
         creds = detail_helpers._derive_credentials(self.auth_method)
         self.username, self.password = creds
@@ -168,6 +182,25 @@ class FileBrowserWindow:
 
         for btn in (self.btn_up, self.btn_refresh, self.btn_view, self.btn_download, self.btn_cancel):
             btn.pack(side=tk.LEFT, padx=5)
+
+        # Download tuning controls (workers + large threshold)
+        tuning_frame = tk.Frame(self.window)
+        tuning_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+        tk.Label(tuning_frame, text="Workers").pack(side=tk.LEFT, padx=(0, 4))
+        self.workers_var = tk.IntVar(value=self.download_workers)
+        workers_spin = tk.Spinbox(
+            tuning_frame, from_=1, to=3, width=3, textvariable=self.workers_var,
+            command=self._persist_tuning
+        )
+        workers_spin.pack(side=tk.LEFT)
+
+        tk.Label(tuning_frame, text="Large file MB").pack(side=tk.LEFT, padx=(10, 4))
+        self.large_mb_var = tk.IntVar(value=self.download_large_mb)
+        large_spin = tk.Spinbox(
+            tuning_frame, from_=1, to=1024, width=5, textvariable=self.large_mb_var,
+            command=self._persist_tuning
+        )
+        large_spin.pack(side=tk.LEFT)
 
         # Treeview for entries
         columns = ("name", "type", "size", "modified", "mtime_raw", "size_raw")
@@ -251,7 +284,7 @@ class FileBrowserWindow:
             messagebox.showinfo("No selection", "Select one or more files to download.", parent=self.window)
             return
 
-        files = []  # List of (path, mtime) tuples
+        files = []  # List of (path, mtime, size) tuples
         dirs = []
         skipped_dirs = 0
         for item_id in selection:
@@ -267,9 +300,15 @@ class FileBrowserWindow:
                     mtime_raw = float(mtime_raw)
                 except (ValueError, TypeError):
                     mtime_raw = None
+            size_raw = 0
+            if len(values) > 5:
+                try:
+                    size_raw = int(values[5])
+                except (ValueError, TypeError):
+                    size_raw = 0
             if type_label == "file":
                 remote_path = self._join_path(self.current_path, name)
-                files.append((remote_path, mtime_raw))
+                files.append((remote_path, mtime_raw, size_raw))
             else:
                 dir_path = self._join_path(self.current_path, name)
                 dirs.append(dir_path)
@@ -553,7 +592,7 @@ class FileBrowserWindow:
         self.list_thread = threading.Thread(target=worker, daemon=True)
         self.list_thread.start()
 
-    def _start_download_thread(self, files_with_mtime: List[Tuple[str, Optional[float]]], remote_dirs: List[str], folder_limits: Optional[Dict[str, Any]]) -> None:
+    def _start_download_thread(self, files_with_mtime: List[Tuple[str, Optional[float], int]], remote_dirs: List[str], folder_limits: Optional[Dict[str, Any]]) -> None:
         """
         Stream directory expansion into a bounded queue and start downloads immediately.
         """
@@ -561,13 +600,16 @@ class FileBrowserWindow:
             try:
                 self._set_busy(True)
                 self._ensure_connected()
+                worker_count = max(1, min(3, int(self.workers_var.get() or self.download_workers)))
+                large_threshold_bytes = max(1, int(self.large_mb_var.get() or self.download_large_mb)) * 1024 * 1024
                 dest_dir = build_quarantine_path(
                     self.ip_address,
                     self.current_share,
                     base_path=self.config.get("quarantine_root"),
                 )
 
-                q: queue.Queue = queue.Queue(maxsize=200)
+                q_small: queue.Queue = queue.Queue(maxsize=200)
+                q_large: queue.Queue = queue.Queue(maxsize=200)
                 expand_errors: List[Tuple[str, str]] = []
                 errors: List[Tuple[str, str]] = []
                 completed = 0
@@ -597,10 +639,13 @@ class FileBrowserWindow:
                     if max_files and total_enqueued >= max_files:
                         expand_errors.append((path, "file limit reached"))
                         return False
-                    try:
-                        q.put((path, mtime, size), timeout=0.5)
-                    except queue.Full:
-                        return enqueue_file(path, mtime, size) if not cancel_event.is_set() else False
+                    target_q = q_large if (size and size > large_threshold_bytes) else q_small
+                    while not cancel_event.is_set():
+                        try:
+                            target_q.put((path, mtime, size), timeout=0.5)
+                            break
+                        except queue.Full:
+                            continue
                     total_enqueued += 1
                     bytes_enqueued += size
                     return True
@@ -608,10 +653,10 @@ class FileBrowserWindow:
                 def producer():
                     try:
                         # Seed initial explicit files
-                        for remote_path, mtime in files_with_mtime:
+                        for remote_path, mtime, size in files_with_mtime:
                             if cancel_event.is_set():
                                 break
-                            enqueue_file(remote_path, mtime, 0)
+                            enqueue_file(remote_path, mtime, size or 0)
 
                         if remote_dirs and folder_limits:
                             self._safe_after(0, lambda: self._set_status("Enumerating selected folders..."))
@@ -647,16 +692,16 @@ class FileBrowserWindow:
                                         break
                                     enumerated += 1
                                     if enumerated % 50 == 0:
-                                        self._safe_after(0, lambda count=enumerated, qsize=q.qsize(): self._set_status(f"Enumerating... {count} files queued ({qsize} ready)"))
+                                        self._safe_after(0, lambda count=enumerated, qs=q_small.qsize()+q_large.qsize(): self._set_status(f"Enumerating... {count} files queued ({qs} ready)"))
                     finally:
                         done_enumerating.set()
 
-                def consumer():
+                def consumer(target_q: queue.Queue):
                     nonlocal completed
                     last_status = {"ts": 0}
-                    while not (done_enumerating.is_set() and q.empty()) and not cancel_event.is_set():
+                    while not (done_enumerating.is_set() and q_small.empty() and q_large.empty()) and not cancel_event.is_set():
                         try:
-                            item = q.get(timeout=0.2)
+                            item = target_q.get(timeout=0.2)
                         except queue.Empty:
                             continue
                         remote_path, mtime, _size = item
@@ -672,7 +717,7 @@ class FileBrowserWindow:
                                 last_update["ts"] = now
                                 human = _format_file_size(bytes_written)
                                 self._safe_after(0, lambda bw=bytes_written, rp=remote_path, c=completed, h=human: self._set_status(
-                                    f"Downloading {rp} ({c+1}/{max(total_enqueued, completed+1)}) – {h}"))
+                                    f"Downloading {rp} ({c+1}/{max(total_enqueued, completed+1)}) – {h} (workers {self.workers_var.get()})"))
 
                             result = self.navigator.download_file(
                                 remote_path,
@@ -691,15 +736,22 @@ class FileBrowserWindow:
                             friendly = self._map_download_error(e)
                             errors.append((remote_path, friendly))
                         finally:
-                            q.task_done()
+                            target_q.task_done()
 
                 producer_thread = threading.Thread(target=producer, daemon=True)
-                consumer_thread = threading.Thread(target=consumer, daemon=True)
+                consumer_threads = []
+                for _ in range(worker_count):
+                    consumer_threads.append(threading.Thread(target=consumer, args=(q_small,), daemon=True))
+                # Single worker for large files
+                consumer_threads.append(threading.Thread(target=consumer, args=(q_large,), daemon=True))
+
                 producer_thread.start()
-                consumer_thread.start()
+                for t in consumer_threads:
+                    t.start()
 
                 producer_thread.join()
-                consumer_thread.join()
+                for t in consumer_threads:
+                    t.join()
 
                 summary_msg = f"Downloaded {completed}/{max(total_enqueued, completed)} file(s)"
                 total_errors = len(errors) + len(expand_errors)
@@ -919,6 +971,20 @@ class FileBrowserWindow:
             self.settings_manager.set_setting('file_browser.folder_limits', limits)
         except Exception:
             pass
+
+    def _persist_tuning(self) -> None:
+        """Persist worker/threshold tuning from UI controls."""
+        try:
+            self.download_workers = max(1, min(3, int(self.workers_var.get())))
+            self.download_large_mb = max(1, int(self.large_mb_var.get()))
+        except Exception:
+            return
+        if self.settings_manager:
+            try:
+                self.settings_manager.set_setting('file_browser.download_worker_count', self.download_workers)
+                self.settings_manager.set_setting('file_browser.download_large_file_mb', self.download_large_mb)
+            except Exception:
+                pass
 
     # --- Path helpers --------------------------------------------------
 
