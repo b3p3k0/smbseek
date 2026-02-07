@@ -14,6 +14,7 @@ from tkinter import ttk, messagebox
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
+import time
 
 from shared.smb_browser import SMBNavigator, ListResult, Entry, ReadResult
 try:
@@ -561,6 +562,7 @@ class FileBrowserWindow:
                 files_to_download = list(files_with_mtime)  # List of (path, mtime) tuples
                 expand_errors: List[Tuple[str, str]] = []
                 if remote_dirs and folder_limits:
+                    self._safe_after(0, lambda: self._set_status("Enumerating selected folders..."))
                     expanded, skipped, expand_errors = self._expand_directories(remote_dirs, folder_limits)
                     files_to_download.extend(expanded)
                 total = len(files_to_download)
@@ -570,7 +572,24 @@ class FileBrowserWindow:
                 for remote_path, mtime in files_to_download:
                     self._safe_after(0, lambda rp=remote_path, c=completed, t=total: self._set_status(f"Downloading {rp} ({c+1}/{t})"))
                     try:
-                        result = self.navigator.download_file(remote_path, dest_dir, preserve_structure=True, mtime=mtime)
+                        last_update = {"ts": 0}
+
+                        def _progress(bytes_written: int, _total_unused: Optional[int]) -> None:
+                            # Throttle UI updates to keep Tk responsive
+                            now = time.time()
+                            if now - last_update["ts"] < 0.2:
+                                return
+                            last_update["ts"] = now
+                            self._safe_after(0, lambda bw=bytes_written, rp=remote_path, c=completed, t=total: self._set_status(
+                                f"Downloading {rp} ({c+1}/{t}) – {self._format_bytes(bw)}"))
+
+                        result = self.navigator.download_file(
+                            remote_path,
+                            dest_dir,
+                            preserve_structure=True,
+                            mtime=mtime,
+                            progress_callback=_progress
+                        )
                         try:
                             host_dir = Path(dest_dir).parent.parent  # host/date/share
                             log_quarantine_event(host_dir, f"downloaded {self.current_share}{remote_path} -> {result.saved_path}")
@@ -619,6 +638,7 @@ class FileBrowserWindow:
         errors: List[Tuple[str, str]] = []
         skipped = 0
         total_bytes = 0
+        enumerated = 0
 
         stack: List[Tuple[str, int]] = [(d, 0) for d in dirs]
 
@@ -653,6 +673,9 @@ class FileBrowserWindow:
 
                 expanded.append((rel, entry.modified_time))
                 total_bytes += size
+                enumerated += 1
+                if enumerated % 50 == 0:
+                    self._safe_after(0, lambda count=enumerated: self._set_status(f"Enumerating... {count} files queued"))
                 if max_files and len(expanded) >= max_files:
                     return expanded, skipped, errors
 

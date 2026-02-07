@@ -194,7 +194,14 @@ class SMBNavigator:
 
         return ListResult(entries=entries, truncated=truncated, warning=warning)
 
-    def download_file(self, remote_path: str, dest_dir: Path, preserve_structure: bool = False, mtime: Optional[float] = None) -> DownloadResult:
+    def download_file(
+        self,
+        remote_path: str,
+        dest_dir: Path,
+        preserve_structure: bool = False,
+        mtime: Optional[float] = None,
+        progress_callback: Optional[callable] = None,
+    ) -> DownloadResult:
         conn = self._require_conn()
         share = self._require_share()
 
@@ -224,6 +231,11 @@ class SMBNavigator:
                 raise RuntimeError("Download cancelled")
             dest_file.write(data)
             bytes_written += len(data)
+            if progress_callback:
+                try:
+                    progress_callback(bytes_written, None)  # total unknown here
+                except Exception:
+                    pass
 
         try:
             with open(dest_path, "wb") as dest_file:
