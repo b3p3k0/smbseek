@@ -79,6 +79,16 @@ class ServerListWindowBatchStatusMixin:
             unit_label = job.get("unit_label", "tasks")
             self._set_status(f"{job_type} batch {completed}/{total} {unit_label} complete")
 
+            # Refresh dialog progress with latest counts
+            dialog = job.get("dialog")
+            message = None
+            try:
+                ip = result.get("ip_address") or ""
+                message = f"{ip} ({units} {unit_label})" if ip else None
+            except Exception:
+                message = None
+            self._update_batch_status_dialog(dialog, completed, total, message)
+
             if completed >= total:
                 self._finalize_batch_job(job_id, dialog)
 
