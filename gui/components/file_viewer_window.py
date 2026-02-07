@@ -168,13 +168,21 @@ class FileViewerWindow:
         content_frame = tk.Frame(self.window)
         content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
+        # Use a reliable monospace font - critical for hex view alignment
+        mono_font = ("Courier", 11)  # Universal monospace, slightly larger for readability
+        try:
+            if hasattr(self.theme, 'fonts') and isinstance(self.theme.fonts, dict):
+                mono_font = self.theme.fonts.get("mono", mono_font)
+        except Exception:
+            pass
+
         self.text_widget = tk.Text(
             content_frame,
             wrap=tk.NONE,
-            font=self.theme.fonts.get("mono", ("Courier", 10)),
-            bg=self.theme.colors.get("primary_bg", "#1e1e1e"),
-            fg=self.theme.colors.get("text", "#ffffff"),
-            insertbackground=self.theme.colors.get("text", "#ffffff"),
+            font=mono_font,
+            bg=self.theme.colors.get("primary_bg", "#1e1e1e") if self.theme else "#1e1e1e",
+            fg=self.theme.colors.get("text", "#ffffff") if self.theme else "#ffffff",
+            insertbackground=self.theme.colors.get("text", "#ffffff") if self.theme else "#ffffff",
             state=tk.DISABLED,
         )
 
