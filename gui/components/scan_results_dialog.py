@@ -29,25 +29,21 @@ class ScanResultsDialog:
     - Summary statistics (hosts scanned, accessible, etc.)
     - Scan duration and timing information
     - Error details for failed scans
-    - Options to view detailed results or close
     
     Design Pattern: Status-aware dialog that adapts content
     based on scan outcome while maintaining consistent interface.
     """
     
-    def __init__(self, parent: tk.Widget, scan_results: Dict[str, Any],
-                 view_details_callback: Optional[Callable[[], None]] = None):
+    def __init__(self, parent: tk.Widget, scan_results: Dict[str, Any]):
         """
         Initialize scan results dialog.
         
         Args:
             parent: Parent widget
             scan_results: Dictionary containing scan results and metadata
-            view_details_callback: Function to call when "See More" is clicked
         """
         self.parent = parent
         self.scan_results = scan_results
-        self.view_details_callback = view_details_callback
         self.theme = get_theme()
         
         # Dialog result
@@ -401,25 +397,6 @@ class ScanResultsDialog:
         self.theme.apply_to_widget(self.close_button, "button_secondary")
         self.close_button.pack(side=tk.RIGHT, padx=(10, 0))
         
-        # See More button (only if we have results and callback)
-        status = self.scan_results.get("status", "unknown")
-        has_results = (
-            status in ["completed", "interrupted"] and
-            (self.scan_results.get("hosts_scanned", 0) > 0 or
-             self.scan_results.get("accessible_hosts", 0) > 0)
-        )
-        
-        if has_results and self.view_details_callback:
-            see_more_button = tk.Button(
-                button_frame,
-                text="📊 See More Details",
-                command=self._view_details,
-                relief="flat",
-                borderwidth=0
-            )
-            self.theme.apply_to_widget(see_more_button, "button_primary")
-            see_more_button.pack(side=tk.RIGHT)
-    
     def _setup_event_handlers(self) -> None:
         """Setup event handlers."""
         self.dialog.protocol("WM_DELETE_WINDOW", self._close_dialog)
@@ -458,40 +435,28 @@ class ScanResultsDialog:
         except (ValueError, TypeError):
             return "Unknown"
     
-    def _view_details(self) -> None:
-        """View detailed results."""
-        self.result = "view_details"
-        if self.view_details_callback:
-            self.view_details_callback()
-        self.dialog.destroy()
-    
     def _close_dialog(self) -> None:
         """Close dialog."""
         self.result = "close"
         self.dialog.destroy()
     
     def show(self) -> Optional[str]:
-        """Show dialog and wait for result.
-        
-        Returns:
-            "view_details" if See More was clicked, "close" if closed
-        """
+        """Show dialog and wait for result."""
         # Wait for dialog to close
         self.parent.wait_window(self.dialog)
         return self.result
 
 
 def show_scan_results_dialog(parent: tk.Widget, scan_results: Dict[str, Any],
-                             view_details_callback: Optional[Callable[[], None]] = None) -> Optional[str]:
+                             ) -> Optional[str]:
     """Show scan results dialog.
     
     Args:
         parent: Parent widget
         scan_results: Dictionary containing scan results and metadata
-        view_details_callback: Function to call when "See More" is clicked
         
     Returns:
-        Dialog result ("view_details" or "close")
+        Dialog result ("close")
     """
-    dialog = ScanResultsDialog(parent, scan_results, view_details_callback)
+    dialog = ScanResultsDialog(parent, scan_results)
     return dialog.show()

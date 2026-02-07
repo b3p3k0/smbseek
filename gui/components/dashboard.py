@@ -1593,22 +1593,10 @@ class DashboardWidget:
     def _show_scan_results(self, results: Dict[str, Any]) -> None:
         """Show scan results dialog."""
         try:
-            def view_details_callback():
-                try:
-                    # Open server list with date filter
-                    if self.drill_down_callback:
-                        self.drill_down_callback("server_list", {"filter_recent": True})
-                except Exception as e:
-                    messagebox.showerror(
-                        "View Details Error",
-                        f"Failed to open detailed results:\n{str(e)}"
-                    )
-            
-            # Show results dialog
+            # Show results dialog (details button removed by workflow change)
             show_scan_results_dialog(
                 parent=self.parent,
-                scan_results=results,
-                view_details_callback=view_details_callback
+                scan_results=results
             )
             
         except Exception as e:
