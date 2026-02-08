@@ -699,13 +699,33 @@ class FileBrowserWindow:
                 def consumer(target_q: queue.Queue):
                     nonlocal completed
                     last_status = {"ts": 0}
+                    # Per-worker navigator to avoid sharing SMBConnection across threads
+                    worker_nav = SMBNavigator(
+                        allow_smb1=bool(self.config.get("allow_smb1", True)),
+                        connect_timeout=float(self.config.get("connect_timeout_seconds", 8)),
+                        request_timeout=float(self.config.get("request_timeout_seconds", 10)),
+                        max_entries=int(self.config.get("max_entries_per_dir", 5000)),
+                        max_depth=int(self.config.get("max_depth", 12)),
+                        max_path_length=int(self.config.get("max_path_length", 240)),
+                        download_chunk_mb=int(self.config.get("download_chunk_mb", 4)),
+                    )
+                    try:
+                        worker_nav.connect(
+                            host=self.ip_address,
+                            share=self.current_share,
+                            username=self.username,
+                            password=self.password,
+                        )
+                    except Exception as exc:
+                        errors.append(("", f"Worker connect failed: {exc}"))
+                        return
+
                     while not (done_enumerating.is_set() and q_small.empty() and q_large.empty()) and not cancel_event.is_set():
                         try:
                             item = target_q.get(timeout=0.2)
                         except queue.Empty:
                             continue
                         remote_path, mtime, _size = item
-                        idx = completed + 1
                         self._safe_after(0, lambda rp=remote_path, c=completed, t=lambda: max(total_enqueued, completed + 1): self._set_status(f"Downloading {rp} ({c+1}/{t()})"))
                         try:
                             last_update = {"ts": 0}
@@ -716,10 +736,10 @@ class FileBrowserWindow:
                                     return
                                 last_update["ts"] = now
                                 human = _format_file_size(bytes_written)
-                                self._safe_after(0, lambda bw=bytes_written, rp=remote_path, c=completed, h=human: self._set_status(
+                                self._safe_after(0, lambda rp=remote_path, c=completed, h=human: self._set_status(
                                     f"Downloading {rp} ({c+1}/{max(total_enqueued, completed+1)}) – {h} (workers {self.workers_var.get()})"))
 
-                            result = self.navigator.download_file(
+                            result = worker_nav.download_file(
                                 remote_path,
                                 dest_dir,
                                 preserve_structure=True,
@@ -737,6 +757,10 @@ class FileBrowserWindow:
                             errors.append((remote_path, friendly))
                         finally:
                             target_q.task_done()
+                    try:
+                        worker_nav.disconnect()
+                    except Exception:
+                        pass
 
                 producer_thread = threading.Thread(target=producer, daemon=True)
                 consumer_threads = []
