@@ -55,6 +55,7 @@ Launch the GUI:
 The main window. From here you can:
 - Launch discovery scans (filtered by country or global)
 - Open the Server List to work with hosts you've found
+- Manage your database (import, export, merge, maintenance)
 - Edit configuration
 
 ### Server List

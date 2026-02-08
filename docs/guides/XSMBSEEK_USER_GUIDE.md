@@ -650,6 +650,37 @@ The GUI seamlessly integrates with the SMBSeek backend:
 - Complete database access and reporting
 - Configuration management with live editing
 
+### Database Tools (GUI)
+
+The dashboard includes a **DB Tools** button for managing your SQLite database without touching the command line.
+
+**Import & Merge:**
+
+- Load an external smbseek.db from another machine or colleague
+- Schema validation before merge — won't corrupt your data with incompatible files
+- Preview shows how many servers are new vs overlapping
+- Three conflict strategies: keep newer (default), prefer source, prefer current
+- Auto-backup before merge — enabled by default, disable at your own risk
+
+**Export & Backup:**
+
+- **Export As** creates an optimized copy at any location (uses VACUUM INTO)
+- **Quick Backup** drops a timestamped copy next to your database
+
+**Statistics:**
+
+- Server/share/vulnerability/file counts at a glance
+- Database size, date range, country distribution
+- Refreshes on demand
+
+**Maintenance:**
+
+- **Vacuum** reclaims disk space after deletions
+- **Integrity Check** runs SQLite's built-in verification
+- **Purge** deletes servers not seen in N days — shows exact cascade impact before you commit
+
+The merge algorithm compares `last_seen` timestamps when IPs overlap. User-specific data (favorites, avoid flags, probe cache) stays local and won't be overwritten by imports.
+
 ## 🔍 RCE Vulnerability Analysis
 
 SMBSeek includes experimental RCE (Remote Code Execution) vulnerability detection to identify known SMB security issues during enumeration.

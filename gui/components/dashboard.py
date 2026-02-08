@@ -329,6 +329,15 @@ class DashboardWidget:
         self.theme.apply_to_widget(servers_button, "button_secondary")
         servers_button.pack(side=tk.LEFT, padx=(0, 5))
 
+        # DB Tools button
+        db_tools_button = tk.Button(
+            actions_frame,
+            text="\U0001F5C4 DB Tools",  # File cabinet emoji
+            command=self._open_db_tools
+        )
+        self.theme.apply_to_widget(db_tools_button, "button_secondary")
+        db_tools_button.pack(side=tk.LEFT, padx=(0, 5))
+
         # Config button (existing functionality)
         config_button = tk.Button(
             actions_frame,
@@ -1651,6 +1660,34 @@ class DashboardWidget:
         """Open application configuration dialog."""
         if self.drill_down_callback:
             self.drill_down_callback("app_config", {})
+
+    def _open_db_tools(self) -> None:
+        """Open database tools dialog."""
+        from gui.components.db_tools_dialog import show_db_tools_dialog
+
+        if not self.db_reader:
+            messagebox.showerror(
+                "Database Not Found",
+                "No database is currently loaded."
+            )
+            return
+
+        db_path = str(self.db_reader.db_path)
+
+        show_db_tools_dialog(
+            parent=self.parent,
+            db_path=db_path,
+            on_database_changed=self._refresh_after_db_tools
+        )
+
+    def _refresh_after_db_tools(self) -> None:
+        """Refresh dashboard after DB tools operation."""
+        try:
+            if self.db_reader:
+                self.db_reader.clear_cache()
+            self._refresh_dashboard_data()
+        except Exception as e:
+            _logger.warning("Dashboard refresh error after DB tools: %s", e)
 
     def _open_about_dialog(self) -> None:
         dialog = tk.Toplevel(self.parent)
