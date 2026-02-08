@@ -63,7 +63,7 @@ class SMBSeekGUI:
             backend_path: Optional path to backend directory
         """
         self.mock_mode = mock_mode
-        self.config_path = config_path
+        self.config_path = None  # will be resolved below
         self.backend_path = backend_path
         
         # GUI state
@@ -77,6 +77,27 @@ class SMBSeekGUI:
         
         # Settings manager
         self.settings_manager = get_settings_manager()
+        # Resolve config path preference: prioritize CLI, else settings, else repo conf/config.json
+        try:
+            if config_path:
+                resolved_cfg = Path(config_path).expanduser().resolve()
+            else:
+                stored = self.settings_manager.get_setting('backend.config_path', '') if self.settings_manager else ''
+                if stored:
+                    resolved_cfg = Path(stored).expanduser().resolve()
+                else:
+                    resolved_cfg = Path.cwd() / "conf" / "config.json"
+            if not resolved_cfg.exists():
+                fallback = Path(__file__).resolve().parent.parent / "conf" / "config.json"
+                resolved_cfg = fallback
+            self.config_path = str(resolved_cfg)
+            if self.settings_manager:
+                try:
+                    self.settings_manager.set_setting('backend.config_path', self.config_path)
+                except Exception:
+                    pass
+        except Exception:
+            self.config_path = config_path or str(Path.cwd() / "conf" / "config.json")
 
         # Thread-safe UI dispatcher (initialized after root creation)
         self.ui_dispatcher = None
