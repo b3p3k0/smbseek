@@ -60,7 +60,19 @@ class BatchExtractSettingsDialog:
         self.parent = parent
         self.theme = theme
         self.settings = settings_manager
-        self.config_path = Path(config_path) if config_path else None
+        resolved_config = None
+        if config_path:
+            resolved_config = Path(config_path).expanduser().resolve()
+        elif self.settings:
+            try:
+                cfg = self.settings.get_setting('backend.config_path', '')
+                if cfg:
+                    resolved_config = Path(cfg).expanduser().resolve()
+            except Exception:
+                resolved_config = None
+        if resolved_config is None:
+            resolved_config = (Path.cwd() / "conf" / "config.json").resolve()
+        self.config_path = resolved_config
         self.mode = mode
         self.target_count = target_count
         self.config_editor_callback = config_editor_callback
@@ -120,6 +132,14 @@ class BatchExtractSettingsDialog:
                 defaults["max_directory_depth"] = int(file_cfg.get("max_directory_depth", defaults["max_directory_depth"]))
                 defaults["download_delay_seconds"] = float(file_cfg.get("download_delay_seconds", defaults["download_delay_seconds"]))
                 defaults["connection_timeout"] = int(file_cfg.get("enumeration_timeout_seconds", defaults["connection_timeout"]))
+            except Exception:
+                pass
+        else:
+            # Ensure config file exists with baseline structure
+            try:
+                base_cfg = {"file_collection": {}}
+                self.config_path.parent.mkdir(parents=True, exist_ok=True)
+                self.config_path.write_text(json.dumps(base_cfg, indent=2), encoding="utf-8")
             except Exception:
                 pass
 
@@ -1137,6 +1157,7 @@ class ExtensionEditorDialog:
 
         try:
             # Load current config
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
             config_data = json.loads(self.config_path.read_text(encoding="utf-8"))
 
             # Update file_collection section

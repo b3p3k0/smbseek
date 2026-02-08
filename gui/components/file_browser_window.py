@@ -18,6 +18,7 @@ import time
 import queue
 
 from shared.smb_browser import SMBNavigator, ListResult, Entry, ReadResult
+from shared.config import load_json_config, save_json_config
 try:
     from gui.components.file_viewer_window import open_file_viewer, is_binary_content
 except ImportError:
