@@ -594,9 +594,9 @@ class ServerListWindow(ServerListWindowActionsMixin):
             scan_manager = get_scan_manager()
             self.last_scan_time = scan_manager.get_last_scan_time()
 
-            # Get all servers with pagination (large limit to get all)
+            # Get all servers (no pagination limit)
             servers, total_count = self.db_reader.get_server_list(
-                limit=10000,  # Large limit to get all servers
+                limit=None,
                 offset=0
             )
 
@@ -638,7 +638,7 @@ class ServerListWindow(ServerListWindowActionsMixin):
             self._apply_filters()
 
             # Update count display
-            self.count_label.configure(text=f"Total: {len(self.all_servers)} servers")
+            self.count_label.configure(text=f"Total: {total_count} servers")
 
         except Exception as e:
             messagebox.showerror(

@@ -609,7 +609,7 @@ class DatabaseReader:
                 for row in results
             ]
     
-    def get_server_list(self, limit: int = 100, offset: int = 0, 
+    def get_server_list(self, limit: Optional[int] = 100, offset: int = 0, 
                        country_filter: Optional[str] = None,
                        recent_scan_only: bool = False) -> Tuple[List[Dict], int]:
         """
@@ -638,7 +638,7 @@ class DatabaseReader:
         
         return self._query_server_list(limit, offset, country_filter, recent_scan_only)
     
-    def _query_server_list(self, limit: int, offset: int, 
+    def _query_server_list(self, limit: Optional[int], offset: int, 
                           country_filter: Optional[str],
                           recent_scan_only: bool = False) -> Tuple[List[Dict], int]:
         """Execute server list query with enhanced share tracking data."""
@@ -655,7 +655,7 @@ class DatabaseReader:
             else:
                 return self._query_server_list_legacy(conn, limit, offset, country_filter, recent_scan_only)
     
-    def _query_server_list_enhanced(self, conn: sqlite3.Connection, limit: int, offset: int,
+    def _query_server_list_enhanced(self, conn: sqlite3.Connection, limit: Optional[int], offset: int,
                                    country_filter: Optional[str], recent_scan_only: bool) -> Tuple[List[Dict], int]:
         """Execute enhanced server list query using v_host_share_summary view."""
         # Base query using enhanced view
@@ -705,11 +705,12 @@ class DatabaseReader:
         FROM v_host_share_summary
         {where_clause}
         ORDER BY last_seen DESC
-        LIMIT ? OFFSET ?
         """
-        
-        params.extend([limit, offset])
-        results = conn.execute(data_query, params).fetchall()
+        data_params = list(params)
+        if limit is not None and limit > 0:
+            data_query += " LIMIT ? OFFSET ?"
+            data_params.extend([limit, offset])
+        results = conn.execute(data_query, data_params).fetchall()
 
         flags_map = self._load_user_flags_map(conn)
         probe_map = self._load_probe_cache_map(conn)
@@ -742,7 +743,7 @@ class DatabaseReader:
 
         return servers, total_count
     
-    def _query_server_list_legacy(self, conn: sqlite3.Connection, limit: int, offset: int,
+    def _query_server_list_legacy(self, conn: sqlite3.Connection, limit: Optional[int], offset: int,
                                  country_filter: Optional[str], recent_scan_only: bool) -> Tuple[List[Dict], int]:
         """Execute legacy server list query for backward compatibility."""
         # Base query
@@ -812,11 +813,13 @@ class DatabaseReader:
         ) v_summary ON s.id = v_summary.server_id
         {where_clause}
         ORDER BY s.last_seen DESC
-        LIMIT ? OFFSET ?
         """
         
-        params.extend([limit, offset])
-        results = conn.execute(data_query, params).fetchall()
+        data_params = list(params)
+        if limit is not None and limit > 0:
+            data_query += " LIMIT ? OFFSET ?"
+            data_params.extend([limit, offset])
+        results = conn.execute(data_query, data_params).fetchall()
         
         flags_map = self._load_user_flags_map(conn)
         probe_map = self._load_probe_cache_map(conn)

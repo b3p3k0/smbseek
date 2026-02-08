@@ -408,7 +408,7 @@ class ServerListWindowTemplateMixin:
 
             # Load servers with recent scan filter
             servers, total_count = self.db_reader.get_server_list(
-                limit=10000,
+                limit=None,
                 offset=0,
                 country_codes=None,
                 favorites_only=False,
