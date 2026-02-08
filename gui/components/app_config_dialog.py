@@ -644,6 +644,11 @@ class AppConfigDialog:
             
             # Save to main config (application settings) - this is what the app actually uses
             if self.main_config:
+                # Reload config from disk to avoid overwriting edits made via the config editor
+                try:
+                    self.main_config.config = self.main_config._load_config()
+                except Exception:
+                    pass
                 old_db_path = str(self.main_config.get_database_path()) if self.main_config.get_database_path() else None
                 
                 self.main_config.set_smbseek_path(self.smbseek_var.get())
