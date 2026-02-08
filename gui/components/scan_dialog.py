@@ -1364,8 +1364,7 @@ class ScanDialog:
             input_frame,
             textvariable=self.api_key_var,
             width=40,
-            font=self.theme.fonts["body"],
-            show="*"  # Mask the API key
+            font=self.theme.fonts["body"]
         )
         self.api_key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
 

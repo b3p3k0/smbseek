@@ -733,6 +733,7 @@ class BackendInterface:
         # Create temporary file with proper cleanup
         fd = None
         temp_path = None
+        original_config_path = self.config_path
         try:
             fd, temp_path = tempfile.mkstemp(suffix=".json", prefix="smbseek_config_")
 
@@ -741,9 +742,13 @@ class BackendInterface:
                 json.dump(temp_config, f, indent=2)
                 fd = None  # fdopen closes the descriptor
 
+            # Temporarily point interface at the temp config
+            self.config_path = Path(temp_path)
             yield temp_path
 
         finally:
+            # Restore original config path
+            self.config_path = original_config_path
             # Cleanup: close descriptor if still open, then remove file
             if fd is not None:
                 try:
