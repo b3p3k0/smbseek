@@ -580,25 +580,6 @@ class AppConfigDialog:
         )
         self.theme.apply_to_widget(ok_button, "button_primary")
         ok_button.pack(side=tk.RIGHT)
-        
-        # Apply button
-        apply_button = tk.Button(
-            button_frame,
-            text="Apply",
-            command=self._on_apply
-        )
-        self.theme.apply_to_widget(apply_button, "button_secondary")
-        apply_button.pack(side=tk.RIGHT, padx=(0, 10))
-    
-    def _on_apply(self) -> None:
-        """Apply configuration changes."""
-        if not self._validate_and_save():
-            return
-        
-        messagebox.showinfo(
-            "Configuration Saved",
-            "Configuration has been saved successfully."
-        )
     
     def _on_ok(self) -> None:
         """Save configuration and close dialog."""
