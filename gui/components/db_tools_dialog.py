@@ -98,9 +98,9 @@ class DBToolsDialog:
         """Create and configure the dialog."""
         self.dialog = tk.Toplevel(self.parent)
         self.dialog.title("Database Tools")
-        self.dialog.geometry("700x580")
+        self.dialog.geometry("700x790")
         self.dialog.resizable(True, True)
-        self.dialog.minsize(650, 550)
+        self.dialog.minsize(650, 700)
 
         # Apply theme
         self.theme.apply_to_widget(self.dialog, "main_window")
