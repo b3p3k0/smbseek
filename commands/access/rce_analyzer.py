@@ -117,4 +117,4 @@ def _persist_rce_status(database, ip: str, rce_result: Dict[str, Any]) -> None:
         database.upsert_rce_status(ip, rce_status, verdict_summary)
     except Exception as e:
         import logging
-        logging.getLogger(__name__).warning(f\"Failed to persist RCE status: {e}\")
+        logging.getLogger(__name__).warning(f"Failed to persist RCE status: {e}")
