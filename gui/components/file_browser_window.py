@@ -18,7 +18,6 @@ import time
 import queue
 
 from shared.smb_browser import SMBNavigator, ListResult, Entry, ReadResult
-from shared.config import load_json_config, save_json_config
 try:
     from gui.components.file_viewer_window import open_file_viewer, is_binary_content
 except ImportError:
@@ -203,9 +202,11 @@ class FileBrowserWindow:
         )
         large_spin.pack(side=tk.LEFT)
 
-        # Treeview for entries
+        # Treeview for entries with always-visible scrollbar
+        tree_frame = tk.Frame(self.window)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         columns = ("name", "type", "size", "modified", "mtime_raw", "size_raw")
-        self.tree = ttk.Treeview(self.window, columns=columns, show="headings", selectmode="extended")
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings", selectmode="extended")
         self.tree.heading("name", text="Name")
         self.tree.heading("type", text="Type")
         self.tree.heading("size", text="Size")
@@ -216,7 +217,12 @@ class FileBrowserWindow:
         self.tree.column("modified", width=180, anchor="w")
         self.tree.column("mtime_raw", width=0, stretch=False)  # Hidden column for raw epoch
         self.tree.column("size_raw", width=0, stretch=False)  # Hidden column for raw bytes
-        self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.bind("<Double-1>", self._on_item_double_click)
 
         self.status_var = tk.StringVar(value="Select a share to begin.")
