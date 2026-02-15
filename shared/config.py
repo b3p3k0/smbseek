@@ -15,6 +15,20 @@ from typing import Dict, Any, Optional
 logger = logging.getLogger(__name__)
 
 
+def load_json_config(config_file: str) -> Dict[str, Any]:
+    """
+    Backward-compatible helper for GUI/CLI components expecting a simple JSON loader.
+
+    Returns an empty dict on failure to avoid crashing legacy import paths.
+    """
+    try:
+        with open(config_file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to load config {config_file}: {e}")
+        return {}
+
+
 def get_standard_timestamp() -> str:
     """
     Generate standard timestamp truncated to minutes (no fractional seconds).
@@ -402,8 +416,74 @@ class SMBSeekConfig:
             for issue in issues:
                 print(f"  • {issue}")
             return False
-        
+
         return True
+
+    # RCE Module Configuration Methods
+
+    def get_rce_config(self) -> Dict[str, Any]:
+        """
+        Get RCE module configuration with defaults merged.
+
+        Returns:
+            Full RCE configuration section with safe defaults applied.
+        """
+        defaults = {
+            "enabled_default": False,
+            "safe_active_budget": {
+                "max_requests": 2,
+                "per_host_timeout_seconds": 5,
+                "retry_count": 0,
+                "jitter_ms": 250
+            },
+            "ms17_010": {"enabled": True},
+            "smbghost": {"enabled": True},
+            "logging": {"jsonl_path": "~/.smbseek/logs/rce_analysis.jsonl"},
+            "intrusive_mode_enabled": False
+        }
+        user_rce = self.config.get("rce", {})
+        return self._deep_merge(defaults, user_rce)
+
+    def get_rce_safe_budget(self) -> Dict[str, Any]:
+        """
+        Get safe-active probe budget configuration.
+
+        Returns:
+            Budget configuration dict with max_requests, timeout, retry, jitter.
+        """
+        return self.get_rce_config().get("safe_active_budget", {
+            "max_requests": 2,
+            "per_host_timeout_seconds": 5,
+            "retry_count": 0,
+            "jitter_ms": 250
+        })
+
+    def is_rce_enabled_by_default(self) -> bool:
+        """Check if RCE analysis is enabled by default."""
+        return self.get_rce_config().get("enabled_default", False)
+
+    def is_intrusive_mode_enabled(self) -> bool:
+        """
+        Check if intrusive RCE probes are enabled.
+
+        This is a safety guard - intrusive mode should always be False
+        unless explicitly enabled in config for authorized testing.
+        """
+        return self.get_rce_config().get("intrusive_mode_enabled", False)
+
+    def get_rce_logging_path(self) -> str:
+        """Get JSONL logging path for RCE analysis results."""
+        return self.get_rce_config().get("logging", {}).get(
+            "jsonl_path", "~/.smbseek/logs/rce_analysis.jsonl"
+        )
+
+    def is_ms17_010_enabled(self) -> bool:
+        """Check if MS17-010 safe probe is enabled."""
+        return self.get_rce_config().get("ms17_010", {}).get("enabled", True)
+
+    def is_smbghost_enabled(self) -> bool:
+        """Check if SMBGhost exposure check is enabled."""
+        return self.get_rce_config().get("smbghost", {}).get("enabled", True)
 
 
 def load_config(config_file: Optional[str] = None) -> SMBSeekConfig:
