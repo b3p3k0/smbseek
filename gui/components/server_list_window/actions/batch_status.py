@@ -594,6 +594,8 @@ class ServerListWindowBatchStatusMixin:
                 for server in servers:
                     server["probe_status"] = 'unprobed'
                     server["probe_status_emoji"] = self._probe_status_to_emoji('unprobed')
+                    server["rce_status"] = 'not_run'
+                    server["rce_status_emoji"] = self._rce_status_to_emoji('not_run')
                     server["extracted"] = server.get("extracted", 0) or 0
                     server["extract_status_emoji"] = self._extract_status_to_emoji(server.get("extracted", 0))
                 return
@@ -603,8 +605,43 @@ class ServerListWindowBatchStatusMixin:
                 status = server.get("probe_status") or self._determine_probe_status(ip)
                 server["probe_status"] = status
                 server["probe_status_emoji"] = self._probe_status_to_emoji(status)
+                # Attach RCE status from database
+                rce_status = server.get("rce_status") or self._determine_rce_status(ip)
+                server["rce_status"] = rce_status
+                server["rce_status_emoji"] = self._rce_status_to_emoji(rce_status)
                 extracted_flag = server.get("extracted", 0)
                 server["extract_status_emoji"] = self._extract_status_to_emoji(extracted_flag)
+
+        def _determine_rce_status(self, ip_address: Optional[str]) -> str:
+            """Determine RCE status from database probe cache."""
+            if not ip_address or not self.db_reader:
+                return 'not_run'
+
+            try:
+                # Query host_probe_cache for rce_status
+                result = self.db_reader.get_rce_status(ip_address)
+                return result or 'not_run'
+            except Exception:
+                return 'not_run'
+
+        def _handle_rce_status_update(self, ip_address: str, status: str) -> None:
+            """Handle RCE status update from probe/analysis."""
+            if not ip_address:
+                return
+
+            for server in self.all_servers:
+                if server.get("ip_address") == ip_address:
+                    server["rce_status"] = status
+                    server["rce_status_emoji"] = self._rce_status_to_emoji(status)
+
+            if self._is_batch_active():
+                if not self._pending_table_refresh:
+                    self._pending_selection = self._get_selected_ips()
+                self._pending_table_refresh = True
+            else:
+                selected_ips = self._get_selected_ips()
+                self._apply_filters()
+                self._restore_selection(selected_ips)
 
         def _determine_probe_status(self, ip_address: Optional[str]) -> str:
             if not ip_address:
@@ -638,6 +675,20 @@ class ServerListWindowBatchStatusMixin:
                 'unprobed': '○'
             }
             return mapping.get(status, '⚪')
+
+        def _rce_status_to_emoji(self, status: str) -> str:
+            """
+            Map rce_status to display icon.
+            IMPORTANT: INSUFFICIENT_DATA renders as ⭘ (not run), not ✓ (clean)
+            """
+            mapping = {
+                'not_run': '⭘',
+                'clean': '✓',
+                'flagged': '✖',
+                'unknown': '?',
+                'error': '⚠'
+            }
+            return mapping.get(status, '⭘')
 
         def _extract_status_to_emoji(self, extracted: Any) -> str:
             try:
@@ -694,8 +745,8 @@ class ServerListWindowBatchStatusMixin:
             ips = []
             for item in self.tree.selection():
                 values = self.tree.item(item)["values"]
-                if len(values) >= 5:
-                    ips.append(values[4])
+                if len(values) >= 6:
+                    ips.append(values[5])  # IP at index 5 (after fav/avoid/probe/rce/extracted)
             return ips
 
         def _restore_selection(self, ip_addresses: List[str]) -> None:
@@ -703,7 +754,7 @@ class ServerListWindowBatchStatusMixin:
                 return
             for item in self.tree.get_children():
                 values = self.tree.item(item)["values"]
-                if len(values) >= 5 and values[4] in ip_addresses:
+                if len(values) >= 6 and values[5] in ip_addresses:
                     self.tree.selection_add(item)
 
         def _toggle_mode(self) -> None:

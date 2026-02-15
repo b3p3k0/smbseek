@@ -296,6 +296,14 @@ rm smbseek.db
 python3 db_import.py --all --verbose
 ```
 
+## RCE Status Values
+
+`host_probe_cache.rce_status` now supports five values: `not_run`, `clean`, `flagged`, `unknown`, and `error`.
+
+- `unknown` represents inconclusive probes (INSUFFICIENT_DATA or NOT_ASSESSABLE).
+- `error` represents probe/analysis failures; log but do not discard.
+- Downstream validators, exports, and UI filters must accept all five values to remain forward compatible.
+
 ## Best Practices
 
 1. **Regular Backups** - Enable automatic backups in config.json

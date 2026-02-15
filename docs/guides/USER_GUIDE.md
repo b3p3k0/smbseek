@@ -553,6 +553,12 @@ SMBSeek accepts **ISO 3166-1 alpha-2** country codes (two-letter codes):
 - **Geographic patterns**: Countries with more vulnerable servers
 - **Scan statistics**: Success rates and scanning trends
 
+### RCE Safe Probe Budget
+- Safe RCE probes use a per-host budget (`max_requests`) from `config.json`.
+- Each attempt, including retries, consumes budget. Exhaustion returns an ERROR verdict and skips remaining probes.
+- `reset_for_host(ip)` is called before each host; default budget covers one negotiate and one MS17-010 probe.
+- Retries reduce remaining probes; use `retry_count` sparingly if you need MS17-010 in the same budget window.
+
 ### Making Decisions
 Use SMBSeek results to:
 - **Prioritize security efforts** on high-risk systems

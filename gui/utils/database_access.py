@@ -737,6 +737,7 @@ class DatabaseReader:
                 "probe_status": probe.get("status", "unprobed"),
                 "indicator_matches": probe.get("indicator_matches", 0),
                 "extracted": probe.get("extracted", 0),
+                "rce_status": probe.get("rce_status", "not_run"),
                 # Include vulnerabilities as 0 for backward compatibility
                 "vulnerabilities": 0
             })
@@ -846,6 +847,7 @@ class DatabaseReader:
                 "probe_status": probe.get("status", "unprobed"),
                 "indicator_matches": probe.get("indicator_matches", 0),
                 "extracted": probe.get("extracted", 0),
+                "rce_status": probe.get("rce_status", "not_run"),
             })
 
         return servers, total_count
@@ -868,7 +870,7 @@ class DatabaseReader:
 
     def _load_probe_cache_map(self, conn: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
         query = """
-        SELECT s.ip_address, pc.status, pc.indicator_matches, pc.extracted
+        SELECT s.ip_address, pc.status, pc.indicator_matches, pc.extracted, pc.rce_status
         FROM host_probe_cache pc
         JOIN smb_servers s ON s.id = pc.server_id
         """
@@ -878,6 +880,7 @@ class DatabaseReader:
                 "status": row["status"] or "unprobed",
                 "indicator_matches": row["indicator_matches"] or 0,
                 "extracted": row["extracted"] or 0,
+                "rce_status": row["rce_status"] or "not_run",
             }
             for row in rows
         }
@@ -1230,4 +1233,74 @@ class DatabaseReader:
             JOIN smb_servers s ON sc.server_id = s.id
             WHERE s.ip_address = ?
         """
-        return self._execute_query(query, (ip_address,))
+        with self._get_connection() as conn:
+            rows = conn.execute(query, (ip_address,)).fetchall()
+            return [
+                {
+                    "share_name": row["share_name"],
+                    "username": row["username"],
+                    "password": row["password"],
+                    "source": row["source"],
+                    "last_verified_at": row["last_verified_at"],
+                }
+                for row in rows
+            ]
+
+    # --- RCE status helpers ---------------------------------------------
+
+    def get_rce_status(self, ip_address: str) -> Optional[str]:
+        """
+        Get RCE analysis status for a host.
+
+        Args:
+            ip_address: IP address of the host
+
+        Returns:
+            RCE status string: 'not_run', 'clean', 'flagged', 'unknown', or 'error'
+            Returns 'not_run' if no status found.
+        """
+        query = """
+            SELECT pc.rce_status
+            FROM host_probe_cache pc
+            JOIN smb_servers s ON pc.server_id = s.id
+            WHERE s.ip_address = ?
+        """
+        with self._get_connection() as conn:
+            row = conn.execute(query, (ip_address,)).fetchone()
+            return row["rce_status"] if row and row["rce_status"] else "not_run"
+
+    def upsert_rce_status(self, ip_address: str, rce_status: str,
+                          verdict_summary: Optional[str] = None) -> None:
+        """
+        Update RCE analysis status for a host.
+
+        Args:
+            ip_address: IP address of the host
+            rce_status: Status string ('not_run', 'clean', 'flagged', 'unknown', 'error')
+            verdict_summary: Optional JSON summary of verdicts
+        """
+        if not ip_address:
+            return
+        valid_statuses = {'not_run', 'clean', 'flagged', 'unknown', 'error'}
+        if rce_status not in valid_statuses:
+            rce_status = 'unknown'
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM smb_servers WHERE ip_address = ?", (ip_address,))
+            row = cur.fetchone()
+            if not row:
+                return
+            server_id = row["id"]
+            cur.execute(
+                """
+                INSERT INTO host_probe_cache (server_id, rce_status, rce_verdict_summary, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(server_id) DO UPDATE SET
+                    rce_status=excluded.rce_status,
+                    rce_verdict_summary=excluded.rce_verdict_summary,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (server_id, rce_status, verdict_summary),
+            )
+            conn.commit()
+        self.clear_cache()

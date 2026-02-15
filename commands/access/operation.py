@@ -108,6 +108,17 @@ class AccessOperation:
         self.total_targets = len(authenticated_hosts)
         self.output.info(f"Testing share access on {self.total_targets} authenticated hosts")
 
+        # Create shared SafeProbeRunner for this scan (used by RCE analysis)
+        self._probe_runner = None
+        if self.check_rce:
+            try:
+                from shared.rce_scanner.probes import SafeProbeRunner
+                legacy_mode = getattr(self, 'legacy_mode', False)
+                self._probe_runner = SafeProbeRunner(self.config, legacy_mode=legacy_mode)
+            except Exception as e:
+                self.output.error(f"Failed to initialize RCE probe runner: {e}")
+                self._probe_runner = None
+
         max_concurrent = self.config.get_max_concurrent_hosts()
         max_workers = min(max_concurrent, len(authenticated_hosts) or 1)
 

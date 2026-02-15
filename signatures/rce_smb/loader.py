@@ -32,12 +32,17 @@ class Signature:
     telemetry: Dict[str, Any]
     references: List[Dict[str, Any]]
     source_file: str
+    verdict_mapping: Dict[str, List[Dict[str, Any]]]  # Maps verdict type to conditions
 
     @classmethod
     def from_yaml_data(cls, data: Dict[str, Any], source_file: str) -> "Signature":
         """Create Signature instance from validated YAML data."""
         metadata = data["metadata"]
         heuristic = data["heuristic"]
+
+        # Parse verdict_mapping from heuristic section
+        # Format: confirmed_when, likely_when, not_assessable_when, not_vulnerable_when
+        verdict_mapping = heuristic.get("verdict_mapping", {})
 
         return cls(
             cve_ids=metadata["cve_ids"],
@@ -51,7 +56,8 @@ class Signature:
             boosters=heuristic.get("boosters", []),
             telemetry=data.get("telemetry", {}),
             references=data.get("references", []),
-            source_file=source_file
+            source_file=source_file,
+            verdict_mapping=verdict_mapping
         )
 
 
@@ -205,6 +211,11 @@ class SignatureLoader:
             raise SignatureLoadError("No signatures loaded successfully")
 
         return self.loaded_signatures
+
+    # Backward-compatible alias used by tests and older callers
+    def load_all(self) -> List[Signature]:
+        """Alias for load_all_signatures()."""
+        return self.load_all_signatures()
 
     def get_signatures_by_severity(self, severity: str) -> List[Signature]:
         """Get signatures filtered by severity level."""

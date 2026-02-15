@@ -11,6 +11,22 @@ from datetime import datetime
 from typing import Dict, List, Any, Callable, Optional, Tuple
 import re
 
+# RCE status emoji/text mappings
+RCE_STATUS_EMOJI = {
+    "not_run": "⭘",
+    "clean": "✓",
+    "flagged": "✖",
+    "unknown": "?",
+    "error": "⚠",
+}
+
+RCE_STATUS_TEXT = {
+    "not_run": "Not analyzed",
+    "clean": "No vulnerabilities found",
+    "flagged": "Potential vulnerability detected",
+    "unknown": "Assessment inconclusive",
+    "error": "Analysis failed",
+}
 
 def create_server_table(parent, theme, callbacks):
     """
@@ -28,11 +44,12 @@ def create_server_table(parent, theme, callbacks):
     table_frame = tk.Frame(parent)
     theme.apply_to_widget(table_frame, "main_window")
 
-    # Define columns - updated for enhanced share tracking with favorites and avoid
+    # Define columns - updated for enhanced share tracking with favorites, avoid, and RCE
     columns = (
         "favorite",
         "avoid",
         "probe",
+        "rce",
         "extracted",
         "IP Address",
         "Shares",
@@ -50,15 +67,16 @@ def create_server_table(parent, theme, callbacks):
         selectmode="extended"
     )
 
-    # Configure columns - optimized dimensions for enhanced share tracking with favorites and avoid
+    # Configure columns - optimized dimensions for enhanced share tracking with favorites, avoid, and RCE
     tree.column("#0", width=0, stretch=False)  # Hide tree column
     tree.column("favorite", width=80, anchor="center")  # Favorite star column
     tree.column("avoid", width=55, anchor="center")  # Avoid skull column
     tree.column("probe", width=65, anchor="center")
+    tree.column("rce", width=40, anchor="center")  # RCE status column
     tree.column("extracted", width=85, anchor="center")
     tree.column("IP Address", width=135, anchor="w")
     tree.column("Shares", width=100, anchor="center")
-    tree.column("Accessible", width=520, anchor="w")  # reclaim space for denied column
+    tree.column("Accessible", width=480, anchor="w")  # Reduced to accommodate RCE column
     tree.column("Denied", width=110, anchor="center")
     tree.column("Last Seen", width=150, anchor="w")
     tree.column("Country", width=100, anchor="w", stretch=True)  # Flexible width
@@ -68,6 +86,7 @@ def create_server_table(parent, theme, callbacks):
         "favorite": "Favorite",
         "avoid": "Avoid",
         "probe": "Probed",
+        "rce": "RCE",
         "extracted": "Extracted"
     }
     for col in columns:
@@ -155,13 +174,14 @@ def update_table_display(tree, filtered_servers: List[Dict[str, Any]], settings_
             avoid_icon = "○"
 
         probe_emoji = server.get("probe_status_emoji", "⚪")
+        rce_emoji = server.get("rce_status_emoji", "⭘")
         extracted_emoji = server.get("extract_status_emoji", "○")
 
-        # Insert row with new column structure including favorite, avoid, probe columns
+        # Insert row with new column structure including favorite, avoid, probe, rce columns
         item_id = tree.insert(
             "",
             "end",
-            values=(favorite_icon, avoid_icon, probe_emoji, extracted_emoji, ip_addr, shares_count, accessible_shares, denied_count, last_seen, country)
+            values=(favorite_icon, avoid_icon, probe_emoji, rce_emoji, extracted_emoji, ip_addr, shares_count, accessible_shares, denied_count, last_seen, country)
         )
 
         # Add visual indicators for shares count
@@ -190,8 +210,8 @@ def get_selected_server_data(tree, filtered_servers: List[Dict[str, Any]]) -> Li
 
     for item in selected_items:
         values = tree.item(item)["values"]
-        if len(values) >= 5:
-            selected_ips.append(values[4])  # IP address now at index 4 (after favorite/avoid/probe/extracted)
+        if len(values) >= 6:
+            selected_ips.append(values[5])  # IP address at index 5 (after favorite/avoid/probe/rce/extracted)
 
     selected_servers = [
         server for server in filtered_servers
@@ -218,8 +238,8 @@ def sort_table_by_column(tree, column: str, current_sort_column: Optional[str],
     Returns:
         tuple: (new_sort_column, new_sort_direction)
     """
-    # Short-circuit for favorite/avoid/extracted columns - no meaningful sort order
-    if column in ("favorite", "avoid", "extracted"):
+    # Short-circuit for favorite/avoid/rce/extracted columns - no meaningful sort order
+    if column in ("favorite", "avoid", "rce", "extracted"):
         return current_sort_column, current_sort_direction
 
     # Cache original header text on first access to this column
@@ -326,10 +346,10 @@ def handle_treeview_click(tree, event, settings_manager, callbacks):
         return None
 
     values = tree.item(item)["values"]
-    if not values or len(values) < 5:
+    if not values or len(values) < 6:
         return None
 
-    ip_address = values[4]  # IP is now at index 4
+    ip_address = values[5]  # IP at index 5 (after favorite/avoid/probe/rce/extracted)
 
     # Handle favorite column clicks (#1, since #0 hidden)
     if column == '#1':
@@ -412,11 +432,11 @@ def handle_double_click(tree, event, filtered_servers: List[Dict[str, Any]], det
 
     # Use identical logic as "View Details" button - get data from clicked row
     values = tree.item(clicked_item)["values"]
-    if not values or len(values) < 5:
+    if not values or len(values) < 6:
         messagebox.showerror("Error", "Unable to retrieve server data.", parent=parent_window)
         return False
 
-    ip_address = values[4]  # IP Address now at index 4 (fav/avoid/probe/extracted columns)
+    ip_address = values[5]  # IP Address at index 5 (fav/avoid/probe/rce/extracted columns)
 
     # Same data lookup as working "View Details" button
     server_data = next(
