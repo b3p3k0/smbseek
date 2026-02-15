@@ -29,6 +29,21 @@ def load_json_config(config_file: str) -> Dict[str, Any]:
         return {}
 
 
+def save_json_config(config_file: str, data: Dict[str, Any]) -> bool:
+    """
+    Backward-compatible helper to save JSON config safely.
+
+    Returns True on success, False on failure.
+    """
+    try:
+        with open(config_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to save config {config_file}: {e}")
+        return False
+
+
 def get_standard_timestamp() -> str:
     """
     Generate standard timestamp truncated to minutes (no fractional seconds).
