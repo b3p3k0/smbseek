@@ -56,6 +56,12 @@ class DatabaseReader:
             run_migrations(str(self.db_path))
         except Exception:
             pass
+
+        # Ensure new RCE columns exist even on older databases (idempotent)
+        try:
+            self._ensure_rce_columns()
+        except Exception:
+            pass
         
         # Mock mode for testing
         self.mock_mode = False
@@ -63,6 +69,28 @@ class DatabaseReader:
         
         # Don't validate during initialization - let caller handle validation
         # self._validate_database()
+
+    def _ensure_rce_columns(self) -> None:
+        """
+        Best-effort migration to add RCE columns if missing.
+
+        Mirrors shared.db_migrations but runs here to protect GUI users who
+        open older databases without running CLI migrations first.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute("PRAGMA table_info(host_probe_cache)")
+            columns = [row[1] for row in cur.fetchall()]
+
+            altered = False
+            if "rce_status" not in columns:
+                conn.execute("ALTER TABLE host_probe_cache ADD COLUMN rce_status TEXT DEFAULT 'not_run'")
+                altered = True
+            if "rce_verdict_summary" not in columns:
+                conn.execute("ALTER TABLE host_probe_cache ADD COLUMN rce_verdict_summary TEXT")
+                altered = True
+
+            if altered:
+                conn.commit()
     
     def get_smbseek_schema_definition(self) -> Dict[str, Any]:
         """
