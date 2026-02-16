@@ -555,7 +555,7 @@ SMBSeek accepts **ISO 3166-1 alpha-2** country codes (two-letter codes):
 
 ### Viewing Files
 - **Text/Hex viewer**: Opens small files (default 5 MB limit) with encoding selection and hex view.
-- **Image viewer**: Opens common raster formats via Pillow. Safety caps: default 15 MB file size and 20 MP resolution; oversized images are rejected to avoid freezes.
+- **Image viewer**: Opens common raster formats via Pillow. Safety caps: default 15 MB file size and 20 MP resolution; if a file is over the size limit, you’ll be asked whether to proceed, but extremely large pixel counts are still blocked to avoid freezes.
 
 ### RCE Safe Probe Budget
 - Safe RCE probes use a per-host budget (`max_requests`) from `config.json`.
