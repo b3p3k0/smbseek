@@ -140,6 +140,8 @@
     },
     "viewer": {
       "max_view_size_mb": 5,
+      "max_image_size_mb": 15,
+      "max_image_pixels": 20000000,
       "default_encoding": "utf-8",
       "hex_bytes_per_row": 16
     }
@@ -156,5 +158,24 @@
     "version": "1.0.0",
     "first_run": true,
     "github_repo": "https://github.com/b3p3k0/smbseek"
+  },
+  "rce": {
+    "enabled_default": false,
+    "safe_active_budget": {
+      "max_requests": 2,
+      "per_host_timeout_seconds": 5,
+      "retry_count": 0,
+      "jitter_ms": 250
+    },
+    "ms17_010": {
+      "enabled": true
+    },
+    "smbghost": {
+      "enabled": true
+    },
+    "logging": {
+      "jsonl_path": "~/.smbseek/logs/rce_analysis.jsonl"
+    },
+    "intrusive_mode_enabled": false
   }
 }

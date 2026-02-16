@@ -22,6 +22,10 @@ try:
     from gui.components.file_viewer_window import open_file_viewer, is_binary_content
 except ImportError:
     from file_viewer_window import open_file_viewer, is_binary_content
+try:
+    from gui.components.image_viewer_window import open_image_viewer
+except ImportError:
+    from image_viewer_window import open_image_viewer
 from shared.quarantine import build_quarantine_path, log_quarantine_event
 try:
     from gui.utils.database_access import DatabaseReader
@@ -66,6 +70,13 @@ def _load_file_browser_config(config_path: Optional[str]) -> Dict:
         "download_large_file_mb": 25,
         "max_download_size_mb": 25,
         "quarantine_root": "~/.smbseek/quarantine",
+        "viewer": {
+            "max_view_size_mb": 5,
+            "max_image_size_mb": 15,
+            "max_image_pixels": 20000000,
+            "default_encoding": "utf-8",
+            "hex_bytes_per_row": 16
+        },
     }
     if not config_path:
         return defaults
@@ -75,6 +86,9 @@ def _load_file_browser_config(config_path: Optional[str]) -> Dict:
     except Exception:
         pass
     return defaults
+
+
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tif", ".tiff"}
 
 
 class FileBrowserWindow:
@@ -411,9 +425,15 @@ class FileBrowserWindow:
                 size_raw = 0
         remote_path = self._join_path(self.current_path, name)
 
+        suffix = Path(name).suffix.lower()
+        is_image = suffix in IMAGE_EXTS
+
         # Check size limit from config
-        max_view_mb = self.config.get("viewer", {}).get("max_view_size_mb", 5)
-        max_view_bytes = max_view_mb * 1024 * 1024
+        viewer_cfg = self.config.get("viewer", {}) or {}
+        max_view_mb = viewer_cfg.get("max_view_size_mb", 5)
+        max_image_mb = viewer_cfg.get("max_image_size_mb", max_view_mb)
+        max_image_pixels = viewer_cfg.get("max_image_pixels", 20_000_000)
+        max_view_bytes = (max_image_mb if is_image else max_view_mb) * 1024 * 1024
 
         # Pre-check: warn if file exceeds configured limit
         if size_raw > max_view_bytes:
@@ -422,7 +442,7 @@ class FileBrowserWindow:
             # User clicked "Ignore Once" - proceed with 1GB hard cap
             max_view_bytes = 1024 * 1024 * 1024
 
-        self._start_view_thread(remote_path, name, max_view_bytes)
+        self._start_view_thread(remote_path, name, max_view_bytes, is_image=is_image, max_image_pixels=max_image_pixels)
 
     def _show_size_warning_dialog(self, filename: str, file_size: int, max_mb: int) -> bool:
         """
@@ -490,7 +510,8 @@ class FileBrowserWindow:
 
         return result["proceed"]
 
-    def _start_view_thread(self, remote_path: str, display_name: str, max_bytes: int) -> None:
+    def _start_view_thread(self, remote_path: str, display_name: str, max_bytes: int,
+                           is_image: bool = False, max_image_pixels: int = 20000000) -> None:
         """Start background thread to read file for viewing."""
         def worker():
             try:
@@ -499,9 +520,14 @@ class FileBrowserWindow:
                 self._ensure_connected()
                 result = self.navigator.read_file(remote_path, max_bytes=max_bytes)
                 # Open viewer on main thread
-                self._safe_after(0, lambda r=result: self._open_viewer(
-                    remote_path, r.data, r.size, r.truncated
-                ))
+                if is_image:
+                    self._safe_after(0, lambda r=result: self._open_image_viewer(
+                        remote_path, r.data, r.size, r.truncated, max_image_pixels
+                    ))
+                else:
+                    self._safe_after(0, lambda r=result: self._open_viewer(
+                        remote_path, r.data, r.size, r.truncated
+                    ))
             except Exception as e:
                 self._safe_after(0, lambda err=e: self._set_status(f"View failed: {err}"))
                 self._safe_after(0, lambda err=e: messagebox.showerror(
@@ -535,6 +561,33 @@ class FileBrowserWindow:
             on_save_callback=save_callback,
         )
         self._set_status(f"Viewing {remote_path}")
+
+    def _open_image_viewer(self, remote_path: str, content: bytes, size: int, truncated: bool, max_image_pixels: int) -> None:
+        """Open image viewer with safety guards."""
+        if not self._window_alive():
+            return
+
+        display_path = f"{self.ip_address}/{self.current_share}{remote_path}"
+
+        def save_callback():
+            mtime = None
+            self._start_download_thread([(remote_path, mtime, size)], [], None)
+
+        try:
+            open_image_viewer(
+                parent=self.window,
+                file_path=display_path,
+                content=content,
+                max_pixels=max_image_pixels,
+                theme=self.theme,
+                on_save_callback=save_callback,
+                truncated=truncated,
+            )
+            self._set_status(f"Viewing {remote_path}")
+        except Exception as e:
+            self._set_status(f"View failed: {e}")
+            if self._window_alive():
+                messagebox.showerror("View error", str(e), parent=self.window)
 
     def _on_close(self) -> None:
         self.navigator.cancel()
