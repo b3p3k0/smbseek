@@ -549,6 +549,8 @@ def _start_probe(
         enable_rce = False
     status_var.set("Probing accessible shares…")
     probe_state["running"] = True
+    cancel_event = threading.Event()
+    probe_state["cancel_event"] = cancel_event
     if probe_button:
         probe_button.configure(state=tk.DISABLED)
 
@@ -568,8 +570,13 @@ def _start_probe(
                 max_files=config["max_files"],
                 timeout_seconds=config["timeout_seconds"],
                 enable_rce_analysis=enable_rce,
+                cancel_event=cancel_event,
                 db_accessor=db_accessor,
             )
+            if cancel_event.is_set():
+                # Treat as cancelled; skip success callbacks
+                detail_window.after(0, lambda: status_var.set("Probe cancelled."))
+                return
             analysis = probe_patterns.attach_indicator_analysis(result, indicator_patterns)
             probe_cache.save_probe_result(ip_address, result)
             issue_detected = bool(analysis.get("is_suspicious"))
@@ -580,6 +587,7 @@ def _start_probe(
 
             def on_success():
                 probe_state["running"] = False
+                probe_state["cancel_event"] = None
                 probe_state["latest"] = result
                 if issue_detected:
                     status_var.set(
@@ -601,6 +609,7 @@ def _start_probe(
 
             def on_error():
                 probe_state["running"] = False
+                probe_state["cancel_event"] = None
                 if probe_button:
                     probe_button.configure(state=tk.NORMAL)
                 status_var.set("Probe failed.")
@@ -624,9 +633,7 @@ def _open_probe_dialog(
     rce_status_callback=None
 ) -> None:
     """Show settings + launch dialog for probes."""
-    if probe_state.get("running"):
-        messagebox.showinfo("Probe Running", "A probe is already in progress.")
-        return
+    running = probe_state.get("running")
 
     config = _load_probe_config(settings_manager)
 
@@ -713,8 +720,19 @@ def _open_probe_dialog(
     button_frame = tk.Frame(dialog)
     button_frame.grid(row=4, column=0, columnspan=2, pady=10)
 
-    tk.Button(button_frame, text="Start Probe", command=start_probe_from_dialog).pack(side=tk.LEFT, padx=(0, 5))
-    tk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
+    if running:
+        def cancel_running():
+            cancel_evt = probe_state.get("cancel_event")
+            if cancel_evt:
+                cancel_evt.set()
+                status_var.set("Cancelling probe…")
+            dialog.destroy()
+
+        tk.Button(button_frame, text="Cancel Running Probe", command=cancel_running).pack(side=tk.LEFT, padx=(0, 5))
+        tk.Button(button_frame, text="Close", command=dialog.destroy).pack(side=tk.LEFT)
+    else:
+        tk.Button(button_frame, text="Start Probe", command=start_probe_from_dialog).pack(side=tk.LEFT, padx=(0, 5))
+        tk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
 
 
 def _open_extract_dialog(
