@@ -190,7 +190,8 @@ class ServerListWindowBatchMixin(ServerListWindowBatchOperationsMixin, ServerLis
                 password=password,
                 enable_rce_analysis=enable_rce,
                 cancel_event=cancel_event,
-                allow_empty=True
+                allow_empty=True,
+                db_accessor=self.db_reader,
             )
         except probe_runner.ProbeError as exc:
             status = "cancelled" if "cancel" in str(exc).lower() else "failed"
@@ -226,8 +227,12 @@ class ServerListWindowBatchMixin(ServerListWindowBatchOperationsMixin, ServerLis
             notes.append("No accessible shares")
 
         if enable_rce and result.get("rce_analysis"):
-            rce_status = result["rce_analysis"].get("status", "rce")
+            rce_status = result["rce_analysis"].get("rce_status", "not_run")
             notes.append(f"RCE: {rce_status}")
+            try:
+                self._handle_rce_status_update(ip_address, rce_status)
+            except Exception:
+                pass
 
         if issue_detected:
             notes.append("Indicators detected")

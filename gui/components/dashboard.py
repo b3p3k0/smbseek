@@ -1334,7 +1334,8 @@ class DashboardWidget:
                 password=password,
                 enable_rce_analysis=enable_rce,
                 cancel_event=cancel_event,
-                allow_empty=True
+                allow_empty=True,
+                db_accessor=self.db_reader,
             )
             # Persist probe snapshot to disk and DB (align with server list workflow)
             probe_cache.save_probe_result(ip_address, result)
@@ -1364,7 +1365,7 @@ class DashboardWidget:
                 "ip_address": ip_address,
                 "action": "probe",
                 "status": "success",
-                "notes": self._build_probe_notes(len(shares), enable_rce, issue_detected, analysis)
+                "notes": self._build_probe_notes(len(shares), enable_rce, issue_detected, analysis, result)
             }
         except Exception as e:
             status = "cancelled" if "cancel" in str(e).lower() else "failed"
@@ -1375,17 +1376,20 @@ class DashboardWidget:
                 "notes": str(e)
             }
 
-    def _build_probe_notes(self, share_count: int, enable_rce: bool, issue_detected: bool, analysis: Dict[str, Any]) -> str:
+    def _build_probe_notes(self, share_count: int, enable_rce: bool, issue_detected: bool, analysis: Dict[str, Any], result: Dict[str, Any]) -> str:
         notes: List[str] = []
         if share_count:
             notes.append(f"{share_count} share(s)")
         else:
             notes.append("No accessible shares")
 
-        if enable_rce:
-            rce_status = analysis.get("rce_status") if isinstance(analysis, dict) else None
-            if rce_status:
-                notes.append(f"RCE: {rce_status}")
+        if enable_rce and result.get("rce_analysis"):
+            rce_status = result["rce_analysis"].get("rce_status", "not_run")
+            notes.append(f"RCE: {rce_status}")
+            try:
+                self._handle_rce_status_update(result.get("ip_address") or "", rce_status)
+            except Exception:
+                pass
 
         if issue_detected:
             match_count = len(analysis.get("matches", [])) if isinstance(analysis, dict) else 0

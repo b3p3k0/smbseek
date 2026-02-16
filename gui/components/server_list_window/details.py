@@ -26,7 +26,8 @@ from shared.quarantine import create_quarantine_dir
 
 def show_server_detail_popup(parent_window, server_data, theme, settings_manager=None,
                              probe_status_callback=None, indicator_patterns: Optional[Sequence[probe_patterns.IndicatorPattern]] = None,
-                             probe_callback=None, extract_callback=None, browse_callback=None):
+                             probe_callback=None, extract_callback=None, browse_callback=None,
+                             rce_status_callback=None):
     """
     Show server detail popup window.
 
@@ -383,7 +384,7 @@ def _format_probe_section(probe_result: Optional[Dict[str, Any]]) -> str:
 
 
 def _format_rce_summary(rce_report: Optional[Dict[str, Any]]) -> List[str]:
-    """Generate formatted RCE analysis summary lines."""
+    """Generate formatted RCE analysis summary lines with verdict information."""
     prefix = "   RCE Vuln scan:"
 
     if rce_report is None:
@@ -399,34 +400,74 @@ def _format_rce_summary(rce_report: Optional[Dict[str, Any]]) -> List[str]:
         reason = error_message or ("scanner unavailable" if status == "scanner-unavailable" else "analysis failed")
         return [f"{prefix} unavailable – {reason}"]
 
-    if status == "insufficient-data":
-        return [f"{prefix} limited telemetry; no verdict"]
+    # Get verdict (new primary field) with fallback to status
+    verdict = rce_report.get("verdict", "")
+    not_assessable_reason = rce_report.get("not_assessable_reason")
 
+    if verdict == "insufficient_data" or status == "insufficient-data":
+        return [f"{prefix} INSUFFICIENT DATA; no verdict"]
+
+    if verdict == "not_assessable":
+        reason = not_assessable_reason or "Assessment not possible"
+        return [f"{prefix} NOT ASSESSABLE – {reason}"]
+
+    if verdict == "not_vulnerable":
+        return [f"{prefix} NOT VULNERABLE"]
+
+    if verdict == "error":
+        return [f"{prefix} ERROR – {error_message or 'analysis failed'}"]
+
+    # Handle CONFIRMED or LIKELY verdicts
     score = rce_report.get("score", 0)
-    metadata = rce_report.get("analysis_metadata") or {}
-    risk_level = metadata.get("risk_level") or (rce_report.get("level", "low").split(" ")[0])
-    risk_display = (risk_level or "low").strip().lower()
+    verdict_display = verdict.upper().replace("_", " ") if verdict else "UNKNOWN"
 
+    # Use findings (new format) or fall back to matched_rules
+    findings = rce_report.get("findings") or []
     matched_rules = rce_report.get("matched_rules") or []
-    if not matched_rules:
-        return [f"{prefix} none found (score {score}/100)"]
 
-    sorted_rules = sorted(matched_rules, key=lambda rule: rule.get("score", 0), reverse=True)
-    primary_rule = sorted_rules[0]
-    primary_label = _format_rce_rule_label(primary_rule)
-    summary = f"{prefix} {risk_display} likelihood of {primary_label} (score {score}/100)"
+    if findings:
+        # New verdict-aware format
+        lines = [f"{prefix} {verdict_display} (score {score}/100)"]
+        for finding in findings[:3]:
+            cve_ids = finding.get("cve_ids", ["?"])
+            cve = cve_ids[0] if cve_ids else "?"
+            name = finding.get("name", "Unknown")
+            finding_verdict = finding.get("verdict", "unknown").upper()
+            severity = (finding.get("severity") or "unknown").lower()
+            lines.append(f"      • {cve} ({name}): {finding_verdict} ({severity})")
+            if finding.get("not_assessable_reason"):
+                lines.append(f"        Reason: {finding['not_assessable_reason']}")
 
-    lines = [summary]
-    for rule in sorted_rules[:3]:
-        label = _format_rce_rule_label(rule)
-        severity = (rule.get("severity") or "unknown").lower()
-        rule_score = rule.get("score", 0)
-        lines.append(f"      • {label} — {severity} severity (+{rule_score})")
+        if len(findings) > 3:
+            lines.append(f"      … {len(findings) - 3} additional findings")
 
-    if len(sorted_rules) > 3:
-        lines.append(f"      … {len(sorted_rules) - 3} additional signatures")
+        return lines
 
-    return lines
+    elif matched_rules:
+        # Fall back to legacy matched_rules format
+        sorted_rules = sorted(matched_rules, key=lambda rule: rule.get("score", 0), reverse=True)
+        primary_rule = sorted_rules[0]
+        primary_label = _format_rce_rule_label(primary_rule)
+        rule_verdict = primary_rule.get("verdict", verdict_display).upper()
+
+        lines = [f"{prefix} {rule_verdict} – {primary_label} (score {score}/100)"]
+        for rule in sorted_rules[:3]:
+            label = _format_rce_rule_label(rule)
+            severity = (rule.get("severity") or "unknown").lower()
+            rule_score = rule.get("score", 0)
+            rv = rule.get("verdict", "unknown").upper()
+            lines.append(f"      • {label}: {rv} ({severity} severity, +{rule_score})")
+
+        if len(sorted_rules) > 3:
+            lines.append(f"      … {len(sorted_rules) - 3} additional signatures")
+
+        return lines
+
+    # No findings or rules matched
+    if verdict in ("confirmed", "likely"):
+        return [f"{prefix} {verdict_display} (score {score}/100)"]
+
+    return [f"{prefix} none found (score {score}/100)"]
 
 
 def _format_rce_rule_label(rule: Dict[str, Any]) -> str:
@@ -478,6 +519,7 @@ def _start_probe(
     probe_button: Optional[tk.Button],
     config_override: Optional[Dict[str, int]] = None,
     probe_status_callback=None,
+    rce_status_callback=None,
     enable_rce_override: Optional[bool] = None
 ) -> None:
     """Trigger background probe run."""
@@ -512,17 +554,29 @@ def _start_probe(
 
     def worker():
         try:
+            db_accessor = None
+            if settings_manager:
+                try:
+                    db_accessor = DatabaseReader(settings_manager.get_database_path())
+                except Exception:
+                    db_accessor = None
+
             result = probe_runner.run_probe(
                 ip_address,
                 accessible_shares,
                 max_directories=config["max_directories"],
                 max_files=config["max_files"],
                 timeout_seconds=config["timeout_seconds"],
-                enable_rce_analysis=enable_rce
+                enable_rce_analysis=enable_rce,
+                db_accessor=db_accessor,
             )
             analysis = probe_patterns.attach_indicator_analysis(result, indicator_patterns)
             probe_cache.save_probe_result(ip_address, result)
             issue_detected = bool(analysis.get("is_suspicious"))
+            rce_status = None
+            if enable_rce:
+                rce_analysis = result.get("rce_analysis") or {}
+                rce_status = rce_analysis.get("rce_status")
 
             def on_success():
                 probe_state["running"] = False
@@ -538,6 +592,8 @@ def _start_probe(
                 _render_server_details(text_widget, server_data, result)
                 if probe_status_callback:
                     probe_status_callback(ip_address, 'issue' if issue_detected else 'clean')
+                if rce_status_callback and rce_status:
+                    rce_status_callback(ip_address, rce_status)
 
             detail_window.after(0, on_success)
         except Exception as exc:
@@ -564,7 +620,8 @@ def _open_probe_dialog(
     settings_manager,
     theme,
     probe_button: Optional[tk.Button],
-    probe_status_callback=None
+    probe_status_callback=None,
+    rce_status_callback=None
 ) -> None:
     """Show settings + launch dialog for probes."""
     if probe_state.get("running"):
@@ -649,6 +706,7 @@ def _open_probe_dialog(
             probe_button,
             config_override=new_config,
             probe_status_callback=probe_status_callback,
+            rce_status_callback=rce_status_callback,
             enable_rce_override=bool(rce_var.get())
         )
 

@@ -758,7 +758,8 @@ class ServerListWindow(ServerListWindowActionsMixin):
             indicator_patterns=self.indicator_patterns,
             probe_callback=self._launch_probe_from_detail,
             extract_callback=self._launch_extract_from_detail,
-            browse_callback=self._launch_browse_from_detail
+            browse_callback=self._launch_browse_from_detail,
+            rce_status_callback=self._handle_rce_status_update
         )
 
     def _export_selected_servers(self) -> None:
