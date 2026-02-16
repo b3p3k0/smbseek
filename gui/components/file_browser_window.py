@@ -370,6 +370,7 @@ class FileBrowserWindow:
         self._start_download_thread(files, dirs, extract_opts if dirs else None)
 
     def _on_cancel(self) -> None:
+        """Cancel in-flight and queued downloads and return UI to idle state."""
         self.navigator.cancel()
         if self.download_cancel_event:
             self.download_cancel_event.set()
@@ -732,6 +733,9 @@ class FileBrowserWindow:
                             item = target_q.get(timeout=0.2)
                         except queue.Empty:
                             continue
+                        if cancel_event.is_set():
+                            target_q.task_done()
+                            break
                         remote_path, mtime, _size = item
                         self._safe_after(0, lambda rp=remote_path, c=completed, t=lambda: max(total_enqueued, completed + 1): self._set_status(f"Downloading {rp} ({c+1}/{t()})"))
                         try:
@@ -739,6 +743,9 @@ class FileBrowserWindow:
 
                             def _progress(bytes_written: int, _total_unused: Optional[int]) -> None:
                                 now = time.time()
+                                if cancel_event.is_set():
+                                    worker_nav.cancel()
+                                    return
                                 if now - last_update["ts"] < 0.2:
                                     return
                                 last_update["ts"] = now
@@ -764,6 +771,12 @@ class FileBrowserWindow:
                             errors.append((remote_path, friendly))
                         finally:
                             target_q.task_done()
+                    # If cancel requested mid-transfer, ensure connection is closed promptly
+                    if cancel_event.is_set():
+                        try:
+                            worker_nav.cancel()
+                        except Exception:
+                            pass
                     try:
                         worker_nav.disconnect()
                     except Exception:
@@ -784,19 +797,22 @@ class FileBrowserWindow:
                 for t in consumer_threads:
                     t.join()
 
-                summary_msg = f"Downloaded {completed}/{max(total_enqueued, completed)} file(s)"
-                total_errors = len(errors) + len(expand_errors)
-                if total_errors:
-                    summary_msg += f" ({total_errors} failed)"
-                self._safe_after(0, lambda: self._set_status(summary_msg))
-                if completed > 0:
-                    self._safe_after(0, self._handle_extracted_success)
-                if total_errors:
-                    combined = errors + expand_errors
-                    err_text = "\n".join(f"{p}: {err}" for p, err in combined[:5])
-                    self._safe_after(0, lambda: messagebox.showwarning("Download issues", err_text, parent=self.window) if self._window_alive() else None)
+                if cancel_event.is_set():
+                    self._safe_after(0, lambda: self._set_status("Download cancelled."))
                 else:
-                    self._safe_after(0, lambda: messagebox.showinfo("Download complete", summary_msg, parent=self.window) if self._window_alive() else None)
+                    summary_msg = f"Downloaded {completed}/{max(total_enqueued, completed)} file(s)"
+                    total_errors = len(errors) + len(expand_errors)
+                    if total_errors:
+                        summary_msg += f" ({total_errors} failed)"
+                    self._safe_after(0, lambda: self._set_status(summary_msg))
+                    if completed > 0:
+                        self._safe_after(0, self._handle_extracted_success)
+                    if total_errors:
+                        combined = errors + expand_errors
+                        err_text = "\n".join(f"{p}: {err}" for p, err in combined[:5])
+                        self._safe_after(0, lambda: messagebox.showwarning("Download issues", err_text, parent=self.window) if self._window_alive() else None)
+                    else:
+                        self._safe_after(0, lambda: messagebox.showinfo("Download complete", summary_msg, parent=self.window) if self._window_alive() else None)
             except Exception as e:
                 self._safe_after(0, lambda err=e: self._set_status(f"Download failed: {err}"))
                 self._safe_after(0, lambda err=e: messagebox.showerror("Download failed", str(err), parent=self.window) if self._window_alive() else None)
