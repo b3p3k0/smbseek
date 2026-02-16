@@ -435,12 +435,16 @@ class FileBrowserWindow:
         max_image_pixels = viewer_cfg.get("max_image_pixels", 20_000_000)
         max_view_bytes = (max_image_mb if is_image else max_view_mb) * 1024 * 1024
 
-        # Pre-check: warn if file exceeds configured limit
+        # Pre-check: warn if file exceeds configured limit (image path uses image limit)
         if size_raw > max_view_bytes:
-            if not self._show_size_warning_dialog(name, size_raw, max_view_mb):
-                return  # User clicked OK (cancel)
-            # User clicked "Ignore Once" - proceed with 1GB hard cap
-            max_view_bytes = 1024 * 1024 * 1024
+            if is_image:
+                if not self._confirm_image_oversize(name, size_raw, max_view_mb if not is_image else max_image_mb):
+                    return  # user cancelled
+            else:
+                if not self._show_size_warning_dialog(name, size_raw, max_view_mb):
+                    return  # User cancelled
+                # User clicked "Ignore Once" - proceed with 1GB hard cap
+                max_view_bytes = 1024 * 1024 * 1024
 
         self._start_view_thread(remote_path, name, max_view_bytes, is_image=is_image, max_image_pixels=max_image_pixels)
 
@@ -588,6 +592,50 @@ class FileBrowserWindow:
             self._set_status(f"View failed: {e}")
             if self._window_alive():
                 messagebox.showerror("View error", str(e), parent=self.window)
+
+    def _confirm_image_oversize(self, name: str, size_bytes: int, max_mb: int) -> bool:
+        """
+        Prompt user to proceed with an oversized image, similar tone to extract warnings.
+
+        Returns True to proceed, False to cancel.
+        """
+        dialog = tk.Toplevel(self.window)
+        dialog.title("Large image")
+        dialog.geometry("440x170")
+        dialog.resizable(False, False)
+        dialog.transient(self.window)
+        dialog.grab_set()
+        ensure_dialog_focus(dialog, self.window)
+
+        msg_frame = tk.Frame(dialog)
+        msg_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=15)
+
+        msg = (
+            f'The file "{name}" is {_format_file_size(size_bytes)}.\n'
+            f"Maximum view size is set to {max_mb} MB.\n\nProceed?"
+        )
+        tk.Label(msg_frame, text=msg, justify=tk.LEFT, anchor="w").pack(fill=tk.X, expand=True)
+
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(fill=tk.X, padx=20, pady=(5, 10))
+
+        result = {"proceed": False}
+
+        def on_ok():
+            result["proceed"] = True
+            dialog.destroy()
+
+        def on_cancel():
+            result["proceed"] = False
+            dialog.destroy()
+
+        tk.Button(btn_frame, text="OK", width=10, command=on_ok).pack(side=tk.LEFT, padx=(0, 10))
+        tk.Button(btn_frame, text="Cancel", width=10, command=on_cancel).pack(side=tk.LEFT)
+
+        dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+        dialog.wait_window()
+
+        return result["proceed"]
 
     def _on_close(self) -> None:
         self.navigator.cancel()
