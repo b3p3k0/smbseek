@@ -138,6 +138,7 @@ class FileBrowserWindow:
         self.max_batch_files = int(self.config.get("max_batch_files", 50))
         self.current_share: Optional[str] = None
         self.current_path = "\\"
+        self.pending_path: Optional[str] = None  # in-flight navigation target
         self.list_thread: Optional[threading.Thread] = None
         self.download_thread: Optional[threading.Thread] = None
         self.busy = False
@@ -257,8 +258,7 @@ class FileBrowserWindow:
                 self.password = creds.get("password") or self.password
         self._disconnect()
         self.current_share = share
-        self.current_path = "\\"
-        self.path_var.set(self.current_path)
+        self._set_path("\\")
         self._refresh()
 
     def _on_up(self) -> None:
@@ -266,13 +266,13 @@ class FileBrowserWindow:
             return
         parts = [p for p in self.current_path.split("\\") if p]
         new_path = "\\" + "\\".join(parts[:-1]) if parts[:-1] else "\\"
-        self.current_path = new_path
-        self.path_var.set(self.current_path)
-        self._refresh()
+        self._navigate_to(new_path)
 
     def _refresh(self) -> None:
         if self.busy or not self.current_share:
             return
+        # Refresh uses committed path, not pending navigation.
+        self.pending_path = self.current_path
         self._start_list_thread(self.current_path)
 
     def _on_item_double_click(self, _event=None) -> None:
@@ -289,13 +289,22 @@ class FileBrowserWindow:
         name = values[0] if values else None
         type_label = values[1] if len(values) > 1 else None
         if type_label == "dir":
-            new_path = self._join_path(self.current_path, name)
-            self.current_path = new_path
-            self.path_var.set(new_path)
-            self._refresh()
+            target_path = self._join_path(self.current_path, name)
+            self._navigate_to(target_path)
         elif type_label == "file":
             # Double-click on file opens viewer
             self._on_view()
+
+    def _navigate_to(self, target_path: str) -> None:
+        """Navigate to target path, only committing on successful list."""
+        if self.busy or not self.current_share:
+            return
+        self.pending_path = target_path
+        self._start_list_thread(target_path)
+
+    def _set_path(self, path: str) -> None:
+        self.current_path = path
+        self.path_var.set(path)
 
     def _on_download(self) -> None:
         if self.busy or not self.current_share:
@@ -693,8 +702,8 @@ class FileBrowserWindow:
                 result = self.navigator.list_dir(path)
                 self._safe_after(0, lambda: self._populate_entries(result, path))
             except Exception as e:
-                self._safe_after(0, lambda err=e: self._set_status(f"Error: {err}"))
-                self._safe_after(0, lambda err=e: messagebox.showerror("Browse error", str(err), parent=self.window) if self._window_alive() else None)
+                # On navigation failure, revert to last committed path and surface context.
+                self._safe_after(0, lambda err=e, attempted=path: self._handle_list_error(attempted, err))
             finally:
                 self._safe_after(0, lambda: self._set_busy(False))
 
@@ -1066,6 +1075,9 @@ class FileBrowserWindow:
                 values=(entry.name, "dir" if entry.is_dir else "file", _format_file_size(entry.size), mtime_str, mtime_raw, size_raw),
             )
 
+        # Commit navigation only after successful list
+        self._set_path(path)
+
         status_parts = [f"Path {path} ({len(result.entries)} items)"]
         if result.truncated:
             status_parts.append(f"truncated at {self.config.get('max_entries_per_dir')}")
@@ -1082,6 +1094,17 @@ class FileBrowserWindow:
                 btn.configure(state=state)
         if self.btn_cancel and self.btn_cancel.winfo_exists():
             self.btn_cancel.configure(state=tk.NORMAL if busy else tk.DISABLED)
+
+    def _handle_list_error(self, attempted_path: str, err: Exception) -> None:
+        """Handle directory listing errors and restore previous path."""
+        # If the attempted path differs from the committed path, roll back path label.
+        if attempted_path != self.current_path:
+            # Revert any pending path; keep current_path as-is.
+            self.pending_path = None
+            self.path_var.set(self.current_path)
+        self._set_status(f"Error listing {attempted_path}: {err}")
+        if self._window_alive():
+            messagebox.showerror("Browse error", f"{attempted_path}\n\n{err}", parent=self.window)
 
     def _set_status(self, text: str) -> None:
         self.status_var.set(text)
