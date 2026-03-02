@@ -131,3 +131,6 @@ test_enhanced_share_tracking.py
 # mmc fork - local copy
 mmcbrute-smbseek/
 conf/wordlists/rockyou.txt
+
+# this allows our sample db to upload
+!docs/sample_db/smbseek_bogan_sm.db
