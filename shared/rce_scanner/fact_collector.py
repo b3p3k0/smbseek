@@ -55,6 +55,12 @@ class FactCollector:
         # Extract OS detection hints
         facts.update(self._extract_os_info(host_context))
 
+        # Extract probe results (from SafeProbeRunner)
+        facts.update(self._extract_probe_results(host_context))
+
+        # Extract implementation markers (ksmbd, Samba)
+        facts.update(self._extract_implementation_markers(host_context))
+
         # Log any missing telemetry for future enhancement
         if self.missing_telemetry:
             logger.debug(f"Missing telemetry for RCE analysis: {', '.join(self.missing_telemetry)}")
@@ -309,3 +315,115 @@ class FactCollector:
 
         has_data = any(host_context.get(source) for source in data_sources)
         return has_data
+
+    def _extract_probe_results(self, host_context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract results from SafeProbeRunner probes.
+
+        These facts are populated by the probe runner during RCE analysis.
+        """
+        facts = {}
+
+        # SMB dialect as integer (e.g., 0x0202, 0x0210, 0x0300, 0x0302, 0x0311)
+        smb_dialect = host_context.get("smb_dialect")
+        if smb_dialect is not None:
+            facts["smb_dialect"] = smb_dialect
+        else:
+            self.missing_telemetry.append("smb_dialect")
+
+        # Signing required flag from negotiate response
+        signing_required = host_context.get("signing_required")
+        if signing_required is not None:
+            facts["signing_required"] = bool(signing_required)
+        else:
+            # Check connection_details fallback
+            conn_details = host_context.get("connection_details", {})
+            if isinstance(conn_details, dict) and "signing_required" in conn_details:
+                facts["signing_required"] = bool(conn_details["signing_required"])
+            else:
+                self.missing_telemetry.append("signing_required")
+
+        # SMB3 compression algorithms (list of algorithm IDs)
+        compression_algos = host_context.get("compression_algos")
+        if compression_algos is not None:
+            facts["compression_algos"] = compression_algos
+            facts["has_compression"] = len(compression_algos) > 0
+        else:
+            facts["compression_algos"] = []
+            facts["has_compression"] = False
+
+        # SMB1 possible flag (derived from legacy mode or dialect detection)
+        smb1_possible = host_context.get("smb1_possible")
+        if smb1_possible is not None:
+            facts["smb1_possible"] = bool(smb1_possible)
+        else:
+            # Derive from smb_dialects if available
+            dialects = host_context.get("smb_dialects", [])
+            facts["smb1_possible"] = any("SMB1" in str(d) for d in dialects)
+
+        # MS17-010 probe status (from FID0 check)
+        ms17_010_status = host_context.get("ms17_010_status")
+        if ms17_010_status is not None:
+            facts["ms17_010_status"] = ms17_010_status
+
+        return facts
+
+    def _extract_implementation_markers(self, host_context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract SMB implementation markers (ksmbd, Samba, Windows).
+
+        These help identify Linux kernel SMB server, Samba, or Windows.
+        """
+        facts = {
+            "ksmbd_marker": False,
+            "samba_marker": False,
+        }
+
+        # Check service banners for implementation hints
+        banners = host_context.get("service_banners", [])
+        for banner in banners:
+            if isinstance(banner, str):
+                banner_lower = banner.lower()
+                if "ksmbd" in banner_lower:
+                    facts["ksmbd_marker"] = True
+                if "samba" in banner_lower:
+                    facts["samba_marker"] = True
+
+        # Check Shodan data
+        shodan_data = host_context.get("shodan_data", {})
+        if isinstance(shodan_data, dict):
+            # Extract product/version/os from Shodan
+            product = shodan_data.get("product", "")
+            if product:
+                facts["shodan_product"] = product
+                if "samba" in product.lower():
+                    facts["samba_marker"] = True
+                if "ksmbd" in product.lower():
+                    facts["ksmbd_marker"] = True
+
+            version = shodan_data.get("version", "")
+            if version:
+                facts["shodan_version"] = version
+
+            os_info = shodan_data.get("os", "")
+            if os_info:
+                facts["shodan_os"] = os_info
+
+            # Check services in Shodan data
+            services = shodan_data.get("data", [])
+            for service in services:
+                if isinstance(service, dict):
+                    banner = service.get("banner", "")
+                    if "ksmbd" in banner.lower():
+                        facts["ksmbd_marker"] = True
+                    if "samba" in banner.lower():
+                        facts["samba_marker"] = True
+
+                    # Also check product field in service
+                    svc_product = service.get("product", "")
+                    if "samba" in svc_product.lower():
+                        facts["samba_marker"] = True
+                    if "ksmbd" in svc_product.lower():
+                        facts["ksmbd_marker"] = True
+
+        return facts

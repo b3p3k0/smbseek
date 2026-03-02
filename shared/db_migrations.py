@@ -3,8 +3,10 @@ Lightweight, idempotent database migrations for SMBSeek.
 
 Currently installs:
 - share_credentials: stores per-share credentials discovered via Pry (or future sources).
+- host_probe_cache: caches probe status including RCE analysis results.
 """
 
+import json
 import sqlite3
 from pathlib import Path
 from typing import Optional
@@ -92,6 +94,21 @@ def run_migrations(db_path: str) -> None:
         columns = [row[1] for row in cur.fetchall()]
         if "extracted" not in columns:
             cur.execute("ALTER TABLE host_probe_cache ADD COLUMN extracted INTEGER DEFAULT 0")
+
+        # Migration: add RCE status columns if missing
+        # Re-fetch columns after potential extracted migration
+        cur.execute("PRAGMA table_info(host_probe_cache)")
+        columns = [row[1] for row in cur.fetchall()]
+
+        if "rce_status" not in columns:
+            cur.execute(
+                "ALTER TABLE host_probe_cache ADD COLUMN rce_status TEXT DEFAULT 'not_run'"
+            )
+
+        if "rce_verdict_summary" not in columns:
+            cur.execute(
+                "ALTER TABLE host_probe_cache ADD COLUMN rce_verdict_summary TEXT"
+            )
 
         conn.commit()
     finally:

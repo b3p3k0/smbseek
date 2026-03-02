@@ -72,6 +72,8 @@ The main window. From here you can:
 
 Select multiple hosts for batch probing.
 
+### Probing Shares
+
 ### Browsing Shares
 
 Read-only navigation through SMB shares. Double-click directories to descend, files to preview. You can also select a file and click **View**.
