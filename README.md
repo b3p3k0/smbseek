@@ -42,7 +42,7 @@ Edit `conf/config.json` and add your Shodan API key (requires paid membership):
 }
 ```
 
-Launch the GUI:
+Launch the GUI from your venv:
 
 ```bash
 ./xsmbseek
@@ -70,21 +70,25 @@ The main window. From here you can:
 - **Extract** — collect files with hard limits on count, size, and time
 - **Pry** — password audit against a specific user
 
-Select multiple hosts for batch probing.
-
 ### Probing Shares
+
+Read-only directory enumeration that previews accessible shares without downloading files. Probing collects root files, subdirectories, and file listings for each accessible share (with configurable limits on depth and breadth).
+
+**Ransomware detection:** Filenames are matched against 25+ known ransom-note patterns (WannaCry, Hive, STOP/Djvu, etc.). Matches flag the server with a red indicator in the list view.
+
+**RCE vulnerability analysis:** Optionally scans for SMB vulnerabilities using passive heuristics. Covers 8 CVEs including EternalBlue (MS17-010), SMBGhost (CVE-2020-0796), ZeroLogon (CVE-2020-1472), and PrintNightmare (CVE-2021-34527). Returns a risk score (0-100) with verdicts: confirmed, likely, or not vulnerable. Signatures live in `signatures/rce_smb/` as editable YAML files. NOTE: this feature is still under development; don't trust results until verified with alternative measures.
+
+Results are cached in `~/.smbseek/probes/` and reloaded automatically. Configure probe limits in `conf/config.json` under `file_browser` settings.
 
 ### Browsing Shares
 
 Read-only navigation through SMB shares. Double-click directories to descend, files to preview. You can also select a file and click **View**.
 
-The viewer auto-detects binary files and switches to hex mode. Text files get an encoding selector (UTF-8, Latin-1, etc.) if the default doesn't look right.
+The viewer auto-detects file types: text files display with an encoding selector (UTF-8, Latin-1, etc.), binary files switch to hex mode, and images (PNG, JPEG, GIF, WebP, BMP, TIFF) render with fit-to-window scaling.
 
 Files over the specified maximum (default: 5 MB) trigger a warning—you can bump that limit in `conf/config.json` under `file_browser.viewer.max_view_size_mb`, or click "Ignore Once" to load anyway (hard cap: 1 GB).
 
 Downloads land in quarantine (`~/.smbseek/quarantine/`). The browser never writes to remote systems.
-
-**Faster downloads:** Folder selections now stream enumeration and downloads concurrently, and per-file progress updates while bytes are flowing. Large downloads start immediately instead of waiting for full folder expansion.
 
 ### Extracting Files
 
@@ -134,37 +138,6 @@ These are separate so you can customize or share them without touching app setti
 
 The GUI includes a built-in config editor for common settings.
 
----
-
-## Troubleshooting
-
-**GUI won't start — `ModuleNotFoundError: tkinter`**
-
-Install the Tkinter package for your distro (see Setup above).
-
-**GUI displays wrong or crashes in a VM**
-
-Install xvfb and run with a virtual display:
-
-```bash
-sudo apt install xvfb
-xvfb-run -a ./xsmbseek
-```
-
-**Pry says wordlist not found**
-
-Download SecLists and update `pry.wordlist_path` in your config to point at an actual file.
-
-**Database locked**
-
-Another SMBSeek process is probably running. Kill it:
-
-```bash
-ps aux | grep smbseek
-kill <PID>
-```
-
----
 
 ## Advanced
 
@@ -191,10 +164,19 @@ Results persist to `smbseek.db` (SQLite). For full CLI documentation, see [docs/
 
 ---
 
-## Legal
+## Development
 
-This tool is for authorized security assessments only. Scan networks you own or have written permission to test. Unauthorized access to computer systems is illegal in most places.
+Built through AI-human collaboration. The human directing this project has hands-on experience in networking and security—this isn't autonomous code generation, it's directed development with human oversight, testing, and domain expertise driving the AI's output.
 
+---
+
+## Legal & Ethics
+
+Scan networks you own or have explicit permission to test. Unauthorized access is illegal in most jurisdictions—full stop.
+
+That said: security research matters. Curiosity about how systems work isn't malicious, and understanding vulnerabilities is how we fix them. This tool exists because open SMB shares are a real problem worth studying. Use it to learn, to audit, to improve defenses and responsibly disclose. Don't use it to steal data or harm systems you have no business touching.
+
+If you're unsure whether something is authorized, it probably isn't. When in doubt, get it in writing.
 
 ---
 
