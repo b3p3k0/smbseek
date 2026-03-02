@@ -4,6 +4,8 @@ A GUI for finding SMB servers with weak or no authentication, then auditing what
 
 ---
 
+![Description](img/main.png)
+
 ## Setup
 
 You'll need Python 3.8+ (3.10+ recommended), Tkinter, and smbclient:
