@@ -4,7 +4,7 @@ A GUI for finding SMB servers with weak or no authentication, then auditing what
 
 ---
 
-![Description](img/main.png)
+![Full suite](img/main.png)
 
 ## Setup
 
@@ -54,6 +54,8 @@ Launch the GUI from your venv:
 
 ### Dashboard
 
+![dashboard, pre scan](img/dash.png)
+
 The main window. From here you can:
 - Launch discovery scans (filtered by country or global)
 - Open the Server List to work with hosts you've found
@@ -62,6 +64,7 @@ The main window. From here you can:
 
 ### Server List
 
+![server list browser](img/servers.png)
  Shows discovered SMB hosts with IP, country, auth method, and share counts as well as status indicators and a favorite/avoid list.
 
 **Operations** (right-click a host or bottom row buttons):
@@ -76,15 +79,18 @@ Read-only directory enumeration that previews accessible shares without download
 
 **Ransomware detection:** Filenames are matched against 25+ known ransom-note patterns (WannaCry, Hive, STOP/Djvu, etc.). Matches flag the server with a red indicator in the list view.
 
-**RCE vulnerability analysis:** Optionally scans for SMB vulnerabilities using passive heuristics. Covers 8 CVEs including EternalBlue (MS17-010), SMBGhost (CVE-2020-0796), ZeroLogon (CVE-2020-1472), and PrintNightmare (CVE-2021-34527). Returns a risk score (0-100) with verdicts: confirmed, likely, or not vulnerable. Signatures live in `signatures/rce_smb/` as editable YAML files. NOTE: this feature is still under development; don't trust results until verified with alternative measures.
+**RCE vulnerability analysis:** Optionally scans for SMB vulnerabilities using passive heuristics. Covers 8 CVEs including EternalBlue (MS17-010), SMBGhost (CVE-2020-0796), ZeroLogon (CVE-2020-1472), and PrintNightmare (CVE-2021-34527). Returns a risk score (0-100) with verdicts: confirmed, likely, or not vulnerable. Signatures live in `signatures/rce_smb/` as editable YAML files.**NOTE: this feature is still under development; don't trust results until verified with alternative measures.**
 
 Results are cached in `~/.smbseek/probes/` and reloaded automatically. Configure probe limits in `conf/config.json` under `file_browser` settings.
 
 ### Browsing Shares
 
+![file browser](img/browse.png)
 Read-only navigation through SMB shares. Double-click directories to descend, files to preview. You can also select a file and click **View**.
 
 The viewer auto-detects file types: text files display with an encoding selector (UTF-8, Latin-1, etc.), binary files switch to hex mode, and images (PNG, JPEG, GIF, WebP, BMP, TIFF) render with fit-to-window scaling.
+
+![Full suite](img/pic_view.png)
 
 Files over the specified maximum (default: 5 MB) trigger a warning—you can bump that limit in `conf/config.json` under `file_browser.viewer.max_view_size_mb`, or click "Ignore Once" to load anyway (hard cap: 1 GB).
 
@@ -92,6 +98,7 @@ Downloads land in quarantine (`~/.smbseek/quarantine/`). The browser never write
 
 ### Extracting Files
 
+![extract dialog](img/extract.png)
 Automated file collection with configurable limits:
 - Max files per target
 - Max total size
@@ -114,7 +121,7 @@ To use it, download a wordlist (we recommend [SecLists](https://github.com/danie
 }
 ```
 
-Pry includes lockout detection and configurable delays between attempts. That said, this feature exists mostly as a novelty/proof of concept — dedicated tools like Hydra or CrackMapExec will serve you better for serious password auditing.
+Pry includes lockout detection and configurable delays between attempts. That said, **this feature exists mostly as a novelty/proof of concept** — dedicated tools like Hydra or CrackMapExec will serve you better for serious password auditing.
 
 ---
 
