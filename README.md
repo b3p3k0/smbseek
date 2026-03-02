@@ -99,6 +99,7 @@ Downloads land in quarantine (`~/.smbseek/quarantine/`). The browser never write
 ### Extracting Files
 
 ![extract dialog](img/extract.png)
+
 Automated file collection with configurable limits:
 - Max files per target
 - Max total size
@@ -166,8 +167,6 @@ The CLI is useful for scripting and automation. The GUI uses the same backend.
 ./smbseek --string "SIPR files"     # Search by keyword
 ./smbseek --verbose                 # Detailed output
 ```
-
-Results persist to `smbseek.db` (SQLite). For full CLI documentation, see [docs/guides/USER_GUIDE.md](docs/guides/USER_GUIDE.md).
 
 ---
 
