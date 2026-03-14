@@ -57,6 +57,7 @@ Launch the GUI from your venv:
 ![dashboard, pre scan](img/dash.png)
 
 The main window. From here you can:
+
 - Launch discovery scans (filtered by country or global)
 - Open the Server List to work with hosts you've found
 - Manage your database (import, export, merge, maintenance)
@@ -68,6 +69,7 @@ The main window. From here you can:
  Shows discovered SMB hosts with IP, country, auth method, and share counts as well as status indicators and a favorite/avoid list.
 
 **Operations** (right-click a host or bottom row buttons):
+
 - **Probe** — enumerate shares, detect ransomware indicators
 - **Browse** — read-only exploration of accessible shares
 - **Extract** — collect files with hard limits on count, size, and time
@@ -101,7 +103,7 @@ Downloads land in quarantine (`~/.smbseek/quarantine/`). The browser never write
 ![extract dialog](img/extract.png)
 
 Automated file collection with configurable limits:
-- Max files per target
+
 - Max total size
 - Max runtime
 - Max directory depth
@@ -131,6 +133,7 @@ Pry includes lockout detection and configurable delays between attempts. That sa
 App settings are stored in `conf/config.json`. The example file (`conf/config.json.example`) documents every option.
 
 Key sections:
+
 - `shodan.api_key` — required for discovery
 - `pry.*` — wordlist path, delays, lockout behavior
 - `file_collection.*` — extraction limits
@@ -145,7 +148,6 @@ Two additional files hold editable lists:
 These are separate so you can customize or share them without touching app settings.
 
 The GUI includes a built-in config editor for common settings.
-
 
 ## Advanced
 

@@ -134,3 +134,6 @@ conf/wordlists/rockyou.txt
 
 # this allows our sample db to upload
 !docs/sample_db/smbseek_bogan_sm.db
+
+# dev notes
+dev/
