@@ -106,8 +106,11 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     notes_text.pack(fill=tk.X, expand=True)
     theme.apply_to_widget(notes_text, "main_window")
 
-    def save_notes():
+    def _persist_notes() -> None:
+        """Persist notes without user interaction."""
         new_notes = notes_text.get("1.0", tk.END).strip()
+        if new_notes == server_data.get("notes", ""):
+            return
         try:
             if settings_manager:
                 try:
@@ -116,13 +119,9 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
                 except Exception:
                     pass
             server_data["notes"] = new_notes
-            messagebox.showinfo("Notes saved", "Notes updated for this host.", parent=detail_window)
-        except Exception as exc:
-            messagebox.showerror("Error", f"Failed to save notes: {exc}", parent=detail_window)
-
-    notes_btn_frame = tk.Frame(detail_window)
-    notes_btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-    tk.Button(notes_btn_frame, text="Save Notes", command=save_notes).pack(side=tk.RIGHT)
+        except Exception:
+            # Silently ignore; we don't want to block dialog close
+            pass
 
     # Pack button frame after notes section
     button_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
@@ -172,10 +171,17 @@ def show_server_detail_popup(parent_window, server_data, theme, settings_manager
     close_button = tk.Button(
         button_frame,
         text="Close",
-        command=detail_window.destroy
+        command=lambda: _persist_notes() or detail_window.destroy()
     )
     theme.apply_to_widget(close_button, "button_primary")
     close_button.pack(side=tk.RIGHT)
+
+    # Ensure notes persist when the window is closed via the window manager
+    def _on_close() -> None:
+        _persist_notes()
+        detail_window.destroy()
+
+    detail_window.protocol("WM_DELETE_WINDOW", _on_close)
 
     # Ensure window is fully rendered before setting grab
     detail_window.update_idletasks()
